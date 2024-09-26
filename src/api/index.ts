@@ -1,11 +1,17 @@
-import dotenv from "dotenv";
-import { createServer } from "./config/express";
+import figlet from "figlet";
 import { env } from "../config";
 import { logger } from "../logger";
-dotenv.config();
+import { createServer } from "./entry-points/server";
+import { setRoutes } from "./entry-points/routes";
 
-const PORT = env.PORT;
-const app = createServer();
-app.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-});
+const startServer = () => {
+  const PORT = env.PORT;
+  const app = createServer();
+  setRoutes(app);
+  console.log(figlet.textSync("Blazar Payments", { font: "Doom" }));
+  app.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+  });
+};
+
+startServer();

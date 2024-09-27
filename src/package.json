@@ -20,6 +20,7 @@
     "typescript": "^5.6.2"
   },
   "dependencies": {
+    "@lucid-evolution/lucid": "^0.3.44",
     "cors": "^2.8.5",
     "express": "^5.0.0",
     "figlet": "^1.7.0",

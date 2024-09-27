@@ -1,0 +1,264 @@
+{
+  "preamble": {
+    "title": "blazar/hydra-pay",
+    "description": "Aiken contracts for project 'blazar/hydra-pay'",
+    "version": "0.0.0",
+    "plutusVersion": "v3",
+    "compiler": {
+      "name": "Aiken",
+      "version": "v1.1.3+3d77b5c"
+    },
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "main.main.spend",
+      "datum": {
+        "title": "_datum",
+        "schema": {
+          "$ref": "#/definitions/types~1FundsDatum"
+        }
+      },
+      "redeemer": {
+        "title": "_redeemer",
+        "schema": {
+          "$ref": "#/definitions/types~1FundsRedeemer"
+        }
+      },
+      "compiledCode": "590243010100323232323232322533300232323232323232323232533300c3370e9001002899191919802005099192999808980398091baa0011533301130073012375464646600200200844a66602e002298103d87a8000132323253330173375e00c6030006266e9520003301b375000297ae0133005005002375a603000460360046032002601060266ea8c020c04cdd5180498099baa30163013375400229445280b19198008009bac30083013375401c44a66602a0022980103d87a80001323253330143375e6016602c6ea800801c4cdd2a40006603000497ae01330040040013019002301700137566028602a602a602a602a602a602a60226ea8030c04cc050008c048004c038dd50030a99980619b87480100144c8cc0080204cdc424000664600200244a66602400229000099b8048008cc008008c054004c8cc004004dd6180298081baa00b22533301200114bd7009919299980899baf300830133754601060266ea8c024c04cdd500100289980a80119802002000899802002000980b001180a000980898071baa00614a24464a66601c60080022a66602260206ea800c540085854ccc038cdc3a40040022a66602260206ea800c540085854ccc038cdc3a40080022a66602260206ea800c540085854ccc038cdc3a400c0022a66602260206ea800c540085854ccc038cdc3a40100022a66602260206ea800c540085858c038dd50011b87480008c03c0048c038c03c004c020dd50009805980600118050009805001180400098021baa00114984d9595cd2ab9d5573caae7d5d02ba157441",
+      "hash": "1456233e019d65d9675a6bb22e04dab03a12f52c44de8493102a0130"
+    },
+    {
+      "title": "main.main.withdraw",
+      "redeemer": {
+        "title": "_redeemer",
+        "schema": {
+          "$ref": "#/definitions/types~1FundsRedeemer"
+        }
+      },
+      "compiledCode": "590243010100323232323232322533300232323232323232323232533300c3370e9001002899191919802005099192999808980398091baa0011533301130073012375464646600200200844a66602e002298103d87a8000132323253330173375e00c6030006266e9520003301b375000297ae0133005005002375a603000460360046032002601060266ea8c020c04cdd5180498099baa30163013375400229445280b19198008009bac30083013375401c44a66602a0022980103d87a80001323253330143375e6016602c6ea800801c4cdd2a40006603000497ae01330040040013019002301700137566028602a602a602a602a602a602a60226ea8030c04cc050008c048004c038dd50030a99980619b87480100144c8cc0080204cdc424000664600200244a66602400229000099b8048008cc008008c054004c8cc004004dd6180298081baa00b22533301200114bd7009919299980899baf300830133754601060266ea8c024c04cdd500100289980a80119802002000899802002000980b001180a000980898071baa00614a24464a66601c60080022a66602260206ea800c540085854ccc038cdc3a40040022a66602260206ea800c540085854ccc038cdc3a40080022a66602260206ea800c540085854ccc038cdc3a400c0022a66602260206ea800c540085854ccc038cdc3a40100022a66602260206ea800c540085858c038dd50011b87480008c03c0048c038c03c004c020dd50009805980600118050009805001180400098021baa00114984d9595cd2ab9d5573caae7d5d02ba157441",
+      "hash": "1456233e019d65d9675a6bb22e04dab03a12f52c44de8493102a0130"
+    },
+    {
+      "title": "main.main.else",
+      "compiledCode": "590243010100323232323232322533300232323232323232323232533300c3370e9001002899191919802005099192999808980398091baa0011533301130073012375464646600200200844a66602e002298103d87a8000132323253330173375e00c6030006266e9520003301b375000297ae0133005005002375a603000460360046032002601060266ea8c020c04cdd5180498099baa30163013375400229445280b19198008009bac30083013375401c44a66602a0022980103d87a80001323253330143375e6016602c6ea800801c4cdd2a40006603000497ae01330040040013019002301700137566028602a602a602a602a602a602a60226ea8030c04cc050008c048004c038dd50030a99980619b87480100144c8cc0080204cdc424000664600200244a66602400229000099b8048008cc008008c054004c8cc004004dd6180298081baa00b22533301200114bd7009919299980899baf300830133754601060266ea8c024c04cdd500100289980a80119802002000899802002000980b001180a000980898071baa00614a24464a66601c60080022a66602260206ea800c540085854ccc038cdc3a40040022a66602260206ea800c540085854ccc038cdc3a40080022a66602260206ea800c540085854ccc038cdc3a400c0022a66602260206ea800c540085854ccc038cdc3a40100022a66602260206ea800c540085858c038dd50011b87480008c03c0048c038c03c004c020dd50009805980600118050009805001180400098021baa00114984d9595cd2ab9d5573caae7d5d02ba157441",
+      "hash": "1456233e019d65d9675a6bb22e04dab03a12f52c44de8493102a0130"
+    }
+  ],
+  "definitions": {
+    "Int": {
+      "dataType": "integer"
+    },
+    "Option$StakeCredential": {
+      "title": "Option",
+      "anyOf": [
+        {
+          "title": "Some",
+          "description": "An optional value.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/StakeCredential"
+            }
+          ]
+        },
+        {
+          "title": "None",
+          "description": "Nothing.",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "PaymentCredential": {
+      "title": "PaymentCredential",
+      "description": "A general structure for representing an on-chain `Credential`.\n\n Credentials are always one of two kinds: a direct public/private key\n pair, or a script (native or Plutus).",
+      "anyOf": [
+        {
+          "title": "VerificationKey",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/VerificationKeyHash"
+            }
+          ]
+        },
+        {
+          "title": "Script",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "$ref": "#/definitions/ScriptHash"
+            }
+          ]
+        }
+      ]
+    },
+    "ScriptHash": {
+      "title": "ScriptHash",
+      "dataType": "bytes"
+    },
+    "StakeCredential": {
+      "title": "StakeCredential",
+      "description": "Represent a type of object that can be represented either inline (by hash)\n or via a reference (i.e. a pointer to an on-chain location).\n\n This is mainly use for capturing pointers to a stake credential\n registration certificate in the case of so-called pointer addresses.",
+      "anyOf": [
+        {
+          "title": "Inline",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/cardano~1address~1Credential"
+            }
+          ]
+        },
+        {
+          "title": "Pointer",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "title": "slot_number",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "transaction_index",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "certificate_index",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "VerificationKeyHash": {
+      "title": "VerificationKeyHash",
+      "dataType": "bytes"
+    },
+    "cardano/address/Address": {
+      "title": "Address",
+      "description": "A Cardano `Address` typically holding one or two credential references.\n\n Note that legacy bootstrap addresses (a.k.a. 'Byron addresses') are\n completely excluded from Plutus contexts. Thus, from an on-chain\n perspective only exists addresses of type 00, 01, ..., 07 as detailed\n in [CIP-0019 :: Shelley Addresses](https://github.com/cardano-foundation/CIPs/tree/master/CIP-0019/#shelley-addresses).",
+      "anyOf": [
+        {
+          "title": "Address",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "payment_credential",
+              "$ref": "#/definitions/PaymentCredential"
+            },
+            {
+              "title": "stake_credential",
+              "$ref": "#/definitions/Option$StakeCredential"
+            }
+          ]
+        }
+      ]
+    },
+    "cardano/address/Credential": {
+      "title": "Credential",
+      "description": "A general structure for representing an on-chain `Credential`.\n\n Credentials are always one of two kinds: a direct public/private key\n pair, or a script (native or Plutus).",
+      "anyOf": [
+        {
+          "title": "VerificationKey",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/VerificationKeyHash"
+            }
+          ]
+        },
+        {
+          "title": "Script",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "$ref": "#/definitions/ScriptHash"
+            }
+          ]
+        }
+      ]
+    },
+    "types/FundsDatum": {
+      "title": "FundsDatum",
+      "anyOf": [
+        {
+          "title": "FundsDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "addr",
+              "$ref": "#/definitions/cardano~1address~1Address"
+            },
+            {
+              "title": "funds_type",
+              "$ref": "#/definitions/types~1FundsType"
+            }
+          ]
+        }
+      ]
+    },
+    "types/FundsRedeemer": {
+      "title": "FundsRedeemer",
+      "anyOf": [
+        {
+          "title": "AddFunds",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "Commit",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        },
+        {
+          "title": "Merge",
+          "dataType": "constructor",
+          "index": 2,
+          "fields": []
+        },
+        {
+          "title": "Withdraw",
+          "dataType": "constructor",
+          "index": 3,
+          "fields": []
+        },
+        {
+          "title": "Pay",
+          "dataType": "constructor",
+          "index": 4,
+          "fields": []
+        }
+      ]
+    },
+    "types/FundsType": {
+      "title": "FundsType",
+      "anyOf": [
+        {
+          "title": "User",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "Merchant",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    }
+  }
+}

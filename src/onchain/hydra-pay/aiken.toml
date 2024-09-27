@@ -1,13 +1,13 @@
-name = "blazar/hydra-payments"
+name = "blazar/hydra-pay"
 version = "0.0.0"
 compiler = "v1.1.3"
 plutus = "v3"
 license = "Apache-2.0"
-description = "Aiken contracts for project 'blazar/hydra-payments'"
+description = "Aiken contracts for project 'blazar/hydra-pay'"
 
 [repository]
 user = "blazar"
-project = "hydra-payments"
+project = "hydra-pay"
 platform = "github"
 
 [[dependencies]]

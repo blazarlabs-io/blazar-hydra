@@ -1,0 +1,209 @@
+openapi: 3.0.0
+info:
+  title: Hydra Pay API
+  version: 1.0.0
+
+paths:
+  /query-funds/{address}:
+    get:
+      summary: Query funds in the protocol, both at L1 and L2.
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful query of funds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryFundsResponse'
+        '404':
+          description: Address not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressNotFoundError'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+
+  /deposit:
+    post:
+      summary: Build a transaction where a user deposits ADA into their own User Funds UTxO in L1.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositSchema'
+      responses:
+        '200':
+          description: Transaction built successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxBuiltResponse'
+        '400':
+          description: Bad Request
+        '500':
+          description: Internal Server Error
+
+  /withdraw:
+    post:
+      summary: Build a transaction where a user withdraws ADA from their own User Funds UTxO in L1.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawSchema'
+      responses:
+        '200':
+          description: Transaction built successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxBuiltResponse'
+        '400':
+          description: Bad Request
+        '404':
+          description: Address or Funds UTxO not found
+
+  /pay-merchant:
+    post:
+      summary: Build a transaction where a user pays a Merchant in L2.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayMerchantSchema'
+      responses:
+        '200':
+          description: Transaction built successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxBuiltResponse'
+        '400':
+          description: Bad Request
+        '404':
+          description: Address or Funds UTxO not found
+        '500':
+          description: Internal Server Error
+
+  /open-head:
+    post:
+      summary: Opens the hydra head (initializes head, submits transactions in L1 and L2)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManageHeadSchema'
+      responses:
+        '200':
+          description: Hydra head opened successfully
+        '500':
+          description: Internal Server Error
+
+  /close-head:
+    post:
+      summary: Closes the hydra head (withdraw Merchant funds in L2, submit L1 transactions to close and fan-out)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManageHeadSchema'
+      responses:
+        '200':
+          description: Hydra head closed successfully
+        '500':
+          description: Internal Server Error
+
+components:
+  schemas:
+    TxOutRef:
+      type: object
+      properties:
+        hash:
+          type: string
+        index:
+          type: integer
+
+    DepositSchema:
+      type: object
+      properties:
+        userAddress:
+          type: string
+        amount:
+          type: integer
+          format: int64
+
+    WithdrawSchema:
+      type: object
+      properties:
+        userAddress:
+          type: string
+        fundsUtxoRef:
+          $ref: '#/components/schemas/TxOutRef'
+        amount:
+          type: integer
+          format: int64
+        signature:
+          type: string
+
+    PayMerchantSchema:
+      type: object
+      properties:
+        userAddress:
+          type: string
+        fundsUtxoRef:
+          $ref: '#/components/schemas/TxOutRef'
+        merchantAddress:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        signature:
+          type: string
+
+    ManageHeadSchema:
+      type: object
+      properties:
+        authToken:
+          type: string
+
+    QueryFundsResponse:
+      type: object
+      properties:
+        adaInL1:
+          type: integer
+          format: int64
+        adaInL2:
+          type: integer
+          format: int64
+
+    TxBuiltResponse:
+      type: object
+      properties:
+        cborHex:
+          type: string
+        fundsUtxoRef:
+          $ref: '#/components/schemas/TxOutRef'
+          nullable: true
+
+    AddressNotFoundError:
+      type: object
+      properties:
+        message:
+          type: string
+
+    InternalServerError:
+      type: object
+      properties:
+        message:
+          type: string
+

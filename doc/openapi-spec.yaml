@@ -1,33 +1,33 @@
 openapi: 3.0.0
 info:
-  title: Hydra Pay API
+  title: Hydra Protocol API
   version: 1.0.0
-
 paths:
   /query-funds/{address}:
     get:
       summary: Query funds in the protocol, both at L1 and L2.
       parameters:
-        - name: address
-          in: path
-          required: true
+        - in: path
+          name: address
           schema:
             type: string
+          required: true
+          description: The user or merchant address.
       responses:
-        '200':
-          description: Successful query of funds
+        200:
+          description: Query funds successful.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QueryFundsResponse'
-        '404':
-          description: Address not found
+        404:
+          description: Address not found.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AddressNotFoundError'
-        '500':
-          description: Internal Server Error
+        500:
+          description: Internal server error.
           content:
             application/json:
               schema:
@@ -35,93 +35,136 @@ paths:
 
   /deposit:
     post:
-      summary: Build a transaction where a user deposits ADA into their own User Funds UTxO in L1.
+      summary: Build a transaction where a user deposits ADA in their own User Funds UTxO in L1.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DepositSchema'
       responses:
-        '200':
-          description: Transaction built successfully
+        200:
+          description: Transaction built successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TxBuiltResponse'
-        '400':
-          description: Bad Request
-        '500':
-          description: Internal Server Error
+        400:
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        500:
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
 
   /withdraw:
     post:
       summary: Build a transaction where a user withdraws ADA from their own User Funds UTxO in L1.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/WithdrawSchema'
       responses:
-        '200':
-          description: Transaction built successfully
+        200:
+          description: Transaction built successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TxBuiltResponse'
-        '400':
-          description: Bad Request
-        '404':
-          description: Address or Funds UTxO not found
+        404:
+          description: Funds UTxO or Address not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundsUTxONotFoundError'
+        400:
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        500:
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
 
   /pay-merchant:
     post:
       summary: Build a transaction where a user pays a Merchant in L2.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PayMerchantSchema'
       responses:
-        '200':
-          description: Transaction built successfully
+        200:
+          description: Transaction built successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TxBuiltResponse'
-        '400':
-          description: Bad Request
-        '404':
-          description: Address or Funds UTxO not found
-        '500':
-          description: Internal Server Error
+        404:
+          description: Funds UTxO or Address not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundsUTxONotFoundError'
+        400:
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        500:
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
 
   /open-head:
     post:
-      summary: Opens the hydra head (initializes head, submits transactions in L1 and L2)
+      summary: Performs the necessary steps to open the Hydra head.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ManageHeadSchema'
       responses:
-        '200':
-          description: Hydra head opened successfully
-        '500':
-          description: Internal Server Error
+        200:
+          description: Hydra head opened successfully.
+        403:
+          description: Forbidden.
+        500:
+          description: Internal server error.
 
   /close-head:
     post:
-      summary: Closes the hydra head (withdraw Merchant funds in L2, submit L1 transactions to close and fan-out)
+      summary: Performs the necessary steps to close the Hydra head.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ManageHeadSchema'
       responses:
-        '200':
-          description: Hydra head closed successfully
-        '500':
-          description: Internal Server Error
+        200:
+          description: Hydra head closed successfully.
+        403:
+          description: Forbidden.
+        500:
+          description: Internal server error.
 
 components:
   schemas:
@@ -140,20 +183,23 @@ components:
           type: string
         amount:
           type: integer
-          format: int64
+        fundsUtxoRef:
+          $ref: '#/components/schemas/TxOutRef'
 
     WithdrawSchema:
       type: object
       properties:
-        userAddress:
+        address:
           type: string
         fundsUtxoRef:
           $ref: '#/components/schemas/TxOutRef'
         amount:
           type: integer
-          format: int64
         signature:
           type: string
+        network_layer:
+          type: string
+          enum: [L1, L2]
 
     PayMerchantSchema:
       type: object
@@ -166,7 +212,6 @@ components:
           type: string
         amount:
           type: integer
-          format: int64
         signature:
           type: string
 
@@ -181,10 +226,8 @@ components:
       properties:
         adaInL1:
           type: integer
-          format: int64
         adaInL2:
           type: integer
-          format: int64
 
     TxBuiltResponse:
       type: object
@@ -193,9 +236,20 @@ components:
           type: string
         fundsUtxoRef:
           $ref: '#/components/schemas/TxOutRef'
-          nullable: true
 
     AddressNotFoundError:
+      type: object
+      properties:
+        message:
+          type: string
+
+    FundsUTxONotFoundError:
+      type: object
+      properties:
+        message:
+          type: string
+
+    BadRequest:
       type: object
       properties:
         message:

@@ -1,5 +1,3 @@
-import e from "express";
-
 const API_ROUTES = {
   DEPOSIT: '/deposit',
   WITHDRAW: '/withdraw',

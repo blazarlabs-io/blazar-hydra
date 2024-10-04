@@ -1,7 +1,9 @@
 import e from "express";
 import { API_ROUTES } from "../schemas/routes";
+import { ERRORS } from "../schemas/errors";
 
 const setRoutes = (expressApp: e.Application) => {
+  // User Routes
   expressApp.post(API_ROUTES.DEPOSIT, (req, res) => {
     res.send("Deposit ada route");
   });
@@ -18,6 +20,8 @@ const setRoutes = (expressApp: e.Application) => {
     res.send("Query funds route");
   });
 
+
+  // Admin Routes
   expressApp.post(API_ROUTES.OPEN_HEAD, (req, res) => {
     res.send("Open hydra head route");
   });

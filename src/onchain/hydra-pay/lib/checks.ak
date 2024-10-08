@@ -54,6 +54,10 @@ pub fn validate_minting(
   True
 }
 
+pub fn validate_burning(_own_policy: PolicyId, _tx: Transaction) {
+  True
+}
+
 pub fn validate_combined_commit(
   _own_hash: ScriptHash,
   _admin_key: VerificationKeyHash,

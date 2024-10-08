@@ -5,9 +5,10 @@ use cardano/assets.{PolicyId}
 use cardano/certificate.{Certificate}
 use cardano/transaction.{OutputReference, Transaction}
 use checks.{
-  validate_add_funds, validate_combined_commit, validate_combined_merge,
-  validate_combined_withdraw, validate_commit, validate_merchant_withdraw,
-  validate_merge, validate_minting, validate_pay, validate_user_withdraw,
+  validate_add_funds, validate_burning, validate_combined_commit,
+  validate_combined_merge, validate_combined_withdraw, validate_commit,
+  validate_merchant_withdraw, validate_merge, validate_minting, validate_pay,
+  validate_user_withdraw,
 }
 use types.{
   AddFunds, Burn, CombinedCommit, CombinedFundsActions, CombinedMerge,
@@ -41,7 +42,7 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
   mint(redeemer: MintRedeemer, own_policy: PolicyId, tx: Transaction) {
     when redeemer is {
       Mint { ref } -> validate_minting(ref, own_policy, tx)
-      Burn -> True
+      Burn -> validate_burning(own_policy, tx)
     }
   }
 

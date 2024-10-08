@@ -18,13 +18,28 @@ pub type FundsRedeemer {
   AddFunds
   Commit
   Merge
-  Pay {
-    amount: Int,
-    merchant_addr: Address,
-    ref: OutputReference,
-    sig: Signature,
-  }
-  Withdraw { amount: Int, ref: OutputReference, sig: Signature }
+  Pay { info: PayInfo }
+  UserWithdraw { info: WithdrawInfo }
+  MerchantWithdraw { amount: Int }
+}
+
+pub type PayInfo {
+  amount: Int,
+  merchant_addr: Address,
+  ref: OutputReference,
+  sig: Signature,
+}
+
+pub type WithdrawInfo {
+  amount: Int,
+  ref: OutputReference,
+  sig: Signature,
+}
+
+pub type CombinedFundsActions {
+  CombinedCommit
+  CombinedMerge
+  CombinedWithdraw
 }
 
 pub type MintRedeemer {

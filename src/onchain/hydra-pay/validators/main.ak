@@ -1,26 +1,59 @@
-use aiken/crypto.{Script, VerificationKeyHash}
-use cardano/address.{Credential}
+use aiken/collection/list
+use aiken/crypto.{VerificationKeyHash}
+use cardano/address.{Credential, Script}
 use cardano/assets.{PolicyId}
 use cardano/certificate.{Certificate}
 use cardano/transaction.{OutputReference, Transaction}
-use types.{FundsDatum, FundsRedeemer, MintRedeemer}
+use checks.{
+  validate_add_funds, validate_combined_commit, validate_combined_merge,
+  validate_combined_withdraw, validate_commit, validate_merchant_withdraw,
+  validate_merge, validate_minting, validate_pay, validate_user_withdraw,
+}
+use types.{
+  AddFunds, Burn, CombinedCommit, CombinedFundsActions, CombinedMerge,
+  CombinedWithdraw, Commit, FundsDatum, FundsRedeemer, MerchantWithdraw, Merge,
+  Mint, MintRedeemer, Pay, UserWithdraw,
+}
 
-validator main(_admin_key: VerificationKeyHash, _hydra_contract: Script) {
+validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
   spend(
-    _datum: Option<FundsDatum>,
-    _redeemer: FundsRedeemer,
-    _ownref: OutputReference,
-    _tx: Transaction,
+    o_datum: Option<FundsDatum>,
+    redeemer: FundsRedeemer,
+    own_ref: OutputReference,
+    tx: Transaction,
   ) {
-    True
+    expect Some(datum) = o_datum
+    expect Some(own_input) =
+      list.find(tx.inputs, fn(input) { input.output_reference == own_ref })
+
+    when redeemer is {
+      AddFunds -> validate_add_funds(datum, own_input, tx)
+      Commit -> validate_commit(datum, own_input, tx)
+      Merge -> validate_merge(own_input, tx)
+      Pay { info } -> validate_pay(info, datum, own_input, tx)
+      UserWithdraw { info } ->
+        validate_user_withdraw(info, datum, own_input, tx)
+      MerchantWithdraw { amount: _amount } ->
+        validate_merchant_withdraw(datum, own_input, tx)
+    }
   }
 
-  mint(_redeemer: MintRedeemer, _policy: PolicyId, _tx: Transaction) {
-    True
+  mint(redeemer: MintRedeemer, own_policy: PolicyId, tx: Transaction) {
+    when redeemer is {
+      Mint { ref } -> validate_minting(ref, own_policy, tx)
+      Burn -> True
+    }
   }
 
-  withdraw(_redeemer: FundsRedeemer, _account: Credential, _tx: Transaction) {
-    True
+  withdraw(redeemer: CombinedFundsActions, account: Credential, tx: Transaction) {
+    expect Script(own_hash) = account
+
+    when redeemer is {
+      CombinedCommit ->
+        validate_combined_commit(own_hash, admin_key, hydra_script, tx)
+      CombinedMerge -> validate_combined_merge(own_hash, tx)
+      CombinedWithdraw -> validate_combined_withdraw(own_hash, tx)
+    }
   }
 
   publish(_redeemer: Data, _cert: Certificate, _tx: Transaction) {

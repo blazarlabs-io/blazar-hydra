@@ -1,6 +1,6 @@
 
 import { CBORHex, LucidEvolution } from "@lucid-evolution/lucid";
-import { PayMerchantParams } from "../types";
+import { PayMerchantParams } from "../params";
 import { PayMerchantSchema } from "../../shared";
 import { payMerchant } from "../tx-builders/pay";
 

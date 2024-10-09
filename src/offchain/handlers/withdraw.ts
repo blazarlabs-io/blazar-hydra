@@ -1,7 +1,7 @@
 import { WithdrawSchema, Layer } from "../../shared";
 import { withdraw } from "../tx-builders/withdraw";
 import { CBORHex, LucidEvolution, UTxO } from "@lucid-evolution/lucid";
-import { WithdrawParams } from "../types";
+import { WithdrawParams } from "../params";
 
 async function handleWithdraw(
   lucid: LucidEvolution,

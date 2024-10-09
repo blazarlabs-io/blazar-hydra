@@ -1,5 +1,5 @@
 import { LucidEvolution, TxSignBuilder } from "@lucid-evolution/lucid";
-import { DepositParams } from "../types";
+import { DepositParams } from "../params";
 
 async function deposit(
   lucid: LucidEvolution,

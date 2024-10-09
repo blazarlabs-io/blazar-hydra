@@ -1,7 +1,7 @@
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto.{ScriptHash, VerificationKeyHash}
-use aiken/primitive/bytearray
+use aiken/primitive/bytearray.{from_int_little_endian}
 use cardano/address.{Credential, from_script}
 use cardano/assets.{
   PolicyId, from_asset, lovelace_of, quantity_of, tokens, without_lovelace,
@@ -61,6 +61,8 @@ pub fn validate_minting(
 ) {
   let OutputReference { transaction_id, output_index } = ref
 
+  let converted_index = from_int_little_endian(output_index, 2)
+
   expect [Pair(token_name, 1)] =
     tx.mint |> tokens(own_policy) |> dict.to_pairs()
 
@@ -83,8 +85,11 @@ pub fn validate_minting(
   } = o_datum_data
 
   and {
-    // TODO: FIX
-    token_name == bytearray.concat(transaction_id, "#"),
+    // Token name should be an output reference that is being consumed to make sure it is unique
+    token_name == bytearray.concat(
+      bytearray.concat(transaction_id, "#"),
+      converted_index,
+    ),
     // The reference passed by redeemer is being consumed
     list.any(tx.inputs, fn(i) { i.output_reference == ref }),
     // The script output has the correct address

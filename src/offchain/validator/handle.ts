@@ -1,6 +1,6 @@
 import { applyParamsToScript, Data, SpendingValidator, ValueGuard } from "@lucid-evolution/lucid";
 import plutusBlueprint from "../../onchain/hydra-pay/plutus.json" assert { type: "json" };
-import { CredentialSchema, CredentialT } from "../types";
+import { CredentialSchema, CredentialT } from "../lib/types";
 
 const hydraPayValidator = plutusBlueprint.validators.find(
   ({ title }) => title === "main.main.spend",

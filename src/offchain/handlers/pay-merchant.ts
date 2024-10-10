@@ -1,6 +1,6 @@
 
-import { CBORHex, LucidEvolution } from "@lucid-evolution/lucid";
-import { PayMerchantParams } from "../params";
+import { CBORHex, LucidEvolution, UTxO } from "@lucid-evolution/lucid";
+import { PayMerchantParams } from "../lib/params";
 import { PayMerchantSchema } from "../../shared";
 import { payMerchant } from "../tx-builders/pay";
 
@@ -11,11 +11,15 @@ async function handlePay(
   const {
     user_address: userAddress,
     merchant_address: merchantAddress,
-    funds_utxo_ref: fundsUtxoRef,
+    funds_utxo_ref,
     amount: amountToPay,
     signature,
   } = params;
-  const [fundsUtxo] = await lucid.utxosByOutRef([fundsUtxoRef]);
+  let fundsUtxo: UTxO | undefined = undefined;
+  if (funds_utxo_ref) {
+    const { hash: txHash, index: outputIndex } = funds_utxo_ref;
+    [fundsUtxo] = await lucid.utxosByOutRef([{ txHash, outputIndex }]);
+  }
   if (!fundsUtxo) {
     throw new Error(`Funds utxo not found`);
   }

@@ -1,5 +1,5 @@
 import { LucidEvolution, TxSignBuilder } from "@lucid-evolution/lucid";
-import { PayMerchantParams } from "../params";
+import { PayMerchantParams } from "../lib/params";
 
 async function payMerchant(
   lucid: LucidEvolution,

@@ -1,5 +1,5 @@
 import { LucidEvolution, TxSignBuilder } from "@lucid-evolution/lucid";
-import { WithdrawParams } from "../params";
+import { WithdrawParams } from "../lib/params";
 
 async function withdraw(
   lucid: LucidEvolution,

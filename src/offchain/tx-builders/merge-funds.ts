@@ -1,5 +1,5 @@
 import { LucidEvolution, TxSignBuilder } from "@lucid-evolution/lucid";
-import { MergeFundsParams } from "../params";
+import { MergeFundsParams } from "../lib/params";
 
 async function mergeFunds(
   lucid: LucidEvolution,

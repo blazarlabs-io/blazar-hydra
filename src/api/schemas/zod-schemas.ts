@@ -145,6 +145,7 @@ const ManageHeadZodSchema = z.object({
 });
 
 export {
+  Layer,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,

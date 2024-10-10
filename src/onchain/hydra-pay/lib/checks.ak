@@ -107,8 +107,11 @@ pub fn validate_minting(
   }
 }
 
-pub fn validate_burning(_own_policy: PolicyId, _tx: Transaction) {
-  True
+pub fn validate_burning(own_policy: PolicyId, tx: Transaction) {
+  tx.mint
+    |> tokens(own_policy)
+    |> dict.values()
+    |> list.all(fn(qty) { qty < 0 })
 }
 
 pub fn validate_combined_commit(

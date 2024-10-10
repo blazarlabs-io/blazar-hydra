@@ -98,6 +98,8 @@ pub fn validate_minting(
     is_verification_credential(dat_addr.payment_credential),
     // The locked_deposit is not greater than the amount of lovelaces in the value
     dat_locked_deposit < lovelace_of(o_value),
+    // TODO: Revise what is a sensible minimum here
+    dat_locked_deposit > 0,
     // Only users can deposit
     dat_funds_type == User,
     // No ref script to avoid paying excessive fees

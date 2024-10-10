@@ -3,6 +3,7 @@ import {
   fromText,
   getAddressDetails,
   LucidEvolution,
+  OutRef,
   toUnit,
   TxSignBuilder,
   validatorToAddress,
@@ -14,7 +15,7 @@ import { bech32ToAddressType } from "../lib/utils";
 async function deposit(
   lucid: LucidEvolution,
   params: DepositParams
-): Promise<TxSignBuilder> {
+): Promise<{tx: TxSignBuilder, newFundsUtxo: OutRef}> {
   const tx = lucid.newTx();
   const {
     userAddress,
@@ -57,7 +58,7 @@ async function deposit(
     funds_type: "User",
   });
 
-  const txSignBuilder = tx
+  const txSignBuilder = await tx
     .readFrom([validatorRef])
     .collectFrom(walletUtxos)
     .pay.ToContract(
@@ -66,7 +67,13 @@ async function deposit(
       { ["lovelace"]: totalAmount, [validationToken]: 1n }
     )
     .complete();
-  return txSignBuilder;
+
+  const newFundsUtxo = {
+    txHash: txSignBuilder.toHash(),
+    outputIndex: 0,
+  };
+
+  return {tx: txSignBuilder, newFundsUtxo};
 }
 
 export { deposit };

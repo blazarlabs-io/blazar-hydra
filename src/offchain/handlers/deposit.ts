@@ -10,11 +10,12 @@ import {
 import { env } from "../../config";
 import _ from "lodash";
 import { logger } from "../../logger";
+import { TxBuiltResponse } from "../../api/schemas/response";
 
 async function handleDeposit(
   lucid: LucidEvolution,
   params: DepositSchema
-): Promise<CBORHex> {
+): Promise<TxBuiltResponse> {
   try {
     const {
       user_address: userAddress,
@@ -40,8 +41,8 @@ async function handleDeposit(
       validatorRef,
       fundsUtxo,
     };
-    const unsignedTx = await deposit(localLucid, depositParams);
-    return unsignedTx.toCBOR();
+    const {tx, newFundsUtxo} = await deposit(localLucid, depositParams);
+    return {cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo};
   } catch (e) {
     if (e instanceof Error) {
       logger.error("500 /deposit - " + e.message);

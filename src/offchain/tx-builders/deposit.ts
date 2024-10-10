@@ -1,6 +1,8 @@
 import {
+  addAssets,
   Data,
   fromText,
+  fromUnit,
   getAddressDetails,
   LucidEvolution,
   OutRef,
@@ -35,22 +37,29 @@ async function deposit(
   if (!policyId) {
     throw new Error("Invalid script address");
   }
-  const validationToken = toUnit(policyId, fromText("validation_token"));
 
   // Build the transaction
   const minLvc = 2_000_000n;
   let totalAmount = amountToDeposit;
+  let validationToken = "";
   if (fundsUtxo) {
-    tx.collectFrom([fundsUtxo], Spend.AddFunds);
+    validationToken = Object.keys(fundsUtxo.assets).find(
+      (asset) => fromUnit(asset).policyId === policyId
+    ) as string;
     // Add the funds from the input UTxO, including the locked_deposit
-    totalAmount += fundsUtxo.assets["lovelace"];
+    totalAmount +=  fundsUtxo.assets["lovelace"];
+    tx.collectFrom([fundsUtxo], Spend.AddFunds);
   } else {
+    const selectedUtxo = walletUtxos[0];
     const outRef: OutputRefT = {
-      transaction_id: { hash: walletUtxos[0].txHash },
-      output_index: 0n,
+      transaction_id: { hash: selectedUtxo.txHash },
+      output_index: BigInt(selectedUtxo.outputIndex),
     };
-    tx.mintAssets({ [validationToken]: 1n }, Mint.Mint(outRef));
+    const serializedIndex = Data.to<bigint>(outRef.output_index);
+    const newTokenName = selectedUtxo.txHash + serializedIndex;
+    validationToken = toUnit(policyId, newTokenName);
     totalAmount += minLvc;
+    tx.mintAssets({ [validationToken]: 1n }, Mint.Mint(outRef));
   }
   const datum = Data.to<FundsDatumT>({
     addr: bech32ToAddressType(lucid, userAddress),

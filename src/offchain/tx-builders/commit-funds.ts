@@ -1,5 +1,5 @@
 import { LucidEvolution, TxSignBuilder } from "@lucid-evolution/lucid";
-import { CommitFundsParams } from "../types";
+import { CommitFundsParams } from "../lib/params";
 
 async function commitFunds(
   lucid: LucidEvolution,

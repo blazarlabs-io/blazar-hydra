@@ -1,7 +1,7 @@
-import { WithdrawSchema, Layer } from "../../shared";
+import { Layer, WithdrawSchema } from "../../shared";
 import { withdraw } from "../tx-builders/withdraw";
 import { CBORHex, LucidEvolution, UTxO } from "@lucid-evolution/lucid";
-import { WithdrawParams } from "../types";
+import { WithdrawParams } from "../lib/params";
 
 async function handleWithdraw(
   lucid: LucidEvolution,
@@ -10,14 +10,18 @@ async function handleWithdraw(
   const {
     address,
     amount: amountToWithdraw,
-    funds_utxo_ref: fundsUtxoRef,
+    funds_utxo_ref,
     signature,
     network_layer,
   } = params;
   if (network_layer === Layer.L1) {
     throw new Error("Unsupported network layer for operation");
   }
-  const [fundsUtxo] = await lucid.utxosByOutRef([fundsUtxoRef]);
+  let fundsUtxo: UTxO | undefined = undefined;
+  if (funds_utxo_ref) {
+    const { hash: txHash, index: outputIndex } = funds_utxo_ref;
+    [fundsUtxo] = await lucid.utxosByOutRef([{ txHash, outputIndex }]);
+  }
   if (!fundsUtxo) {
     throw new Error(`Funds utxo not found in ${network_layer.toString()}`);
   }

@@ -1,11 +1,15 @@
-import { UTxO } from "@lucid-evolution/lucid";
+import { OutRef, UTxO } from "@lucid-evolution/lucid";
+import { CredentialT } from "./types";
 
 /**
  * Tx Builders params
  */
+
 type DepositParams = {
   userAddress: string;
   amountToDeposit: bigint;
+  walletUtxos: UTxO[];
+  validatorRef: UTxO;
   fundsUtxo?: UTxO;
 };
 

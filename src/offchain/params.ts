@@ -3,6 +3,7 @@ import { UTxO } from "@lucid-evolution/lucid";
 /**
  * Tx Builders params
  */
+
 type DepositParams = {
   userAddress: string;
   amountToDeposit: bigint;

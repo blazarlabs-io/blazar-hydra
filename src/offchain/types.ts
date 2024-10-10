@@ -3,17 +3,19 @@ import { Data } from "@lucid-evolution/lucid";
 /**
  * Common Types
  */
-const Credential = Data.Enum([
+const CredentialSchema = Data.Enum([
   Data.Object({
     Verification_key_cred: Data.Object({ Key: Data.Bytes() }),
   }),
   Data.Object({ Script_cred: Data.Object({ Key: Data.Bytes() }) }),
 ]);
+type CredentialT = Data.Static<typeof CredentialSchema>;
+const Credential = CredentialSchema as unknown as CredentialT;
 const AddressSchema = Data.Object({
-  payment_credential: Credential,
+  payment_credential: CredentialSchema,
   stake_credential: Data.Nullable(
     Data.Object({
-      inline: Credential,
+      inline: CredentialSchema,
     })
   ),
 });
@@ -85,6 +87,8 @@ const MintRedeemer = MintRedeemerSchema as unknown as MintRedeemerT;
 export {
   Address,
   AddressT,
+  CredentialSchema,
+  CredentialT,
   OutputRefSchema,
   FundsType,
   FundsTypeT,

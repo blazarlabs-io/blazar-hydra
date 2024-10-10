@@ -17,6 +17,7 @@ const envSchema = z
     PROVIDER_PROJECT_ID: z.string(),
     PROVIDER_URL: z.string(),
     NETWORK: z.string(),
+    VALIDATOR_REF: z.string(),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;

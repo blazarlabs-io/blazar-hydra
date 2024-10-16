@@ -19,6 +19,7 @@ async function handleDeposit(
   try {
     const {
       user_address: userAddress,
+      public_key: publicKey,
       amount: amountToDeposit,
       funds_utxo_ref: fundsUtxoRef,
     } = params;
@@ -36,6 +37,7 @@ async function handleDeposit(
     ]);
     const depositParams: DepositParams = {
       userAddress,
+      publicKey,
       amountToDeposit,
       walletUtxos,
       validatorRef,

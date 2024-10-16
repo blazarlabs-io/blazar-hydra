@@ -1,7 +1,5 @@
 import {
-  addAssets,
   Data,
-  fromText,
   fromUnit,
   getAddressDetails,
   LucidEvolution,
@@ -21,6 +19,7 @@ async function deposit(
   const tx = lucid.newTx();
   const {
     userAddress,
+    publicKey,
     amountToDeposit,
     walletUtxos,
     validatorRef,
@@ -64,7 +63,7 @@ async function deposit(
   const datum = Data.to<FundsDatumT>({
     addr: bech32ToAddressType(lucid, userAddress),
     locked_deposit: minLvc,
-    funds_type: "User",
+    funds_type: { User: { public_key: publicKey } },
   });
 
   const txSignBuilder = await tx

@@ -5,7 +5,7 @@ import {
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
-} from "../api/schemas/zod-schemas";
+} from "../api/schemas/zod";
 
 type DepositSchema = z.infer<typeof DepositZodSchema>;
 type ManageHeadSchema = z.infer<typeof ManageHeadZodSchema>;

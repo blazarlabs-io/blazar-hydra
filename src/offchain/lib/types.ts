@@ -34,7 +34,9 @@ const OutputRef = OutputRefSchema as unknown as OutputRefT;
  *  Contract types
  */
 const FundsTypeSchema = Data.Enum([
-  Data.Literal("User"),
+  Data.Object({
+    User: Data.Object({ public_key: Data.Bytes() }),
+  }),
   Data.Literal("Merchant"),
 ]);
 type FundsTypeT = Data.Static<typeof FundsTypeSchema>;
@@ -57,7 +59,6 @@ const PayInfoSchema = Data.Object({
 type PayInfoT = Data.Static<typeof PayInfoSchema>;
 const PayInfo = PayInfoSchema as unknown as PayInfoT;
 const WithdrawInfoSchema = Data.Object({
-  amount: Data.Integer(),
   ref: OutputRefSchema,
   sig: Data.Bytes(),
 });
@@ -114,6 +115,7 @@ export {
   CombinedActionT,
   FundsType,
   FundsTypeT,
+  FundsDatumSchema,
   FundsDatum,
   FundsDatumT,
   FundsRedeemer,

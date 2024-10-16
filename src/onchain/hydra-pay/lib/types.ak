@@ -1,9 +1,9 @@
-use aiken/crypto.{Signature}
+use aiken/crypto.{Signature, VerificationKey}
 use cardano/address.{Address}
 use cardano/transaction.{OutputReference}
 
 pub type FundsType {
-  User
+  User { public_key: VerificationKey }
   Merchant
 }
 

@@ -28,7 +28,7 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
       list.find(tx.inputs, fn(input) { input.output_reference == own_ref })
 
     when redeemer is {
-      AddFunds -> validate_add_funds(datum, own_input, tx)
+      AddFunds -> validate_add_funds(own_input, tx)
       Commit -> validate_commit(datum, own_input, tx)
       Merge -> validate_merge(own_input, tx)
       Pay { info } -> validate_pay(info, datum, own_input, tx)

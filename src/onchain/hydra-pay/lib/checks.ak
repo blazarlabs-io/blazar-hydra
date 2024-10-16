@@ -1,24 +1,53 @@
 use aiken/cbor.{serialise}
-use aiken/collection/dict
+use aiken/collection/dict.{size}
 use aiken/collection/list
 use aiken/crypto.{ScriptHash, VerificationKeyHash}
 use aiken/primitive/bytearray
-use cardano/address.{Credential, from_script}
+use cardano/address.{Credential, Script, from_script}
 use cardano/assets.{
-  PolicyId, from_asset, lovelace_of, quantity_of, tokens, without_lovelace,
+  PolicyId, from_asset, lovelace_of, match, quantity_of, tokens,
+  without_lovelace,
 }
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction,
 }
+use config.{add_funds_min_lovelace}
 use types.{FundsDatum, PayInfo, User, WithdrawInfo}
 use utils.{is_verification_credential}
 
-pub fn validate_add_funds(
-  _datum: FundsDatum,
-  _own_input: Input,
-  _tx: Transaction,
-) {
-  True
+pub fn validate_add_funds(own_input: Input, tx: Transaction) {
+  // Continuing output must be the first output
+  expect [script_output, ..] = tx.outputs
+
+  let Output { address: i_address, value: i_value, datum: i_datum, .. } =
+    own_input.output
+
+  expect Script(own_hash) = i_address.payment_credential
+
+  let Output {
+    address: o_address,
+    value: o_value,
+    datum: o_datum,
+    reference_script: o_ref_script,
+  } = script_output
+
+  and {
+    // Validation token is present in the input
+    ( tokens(i_value, own_hash) |> size() ) == 1,
+    // Output value is equal to the input value, except for lovelaces that must
+    // increase by at least add_funds_min_lovelace
+    match(
+      o_value,
+      i_value,
+      fn(o_l, i_l) { o_l >= i_l + add_funds_min_lovelace },
+    ),
+    // Address doesn't change
+    o_address == i_address,
+    // Datum doesn't change
+    o_datum == i_datum,
+    // No ref script to avoid paying excessive fees
+    o_ref_script == None,
+  }
 }
 
 pub fn validate_commit(_datum: FundsDatum, _own_input: Input, _tx: Transaction) {
@@ -85,6 +114,9 @@ pub fn validate_minting(
     funds_type: dat_funds_type,
   } = o_datum_data
 
+  // Only users can deposit
+  expect User { public_key: _vk } = dat_funds_type
+
   and {
     // Token name should be an output reference that is being consumed to make sure it is unique
     token_name == bytearray.concat(transaction_id, serialized_index),
@@ -100,8 +132,6 @@ pub fn validate_minting(
     dat_locked_deposit < lovelace_of(o_value),
     // TODO: Revise what is a sensible minimum here
     dat_locked_deposit > 0,
-    // Only users can deposit
-    dat_funds_type == User,
     // No ref script to avoid paying excessive fees
     o_ref_script == None,
   }

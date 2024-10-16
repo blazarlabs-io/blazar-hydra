@@ -114,6 +114,9 @@ pub fn validate_minting(
     funds_type: dat_funds_type,
   } = o_datum_data
 
+  // Only users can deposit
+  expect User { public_key: _vk } = dat_funds_type
+
   and {
     // Token name should be an output reference that is being consumed to make sure it is unique
     token_name == bytearray.concat(transaction_id, serialized_index),
@@ -129,8 +132,6 @@ pub fn validate_minting(
     dat_locked_deposit < lovelace_of(o_value),
     // TODO: Revise what is a sensible minimum here
     dat_locked_deposit > 0,
-    // Only users can deposit
-    dat_funds_type == User,
     // No ref script to avoid paying excessive fees
     o_ref_script == None,
   }

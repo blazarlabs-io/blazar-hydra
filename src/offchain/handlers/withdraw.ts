@@ -1,8 +1,7 @@
 import { Layer, WithdrawSchema } from "../../shared";
 import { withdraw } from "../tx-builders/withdraw";
-import { LucidEvolution, selectUTxOs } from "@lucid-evolution/lucid";
+import { CBORHex, LucidEvolution, selectUTxOs } from "@lucid-evolution/lucid";
 import { WithdrawParams } from "../lib/params";
-import { TxBuiltResponse } from "../../api/schemas/response";
 import _ from "lodash";
 import { env } from "../../config";
 import { logger } from "../../logger";
@@ -10,45 +9,52 @@ import { logger } from "../../logger";
 async function handleWithdraw(
   lucid: LucidEvolution,
   params: WithdrawSchema
-): Promise<TxBuiltResponse> {
+): Promise<{ cborHex: CBORHex }> {
   try {
     const localLucid = _.cloneDeep(lucid);
     const {
       address,
       owner,
-      funds_utxo_ref: fundsUtxoRef,
+      funds_utxos_ref: fundsUtxosRef,
       signature,
       network_layer,
     } = params;
+    const {
+      ADMIN_KEY: adminKey,
+      HYDRA_KEY: hydraKey,
+      VALIDATOR_REF: vRef,
+    } = env;
 
     // Lookup funds and validator UTxOs
-    const { hash: txHash, index: outputIndex } = fundsUtxoRef;
-    const [fundsUtxo] = await localLucid.utxosByOutRef([
-      { txHash, outputIndex },
-    ]);
-    if (!fundsUtxo) {
-      throw new Error(`Funds utxo not found in ${network_layer}`);
+    const fundsRefs = fundsUtxosRef.map(({ hash, index }) => ({
+      txHash: hash,
+      outputIndex: index,
+    }));
+    const fundsUtxos = await localLucid.utxosByOutRef(fundsRefs);
+    if (fundsUtxos.length === 0) {
+      throw new Error(`Funds utxos not found in ${network_layer}`);
     }
     const [validatorRef] = await localLucid.utxosByOutRef([
-      { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+      { txHash: vRef, outputIndex: 0 },
     ]);
 
     // Prepare tx builder parameters
     let withdrawParams: WithdrawParams = {
       address,
-      fundsUtxo,
+      kind: owner,
+      fundsUtxos,
       signature,
-      validatorRef,
     };
     switch ([owner, network_layer]) {
       case ["merchant", Layer.L2]:
+        withdrawParams = { ...withdrawParams, adminKey, hydraKey };
         break;
 
       case ["user", Layer.L1]:
         const walletUtxos = await localLucid
           .utxosAt(address)
           .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
-        withdrawParams = { ...withdrawParams, walletUtxos };
+        withdrawParams = { ...withdrawParams, validatorRef, walletUtxos };
         break;
 
       default:
@@ -56,8 +62,8 @@ async function handleWithdraw(
     }
 
     // Build and return the transaction
-    const { tx, newFundsUtxo } = await withdraw(localLucid, withdrawParams);
-    return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
+    const { tx } = await withdraw(localLucid, withdrawParams);
+    return { cborHex: tx.toCBOR() };
   } catch (e) {
     if (e instanceof Error) {
       logger.error("500 /withdraw - " + e.message);

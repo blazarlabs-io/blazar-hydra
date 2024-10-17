@@ -34,7 +34,9 @@ const OutputRef = OutputRefSchema as unknown as OutputRefT;
  *  Contract types
  */
 const FundsTypeSchema = Data.Enum([
-  Data.Literal("User"),
+  Data.Object({
+    User: Data.Object({ public_key: Data.Bytes() }),
+  }),
   Data.Literal("Merchant"),
 ]);
 type FundsTypeT = Data.Static<typeof FundsTypeSchema>;
@@ -57,7 +59,6 @@ const PayInfoSchema = Data.Object({
 type PayInfoT = Data.Static<typeof PayInfoSchema>;
 const PayInfo = PayInfoSchema as unknown as PayInfoT;
 const WithdrawInfoSchema = Data.Object({
-  amount: Data.Integer(),
   ref: OutputRefSchema,
   sig: Data.Bytes(),
 });
@@ -69,7 +70,7 @@ const FundsRedeemerSchema = Data.Enum([
   Data.Literal("Merge"),
   Data.Object({ Pay: Data.Object({ info: PayInfoSchema }) }),
   Data.Object({ UserWithdraw: Data.Object({ info: WithdrawInfoSchema }) }),
-  Data.Object({ MerchantWithdraw: Data.Object({ amount: Data.Integer() }) }),
+  Data.Literal("MerchantWithdraw"),
 ]);
 type FundsRedeemerT = Data.Static<typeof FundsRedeemerSchema>;
 const FundsRedeemer = FundsRedeemerSchema as unknown as FundsRedeemerT;
@@ -81,8 +82,8 @@ namespace Spend {
     Data.to<FundsRedeemerT>({ Pay: { info } }, FundsRedeemer);
   export const UserWithdraw = (info: WithdrawInfoT) =>
     Data.to<FundsRedeemerT>({ UserWithdraw: { info } }, FundsRedeemer);
-  export const MerchantWithdraw = (amount: bigint) =>
-    Data.to<FundsRedeemerT>({ MerchantWithdraw: { amount } }, FundsRedeemer);
+  export const MerchantWithdraw =
+    Data.to<FundsRedeemerT>("MerchantWithdraw", FundsRedeemer);
 }
 
 const CombinedActionSchema = Data.Enum([
@@ -92,6 +93,14 @@ const CombinedActionSchema = Data.Enum([
 ]);
 type CombinedActionT = Data.Static<typeof CombinedActionSchema>;
 const CombinedAction = CombinedActionSchema as unknown as CombinedActionT;
+namespace Combined {
+  export const CombinedCommit =
+    Data.to<CombinedActionT>("CombinedCommit", CombinedAction);
+  export const CombinedMerge =
+    Data.to<CombinedActionT>("CombinedMerge", CombinedAction);
+  export const CombinedWithdraw =
+    Data.to<CombinedActionT>("CombinedWithdraw", CombinedAction);
+}
 
 const MintRedeemerSchema = Data.Enum([
   Data.Object({ Mint: Data.Object({ ref: OutputRefSchema }) }),
@@ -112,8 +121,10 @@ export {
   CredentialT,
   CombinedAction,
   CombinedActionT,
+  Combined,
   FundsType,
   FundsTypeT,
+  FundsDatumSchema,
   FundsDatum,
   FundsDatumT,
   FundsRedeemer,

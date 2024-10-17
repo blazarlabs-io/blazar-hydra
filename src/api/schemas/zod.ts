@@ -100,6 +100,7 @@ const addressSchema = z
 
 const DepositZodSchema = z.object({
   user_address: addressSchema,
+  public_key: z.string().regex(/^[0-9a-fA-F]/, "Public key must be a hex string"),
   amount: z.bigint(),
   funds_utxo_ref: z
     .object({
@@ -114,16 +115,16 @@ const DepositZodSchema = z.object({
 
 const WithdrawZodSchema = z.object({
   address: addressSchema,
-  amount: z.bigint(),
-  funds_utxo_ref: z.object({
+  owner: z.enum(["user", "merchant"]),
+  funds_utxos_ref: z.array(z.object({
     hash: z
       .string()
       .length(64, "Transaction hash must be 64 characters long.")
       .regex(/^[0-9a-fA-F]/, "Transaction hash must be a hex string."),
     index: z.number(),
-  }),
+  })),
   signature: z.string(),
-  network_layer: z.string(),
+  network_layer: z.enum(["L1", "L2"]),
 });
 
 const PayMerchantZodSchema = z.object({

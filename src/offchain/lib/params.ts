@@ -1,5 +1,4 @@
-import { OutRef, UTxO } from "@lucid-evolution/lucid";
-import { CredentialT } from "./types";
+import { UTxO } from "@lucid-evolution/lucid";
 
 /**
  * Tx Builders params
@@ -7,6 +6,7 @@ import { CredentialT } from "./types";
 
 type DepositParams = {
   userAddress: string;
+  publicKey: string;
   amountToDeposit: bigint;
   walletUtxos: UTxO[];
   validatorRef: UTxO;
@@ -15,9 +15,12 @@ type DepositParams = {
 
 type WithdrawParams = {
   address: string;
-  amountToWithdraw: bigint;
-  fundsUtxo: UTxO;
+  kind: "user" | "merchant";
+  fundsUtxos: UTxO[];
   signature: string;
+  adminKey?: string;
+  hydraKey?: string;
+  validatorRef?: UTxO;
   walletUtxos?: UTxO[];
 };
 

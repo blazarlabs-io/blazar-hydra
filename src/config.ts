@@ -18,6 +18,8 @@ const envSchema = z
     PROVIDER_URL: z.string(),
     NETWORK: z.string(),
     VALIDATOR_REF: z.string(),
+    ADMIN_KEY: z.string(),
+    HYDRA_KEY: z.string(),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;

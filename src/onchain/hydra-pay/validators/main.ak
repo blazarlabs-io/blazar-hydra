@@ -34,8 +34,7 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
       Pay { info } -> validate_pay(info, datum, own_input, tx)
       UserWithdraw { info } ->
         validate_user_withdraw(info, datum, own_input, tx)
-      MerchantWithdraw { amount: _amount } ->
-        validate_merchant_withdraw(datum, own_input, tx)
+      MerchantWithdraw -> validate_merchant_withdraw(datum, own_input, tx)
     }
   }
 

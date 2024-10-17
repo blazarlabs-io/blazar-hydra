@@ -20,7 +20,7 @@ pub type FundsRedeemer {
   Merge
   Pay { info: PayInfo }
   UserWithdraw { info: WithdrawInfo }
-  MerchantWithdraw { amount: Int }
+  MerchantWithdraw
 }
 
 pub type PayInfo {
@@ -31,7 +31,6 @@ pub type PayInfo {
 }
 
 pub type WithdrawInfo {
-  amount: Int,
   ref: OutputReference,
   sig: Signature,
 }

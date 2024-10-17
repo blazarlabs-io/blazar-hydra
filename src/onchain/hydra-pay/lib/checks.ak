@@ -10,7 +10,10 @@ use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
 use config.{add_funds_min_lovelace}
-use types.{CombinedWithdraw, FundsDatum, Merchant, PayInfo, User, WithdrawInfo}
+use types.{
+  CombinedMerge, CombinedWithdraw, FundsDatum, Merchant, PayInfo, User,
+  WithdrawInfo,
+}
 use utils.{
   check_withdraw_is_present, is_verification_credential,
   output_reference_to_bytestring,
@@ -55,8 +58,8 @@ pub fn validate_commit(_datum: FundsDatum, _own_input: Input, _tx: Transaction) 
   True
 }
 
-pub fn validate_merge(_own_input: Input, _tx: Transaction) {
-  True
+pub fn validate_merge(own_input: Input, tx: Transaction) {
+  check_withdraw_is_present(own_input, CombinedMerge, tx)
 }
 
 pub fn validate_pay(

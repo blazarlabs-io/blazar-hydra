@@ -36,10 +36,16 @@ async function withdraw(
   if (!policyId) {
     throw new Error("Invalid script address");
   }
+  const sortedInputs = fundsUtxos.sort((a, b) => {
+    const ref1 = {hash: a.txHash, index: a.outputIndex};
+    const ref2 = {hash: b.txHash, index: b.outputIndex};
+    const hashComparison = ref1.hash.localeCompare(ref2.hash);
+    return hashComparison !== 0 ? hashComparison : ref1.index - ref2.index;
+  });
 
-  for (let i = 0; i < fundsUtxos.length; i++) {
+  for (let i = 0; i < sortedInputs.length; i++) {
     // Build transaction values and datums
-    const fundsUtxo = fundsUtxos[i];
+    const fundsUtxo = sortedInputs[i];
     if (!fundsUtxo.datum) {
       throw new Error("Funds UTxO datum not found");
     }

@@ -1,8 +1,6 @@
-use aiken/cbor.{serialise}
 use aiken/collection/dict.{size}
 use aiken/collection/list
 use aiken/crypto.{ScriptHash, VerificationKeyHash}
-use aiken/primitive/bytearray
 use cardano/address.{Credential, Script, from_script}
 use cardano/assets.{
   PolicyId, from_asset, lovelace_of, match, quantity_of, tokens,
@@ -13,7 +11,7 @@ use cardano/transaction.{
 }
 use config.{add_funds_min_lovelace}
 use types.{FundsDatum, PayInfo, User, WithdrawInfo}
-use utils.{is_verification_credential}
+use utils.{is_verification_credential, output_reference_to_bytestring}
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
   // Continuing output must be the first output
@@ -89,9 +87,7 @@ pub fn validate_minting(
   own_policy: PolicyId,
   tx: Transaction,
 ) {
-  let OutputReference { transaction_id, output_index } = ref
-
-  let serialized_index = serialise(output_index)
+  let expected_token_name = output_reference_to_bytestring(ref)
 
   expect [Pair(token_name, 1)] =
     tx.mint |> tokens(own_policy) |> dict.to_pairs()
@@ -119,7 +115,7 @@ pub fn validate_minting(
 
   and {
     // Token name should be an output reference that is being consumed to make sure it is unique
-    token_name == bytearray.concat(transaction_id, serialized_index),
+    token_name == expected_token_name,
     // The reference passed by redeemer is being consumed
     list.any(tx.inputs, fn(i) { i.output_reference == ref }),
     // The script output has the correct address

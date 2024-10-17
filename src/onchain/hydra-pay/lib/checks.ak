@@ -1,16 +1,17 @@
 use aiken/collection/dict.{size}
 use aiken/collection/list
-use aiken/crypto.{ScriptHash, VerificationKeyHash}
-use cardano/address.{Credential, Script, from_script}
+use aiken/collection/pairs
+use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
+use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
   PolicyId, from_asset, lovelace_of, match, quantity_of, tokens,
   without_lovelace,
 }
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  InlineDatum, Input, Output, OutputReference, Transaction, Withdraw,
 }
 use config.{add_funds_min_lovelace}
-use types.{FundsDatum, PayInfo, User, WithdrawInfo}
+use types.{CombinedWithdraw, FundsDatum, Merchant, PayInfo, User, WithdrawInfo}
 use utils.{is_verification_credential, output_reference_to_bytestring}
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
@@ -65,21 +66,34 @@ pub fn validate_pay(
   True
 }
 
-pub fn validate_user_withdraw(
-  _info: WithdrawInfo,
-  _datum: FundsDatum,
-  _own_input: Input,
-  _tx: Transaction,
+pub fn validate_withdraw(
+  info: Option<WithdrawInfo>,
+  datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
 ) {
-  True
-}
+  let Input {
+    output: Output { address: Address { payment_credential: cred, .. }, .. },
+    ..
+  } = own_input
 
-pub fn validate_merchant_withdraw(
-  _datum: FundsDatum,
-  _own_input: Input,
-  _tx: Transaction,
-) {
-  True
+  // The withdraw purpose of the script is being run with the correct redeemer
+  expect Some(redeemer) = pairs.get_first(tx.redeemers, Withdraw(cred))
+  expect CombinedWithdraw = redeemer
+
+  // If the funds_type is User, the action must be authorized
+  when datum.funds_type is {
+    User { public_key } -> {
+      expect Some(WithdrawInfo { ref, sig }) = info
+      let msg = output_reference_to_bytestring(ref)
+      and {
+        verify_ed25519_signature(public_key, msg, sig),
+        list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+      }
+    }
+
+    Merchant -> True
+  }
 }
 
 pub fn validate_minting(

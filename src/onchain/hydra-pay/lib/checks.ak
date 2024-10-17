@@ -1,6 +1,5 @@
 use aiken/collection/dict.{size}
 use aiken/collection/list
-use aiken/collection/pairs
 use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
 use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
@@ -8,11 +7,14 @@ use cardano/assets.{
   without_lovelace,
 }
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, Withdraw,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
 use config.{add_funds_min_lovelace}
 use types.{CombinedWithdraw, FundsDatum, Merchant, PayInfo, User, WithdrawInfo}
-use utils.{is_verification_credential, output_reference_to_bytestring}
+use utils.{
+  check_withdraw_is_present, is_verification_credential,
+  output_reference_to_bytestring,
+}
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
   // Continuing output must be the first output
@@ -72,27 +74,24 @@ pub fn validate_withdraw(
   own_input: Input,
   tx: Transaction,
 ) {
-  let Input {
-    output: Output { address: Address { payment_credential: cred, .. }, .. },
-    ..
-  } = own_input
-
-  // The withdraw purpose of the script is being run with the correct redeemer
-  expect Some(redeemer) = pairs.get_first(tx.redeemers, Withdraw(cred))
-  expect CombinedWithdraw = redeemer
-
   // If the funds_type is User, the action must be authorized
-  when datum.funds_type is {
-    User { public_key } -> {
-      expect Some(WithdrawInfo { ref, sig }) = info
-      let msg = output_reference_to_bytestring(ref)
-      and {
-        verify_ed25519_signature(public_key, msg, sig),
-        list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+  let authorized =
+    when datum.funds_type is {
+      User { public_key } -> {
+        expect Some(WithdrawInfo { ref, sig }) = info
+        let msg = output_reference_to_bytestring(ref)
+        and {
+          verify_ed25519_signature(public_key, msg, sig),
+          list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+        }
       }
+
+      Merchant -> True
     }
 
-    Merchant -> True
+  and {
+    check_withdraw_is_present(own_input, CombinedWithdraw, tx),
+    authorized,
   }
 }
 

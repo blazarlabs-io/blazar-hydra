@@ -35,6 +35,8 @@ type PayMerchantParams = {
 type MergeFundsParams = {
   adminAddress: string;
   userFundsUtxos: UTxO[];
+  adminUtxos: UTxO[];
+  validatorRef: UTxO;
 };
 
 type CommitFundsParams = {

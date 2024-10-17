@@ -1,12 +1,97 @@
-import { LucidEvolution, TxSignBuilder } from "@lucid-evolution/lucid";
+import {
+  addAssets,
+  Data,
+  fromUnit,
+  getAddressDetails,
+  LucidEvolution,
+  OutRef,
+  TxSignBuilder,
+  validatorToAddress,
+  validatorToRewardAddress,
+} from "@lucid-evolution/lucid";
 import { MergeFundsParams } from "../lib/params";
+import { Combined, Mint, Spend } from "../lib/types";
 
 async function mergeFunds(
   lucid: LucidEvolution,
   params: MergeFundsParams
-): Promise<TxSignBuilder> {
-  const tx = await lucid.newTx().complete();
-  return tx;
+): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
+  const { userFundsUtxos, adminUtxos, validatorRef } = params;
+
+  // Script UTxO related boilerplate
+  const validator = validatorRef.scriptRef;
+  if (!validator) {
+    throw new Error("Invalid validator reference");
+  }
+  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
+  if (!policyId) {
+    throw new Error("Invalid script address");
+  }
+
+  // Build transaction values and datum
+  const userFunds = userFundsUtxos.reduce(
+    (acc, utxo) => acc + utxo.assets["lovelace"],
+    0n
+  );
+  const validationToken = Object.keys(userFundsUtxos[0].assets).find(
+    (asset) => fromUnit(asset).policyId === policyId
+  );
+  if (!validationToken) {
+    throw new Error(
+      `Couldn't find validation token in ${{
+        hash: userFundsUtxos[0].txHash,
+        index: userFundsUtxos[0].outputIndex,
+      }}`
+    );
+  }
+  const newFundsValue = {
+    lovelace: userFunds,
+    [validationToken]: 1n,
+  };
+  if (!userFundsUtxos[0].datum) {
+    throw new Error("Invalid user funds UTxO");
+  }
+
+  // Start transaction building
+  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
+  const tx = lucid
+    .newTx()
+    .readFrom([validatorRef])
+    .collectFrom(adminUtxos)
+    .collectFrom(userFundsUtxos, Spend.Merge)
+    .pay.ToContract(
+      scriptAddress,
+      { kind: "inline", value: userFundsUtxos[0].datum },
+      newFundsValue
+    )
+    .withdraw(rewardAddress, 0n, Combined.CombinedMerge);
+
+  // Burn all validation tokens but one
+  for (let i = 1; i < userFundsUtxos.length; i++) {
+    const utxo = userFundsUtxos[i];
+    const validationToken = Object.keys(utxo).find(
+      (asset) => fromUnit(asset).policyId === policyId
+    );
+    if (!validationToken) {
+      throw new Error(
+        `Couldn't find validation token in ${{
+          hash: userFundsUtxos[0].txHash,
+          index: userFundsUtxos[0].outputIndex,
+        }}`
+      );
+    }
+    tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
+  }
+
+  // Complete tx
+  const txSignBuilder = await tx.complete();
+  const newFundsUtxo = {
+    txHash: txSignBuilder.toHash(),
+    outputIndex: 0,
+  };
+
+  return { tx: txSignBuilder, newFundsUtxo };
 }
 
 export { mergeFunds };

@@ -1,20 +1,17 @@
 import {
-  credentialToAddress,
   Data,
   fromUnit,
   getAddressDetails,
   LucidEvolution,
-  OutRef,
-  RewardAddress,
   Script,
   TxSignBuilder,
   UTxO,
   validatorToAddress,
+  validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { WithdrawParams } from "../lib/params";
 import { Combined, FundsDatum, FundsDatumT, Mint, Spend } from "../lib/types";
 import { buildValidator } from "../validator/handle";
-import { env } from "../../config";
 import { dataAddressToBech32 } from "../lib/utils";
 
 async function withdraw(
@@ -83,8 +80,9 @@ async function withdraw(
     tx.attach.WithdrawalValidator(validator);
   }
 
+  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
   const txSignBuilder = await tx
-    .withdraw(scriptAddress, 0n, Combined.CombinedWithdraw)
+    .withdraw(rewardAddress, 0n, Combined.CombinedWithdraw)
     .complete();
 
   return { tx: txSignBuilder };

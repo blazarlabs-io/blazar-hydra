@@ -1,19 +1,18 @@
-use aiken/cbor.{serialise}
 use aiken/collection/dict.{size}
 use aiken/collection/list
-use aiken/crypto.{ScriptHash, VerificationKeyHash}
-use aiken/primitive/bytearray
-use cardano/address.{Credential, Script, from_script}
+use aiken/collection/pairs
+use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
+use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
-  PolicyId, from_asset, lovelace_of, match, quantity_of, tokens,
+  PolicyId, from_asset, from_lovelace, lovelace_of, match, quantity_of, tokens,
   without_lovelace,
 }
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, Withdraw,
 }
 use config.{add_funds_min_lovelace}
-use types.{FundsDatum, PayInfo, User, WithdrawInfo}
-use utils.{is_verification_credential}
+use types.{CombinedWithdraw, FundsDatum, Merchant, PayInfo, User, WithdrawInfo}
+use utils.{is_verification_credential, output_reference_to_bytestring}
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
   // Continuing output must be the first output
@@ -67,21 +66,34 @@ pub fn validate_pay(
   True
 }
 
-pub fn validate_user_withdraw(
-  _info: WithdrawInfo,
-  _datum: FundsDatum,
-  _own_input: Input,
-  _tx: Transaction,
+pub fn validate_withdraw(
+  info: Option<WithdrawInfo>,
+  datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
 ) {
-  True
-}
+  let Input {
+    output: Output { address: Address { payment_credential: cred, .. }, .. },
+    ..
+  } = own_input
 
-pub fn validate_merchant_withdraw(
-  _datum: FundsDatum,
-  _own_input: Input,
-  _tx: Transaction,
-) {
-  True
+  // The withdraw purpose of the script is being run with the correct redeemer
+  expect Some(redeemer) = pairs.get_first(tx.redeemers, Withdraw(cred))
+  expect CombinedWithdraw = redeemer
+
+  // If the funds_type is User, the action must be authorized
+  when datum.funds_type is {
+    User { public_key } -> {
+      expect Some(WithdrawInfo { ref, sig }) = info
+      let msg = output_reference_to_bytestring(ref)
+      and {
+        verify_ed25519_signature(public_key, msg, sig),
+        list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+      }
+    }
+
+    Merchant -> True
+  }
 }
 
 pub fn validate_minting(
@@ -89,9 +101,7 @@ pub fn validate_minting(
   own_policy: PolicyId,
   tx: Transaction,
 ) {
-  let OutputReference { transaction_id, output_index } = ref
-
-  let serialized_index = serialise(output_index)
+  let expected_token_name = output_reference_to_bytestring(ref)
 
   expect [Pair(token_name, 1)] =
     tx.mint |> tokens(own_policy) |> dict.to_pairs()
@@ -119,7 +129,7 @@ pub fn validate_minting(
 
   and {
     // Token name should be an output reference that is being consumed to make sure it is unique
-    token_name == bytearray.concat(transaction_id, serialized_index),
+    token_name == expected_token_name,
     // The reference passed by redeemer is being consumed
     list.any(tx.inputs, fn(i) { i.output_reference == ref }),
     // The script output has the correct address
@@ -157,6 +167,60 @@ pub fn validate_combined_merge(_own_hash: ScriptHash, _tx: Transaction) {
   True
 }
 
-pub fn validate_combined_withdraw(_own_hash: ScriptHash, _tx: Transaction) {
-  True
+pub fn validate_combined_withdraw(own_hash: ScriptHash, tx: Transaction) {
+  let Transaction { inputs, outputs, .. } = tx
+
+  let own_inputs =
+    list.filter(
+      inputs,
+      fn(i) { i.output.address.payment_credential == Script(own_hash) },
+    )
+
+  let own_outputs =
+    list.filter(
+      outputs,
+      fn(Output { address: o_address, value: o_value, .. }) {
+        // No Output should have a token with our policy
+        // This effectively makes sure that all tokens are burnt and no new ones are minted
+        expect tokens(o_value, own_hash) == dict.empty
+        o_address.payment_credential == Script(own_hash)
+      },
+    )
+
+  recursive_withdraw_checks(own_inputs, own_outputs)
+}
+
+fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
+  when (inputs, outputs) is {
+    ([], []) -> True
+    ([i, ..rest_i], [o, ..rest_o]) -> {
+      let Output { value: i_value, datum: i_datum, .. } = i.output
+
+      expect InlineDatum(i_data) = i_datum
+      expect FundsDatum { addr: i_d_addr, .. } = i_data
+
+      let Output {
+        address: o_addr,
+        value: o_value,
+        datum: o_datum,
+        reference_script: o_ref_script,
+      } = o
+
+      let expected_value = from_lovelace(lovelace_of(i_value))
+
+      and {
+        // Output address must match address stored in datum
+        o_addr == i_d_addr,
+        // Output should contain at least the stored lovelaces and no other tokens
+        match(o_value, expected_value, >=),
+        // No datum to optimize UTxO size and tx cost
+        o_datum == NoDatum,
+        // No ref script to optimize UTxO size and tx cost
+        o_ref_script == None,
+        // Continue the checks recursively
+        recursive_withdraw_checks(rest_i, rest_o),
+      }
+    }
+    _ -> False
+  }
 }

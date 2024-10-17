@@ -7,8 +7,7 @@ use cardano/transaction.{OutputReference, Transaction}
 use checks.{
   validate_add_funds, validate_burning, validate_combined_commit,
   validate_combined_merge, validate_combined_withdraw, validate_commit,
-  validate_merchant_withdraw, validate_merge, validate_minting, validate_pay,
-  validate_user_withdraw,
+  validate_merge, validate_minting, validate_pay, validate_withdraw,
 }
 use types.{
   AddFunds, Burn, CombinedCommit, CombinedFundsActions, CombinedMerge,
@@ -33,9 +32,8 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
       Merge -> validate_merge(own_input, tx)
       Pay { info } -> validate_pay(info, datum, own_input, tx)
       UserWithdraw { info } ->
-        validate_user_withdraw(info, datum, own_input, tx)
-      MerchantWithdraw { amount: _amount } ->
-        validate_merchant_withdraw(datum, own_input, tx)
+        validate_withdraw(Some(info), datum, own_input, tx)
+      MerchantWithdraw -> validate_withdraw(None, datum, own_input, tx)
     }
   }
 

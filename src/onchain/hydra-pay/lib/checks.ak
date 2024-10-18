@@ -1,5 +1,6 @@
 use aiken/collection/dict.{empty, size}
 use aiken/collection/list.{head, length}
+use aiken/collection/pairs
 use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
 use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
@@ -7,12 +8,12 @@ use cardano/assets.{
   lovelace_of, match, quantity_of, tokens, without_lovelace,
 }
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
 }
 use config.{add_funds_min_lovelace}
 use types.{
-  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum, Merchant, PayInfo,
-  User, WithdrawInfo,
+  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum, HydraCommit,
+  Merchant, PayInfo, User, WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -159,12 +160,45 @@ pub fn validate_burning(own_policy: PolicyId, tx: Transaction) {
 }
 
 pub fn validate_combined_commit(
-  _own_hash: ScriptHash,
-  _admin_key: VerificationKeyHash,
-  _hydra_script: Credential,
-  _tx: Transaction,
+  own_hash: ScriptHash,
+  admin_key: VerificationKeyHash,
+  hydra_script: Credential,
+  tx: Transaction,
 ) {
-  True
+  let Transaction { inputs, redeemers, extra_signatories, mint, .. } = tx
+
+  expect [hydra_input] =
+    list.filter(
+      inputs,
+      fn(i) { i.output.address.payment_credential == hydra_script },
+    )
+
+  let own_utxo_refs =
+    list.filter_map(
+      inputs,
+      fn(i) {
+        if i.output.address.payment_credential == Script(own_hash) {
+          Some(i.output_reference)
+        } else {
+          None
+        }
+      },
+    )
+
+  let expected_redeemer = HydraCommit { utxos_refs: own_utxo_refs }
+  let expected_redeemer_data: Data = expected_redeemer
+
+  expect Some(hydra_redeemer) =
+    pairs.get_first(redeemers, Spend(hydra_input.output_reference))
+
+  and {
+    // Hydra redeemer must contain the complete list of own input refs
+    hydra_redeemer == expected_redeemer_data,
+    // Must be authorized by the admin
+    list.any(extra_signatories, fn(sig) { sig == admin_key }),
+    // No token mint or burn under our policy
+    tokens(mint, own_hash) == empty,
+  }
 }
 
 pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {

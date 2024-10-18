@@ -69,6 +69,7 @@ async function deposit(
   const txSignBuilder = await tx
     .readFrom([validatorRef])
     .collectFrom(walletUtxos)
+    .addSigner(userAddress)
     .pay.ToContract(
       scriptAddress,
       { kind: "inline", value: datum },

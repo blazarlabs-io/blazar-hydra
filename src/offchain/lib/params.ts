@@ -28,8 +28,11 @@ type PayMerchantParams = {
   userAddress: string;
   merchantAddress: string;
   amountToPay: bigint;
-  fundsUtxo: UTxO;
+  userFundsUtxo: UTxO;
   signature: string;
+  adminKey: string;
+  hydraKey: string;
+  merchantFundsUtxo?: UTxO;
 };
 
 type MergeFundsParams = {

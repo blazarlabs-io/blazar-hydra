@@ -5,12 +5,14 @@ import { WithdrawParams } from "../lib/params";
 import _ from "lodash";
 import { env } from "../../config";
 import { logger } from "../../logger";
+import { TxBuiltResponse } from "../../api/schemas/response";
 
 async function handleWithdraw(
   lucid: LucidEvolution,
   params: WithdrawSchema
-): Promise<{ cborHex: CBORHex }> {
+): Promise<TxBuiltResponse> {
   try {
+    // TODO here lucid needs instantiation with the correct network
     const localLucid = _.cloneDeep(lucid);
     const {
       address,
@@ -63,7 +65,7 @@ async function handleWithdraw(
 
     // Build and return the transaction
     const { tx } = await withdraw(localLucid, withdrawParams);
-    return { cborHex: tx.toCBOR() };
+    return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
   } catch (e) {
     if (e instanceof Error) {
       logger.error("500 /withdraw - " + e.message);

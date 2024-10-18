@@ -1,4 +1,4 @@
-import { Data, OutRef } from "@lucid-evolution/lucid";
+import { Data } from "@lucid-evolution/lucid";
 
 /**
  * Common Types

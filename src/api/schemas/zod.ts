@@ -139,6 +139,13 @@ const PayMerchantZodSchema = z.object({
   }),
   amount: z.bigint(),
   signature: z.string(),
+  merchant_funds_utxo: z.object({
+    hash: z
+      .string()
+      .length(64, "Transaction hash must be 64 characters long.")
+      .regex(/^[0-9a-fA-F]/, "Transaction hash must be a hex string."),
+    index: z.number(),
+  }).optional(),
 });
 
 const ManageHeadZodSchema = z.object({

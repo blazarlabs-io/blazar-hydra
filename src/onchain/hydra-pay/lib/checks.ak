@@ -1,18 +1,23 @@
-use aiken/collection/dict.{size}
-use aiken/collection/list
-use aiken/collection/pairs
+use aiken/collection/dict.{empty, size}
+use aiken/collection/list.{head, length}
 use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
 use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
-  PolicyId, from_asset, from_lovelace, lovelace_of, match, quantity_of, tokens,
-  without_lovelace,
+  PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
+  lovelace_of, match, quantity_of, tokens, without_lovelace,
 }
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, Withdraw,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
 use config.{add_funds_min_lovelace}
-use types.{CombinedWithdraw, FundsDatum, Merchant, PayInfo, User, WithdrawInfo}
-use utils.{is_verification_credential, output_reference_to_bytestring}
+use types.{
+  CombinedMerge, CombinedWithdraw, FundsDatum, Merchant, PayInfo, User,
+  WithdrawInfo,
+}
+use utils.{
+  check_withdraw_is_present, is_verification_credential,
+  output_reference_to_bytestring,
+}
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
   // Continuing output must be the first output
@@ -53,8 +58,8 @@ pub fn validate_commit(_datum: FundsDatum, _own_input: Input, _tx: Transaction) 
   True
 }
 
-pub fn validate_merge(_own_input: Input, _tx: Transaction) {
-  True
+pub fn validate_merge(own_input: Input, tx: Transaction) {
+  check_withdraw_is_present(own_input, CombinedMerge, tx)
 }
 
 pub fn validate_pay(
@@ -72,27 +77,24 @@ pub fn validate_withdraw(
   own_input: Input,
   tx: Transaction,
 ) {
-  let Input {
-    output: Output { address: Address { payment_credential: cred, .. }, .. },
-    ..
-  } = own_input
-
-  // The withdraw purpose of the script is being run with the correct redeemer
-  expect Some(redeemer) = pairs.get_first(tx.redeemers, Withdraw(cred))
-  expect CombinedWithdraw = redeemer
-
   // If the funds_type is User, the action must be authorized
-  when datum.funds_type is {
-    User { public_key } -> {
-      expect Some(WithdrawInfo { ref, sig }) = info
-      let msg = output_reference_to_bytestring(ref)
-      and {
-        verify_ed25519_signature(public_key, msg, sig),
-        list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+  let authorized =
+    when datum.funds_type is {
+      User { public_key } -> {
+        expect Some(WithdrawInfo { ref, sig }) = info
+        let msg = output_reference_to_bytestring(ref)
+        and {
+          verify_ed25519_signature(public_key, msg, sig),
+          list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+        }
       }
+
+      Merchant -> True
     }
 
-    Merchant -> True
+  and {
+    check_withdraw_is_present(own_input, CombinedWithdraw, tx),
+    authorized,
   }
 }
 
@@ -163,8 +165,51 @@ pub fn validate_combined_commit(
   True
 }
 
-pub fn validate_combined_merge(_own_hash: ScriptHash, _tx: Transaction) {
-  True
+pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
+  let Transaction { inputs, outputs, .. } = tx
+
+  let own_inputs =
+    list.filter(
+      inputs,
+      fn(i) { i.output.address.payment_credential == Script(own_hash) },
+    )
+
+  // Calculate funds to be merged
+  let sum_of_lovelace =
+    list.foldl(own_inputs, 0, fn(i, acc) { acc + lovelace_of(i.output.value) })
+
+  // Get first input to copy over datum
+  expect Some(first_input) = head(own_inputs)
+
+  // Only one output allowed to have a token of ours
+  expect [
+    Output {
+      address: o_addr,
+      value: o_value,
+      datum: o_datum,
+      reference_script: o_ref_script,
+    },
+  ] = list.filter(outputs, fn(o) { tokens(o.value, own_hash) != empty })
+
+  // This output should have adas and only one of our tokens
+  expect [(fst_pol, fst_an, fst_qty), (snd_pol, _snd_tn, 1)] = flatten(o_value)
+
+  and {
+    // All inputs must have the same datum
+    list.all(own_inputs, fn(i) { i.output.datum == first_input.output.datum }),
+    // More than one input to avoid DDoS
+    length(own_inputs) > 1,
+    // Output must be paid to our script
+    o_addr.payment_credential == Script(own_hash),
+    // Make sure that the output value contains enough ada and one token
+    (fst_pol, fst_an) == (ada_policy_id, ada_asset_name),
+    fst_qty >= sum_of_lovelace,
+    snd_pol == own_hash,
+    // Make sure datum is copied over
+    o_datum == first_input.output.datum,
+    // No ref script to avoid paying excessive fees
+    o_ref_script == None,
+  }
 }
 
 pub fn validate_combined_withdraw(own_hash: ScriptHash, tx: Transaction) {

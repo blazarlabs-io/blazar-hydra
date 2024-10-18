@@ -45,3 +45,8 @@ pub type MintRedeemer {
   Mint { ref: OutputReference }
   Burn
 }
+
+pub type MockHydraRedeemer {
+  HydraDummy
+  HydraCommit { utxos_refs: List<OutputReference> }
+}

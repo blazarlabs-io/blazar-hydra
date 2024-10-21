@@ -1,4 +1,4 @@
-import { applyParamsToScript, Data, SpendingValidator, ValueGuard } from "@lucid-evolution/lucid";
+import { applyDoubleCborEncoding, applyParamsToScript, Data, SpendingValidator, ValueGuard } from "@lucid-evolution/lucid";
 import plutusBlueprint from "../../onchain/hydra-pay/plutus.json" assert { type: "json" };
 import { CredentialSchema, CredentialT } from "../lib/types";
 
@@ -18,7 +18,7 @@ function buildValidator(
   hydra_script: CredentialT,
 ): SpendingValidator {
   const appliedValidator = applyParamsToScript<ValidatorParamT>(
-    hydraScript,
+    applyDoubleCborEncoding(hydraScript),
     [admin_key, hydra_script],
     ValidatorParam as unknown as ValidatorParamT,
   );

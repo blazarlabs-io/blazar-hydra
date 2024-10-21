@@ -6,9 +6,10 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "nodemon ./api/index.ts",
+    "dev": "tsx watch ./api/index.ts",
     "start": "NODE_OPTIONS='--experimental-specifier-resolution=node' node ./build/api/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tx": "tsx offchain/test/test-tx.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -22,6 +23,8 @@
   },
   "dependencies": {
     "@lucid-evolution/lucid": "^0.3.44",
+    "cbor": "^9.0.2",
+    "cbor2": "^1.7.0",
     "cors": "^2.8.5",
     "express": "^5.0.0",
     "figlet": "^1.7.0",
@@ -30,6 +33,7 @@
     "nodemon": "^3.1.7",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
+    "tsx": "^4.19.1",
     "zod": "^3.23.8"
   }
 }

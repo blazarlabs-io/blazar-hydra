@@ -61,7 +61,7 @@ async function withdraw(
     const withdrawInfo = {
       sig: signature,
       ref: {
-        transaction_id: { hash: fundsUtxo.txHash },
+        transaction_id: fundsUtxo.txHash,
         output_index: BigInt(fundsUtxo.outputIndex),
       },
     };

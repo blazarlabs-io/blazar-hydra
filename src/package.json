@@ -9,9 +9,11 @@
     "dev": "tsx watch ./api/index.ts",
     "start": "NODE_OPTIONS='--experimental-specifier-resolution=node' node ./build/api/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "tx": "tsx offchain/test/test-tx.ts"
+    "tx": "tsx offchain/test/test-tx.ts",
+    "deploy": "tsx offchain/handlers/deploy-validator.ts"
   },
   "devDependencies": {
+    "@types/blake2b": "^2.1.3",
     "@types/cors": "^2.8.17",
     "@types/dotenv": "^8.2.0",
     "@types/express": "^5.0.0",
@@ -23,6 +25,8 @@
   },
   "dependencies": {
     "@lucid-evolution/lucid": "^0.3.44",
+    "bip39": "^3.1.0",
+    "blake2b": "^2.1.4",
     "cbor": "^9.0.2",
     "cbor2": "^1.7.0",
     "cors": "^2.8.5",

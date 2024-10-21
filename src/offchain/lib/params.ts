@@ -44,8 +44,8 @@ type MergeFundsParams = {
 
 type CommitFundsParams = {
   adminAddress: string;
-  hydraInitUtxo: UTxO;
   userFundUtxos: UTxO[];
+  validatorRefUtxo: UTxO;
 };
 
 export {

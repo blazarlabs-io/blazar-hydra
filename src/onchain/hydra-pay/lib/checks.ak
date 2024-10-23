@@ -1,7 +1,9 @@
 use aiken/collection/dict.{empty, size}
 use aiken/collection/list.{head, length}
 use aiken/collection/pairs
-use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
+use aiken/crypto.{
+  ScriptHash, VerificationKeyHash, blake2b_224, verify_ed25519_signature,
+}
 use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
@@ -130,25 +132,32 @@ pub fn validate_minting(
   } = o_datum_data
 
   // Only users can deposit
-  expect User { public_key: _vk } = dat_funds_type
+  expect User { public_key } = dat_funds_type
+
+  let hashed_public_key = blake2b_224(public_key)
 
   and {
+    // The public key stored in the datum must sign the transaction to prove ownership
+    list.any(
+      tx.extra_signatories,
+      fn(signatory) { signatory == hashed_public_key },
+    )?,
     // Token name should be an output reference that is being consumed to make sure it is unique
     token_name == expected_token_name,
     // The reference passed by redeemer is being consumed
-    list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+    list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
     // The script output has the correct address
-    o_address == from_script(own_policy),
+    (o_address == from_script(own_policy))?,
     // The script value only has lovelaces and the minted token
-    without_lovelace(o_value) == from_asset(own_policy, token_name, 1),
+    (without_lovelace(o_value) == from_asset(own_policy, token_name, 1))?,
     // Make sure the address stored in the datum can sign messages for the rest of the operations
-    is_verification_credential(dat_addr.payment_credential),
+    is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value
-    dat_locked_deposit < lovelace_of(o_value),
+    (dat_locked_deposit < lovelace_of(o_value))?,
     // TODO: Revise what is a sensible minimum here
-    dat_locked_deposit > 0,
+    (dat_locked_deposit > 0)?,
     // No ref script to avoid paying excessive fees
-    o_ref_script == None,
+    (o_ref_script == None)?,
   }
 }
 

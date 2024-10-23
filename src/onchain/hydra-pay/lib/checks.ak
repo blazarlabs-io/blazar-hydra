@@ -1,4 +1,4 @@
-use aiken/collection/dict.{empty, size}
+use aiken/collection/dict.{empty, size, to_pairs}
 use aiken/collection/list.{head, length}
 use aiken/collection/pairs
 use aiken/crypto.{
@@ -14,13 +14,13 @@ use cardano/transaction.{
 }
 use config.{add_funds_min_lovelace}
 use types.{
-  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
+  AddFunds, CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
   HaskellOutputReference, HaskellTransactionId, HydraCommit, Merchant, PayInfo,
   User, WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
-  output_reference_to_bytestring,
+  output_reference_to_bytestring, pay_info_to_bytestring,
 }
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
@@ -69,12 +69,171 @@ pub fn validate_merge(own_input: Input, tx: Transaction) {
 }
 
 pub fn validate_pay(
-  _info: PayInfo,
-  _datum: FundsDatum,
-  _own_input: Input,
-  _tx: Transaction,
+  info: PayInfo,
+  datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
 ) {
-  True
+  let Transaction { inputs, outputs, redeemers, mint, .. } = tx
+  expect Input {
+    output: Output {
+      address: Address { payment_credential: Script(own_hash), .. },
+      value: u_i_value,
+      datum: u_i_datum,
+      ..
+    },
+    output_reference: u_i_ref,
+  } = own_input
+
+  // The script UTxO being validated has User funds_type
+  expect User { public_key } = datum.funds_type
+
+  let PayInfo {
+    amount: red_amount,
+    merchant_addr: red_merchant_addr,
+    ref: red_ref,
+    sig: red_sig,
+  } = info
+
+  let msg = pay_info_to_bytestring(info)
+
+  let own_inputs =
+    list.filter(
+      inputs,
+      fn(i) { i.output.address.payment_credential == Script(own_hash) },
+    )
+
+  let (m_i_funds, m_i_datum) =
+    when own_inputs is {
+      [_user_input] -> (0, None)
+      // At most, one other input at the script address is present.
+      // This input is considered the Merchant Funds input
+      [input1, input2] -> {
+        let merchant_input =
+          if input1 == own_input {
+            input2
+          } else {
+            input1
+          }
+
+        let Input {
+          output_reference: m_o_ref,
+          output: Output {
+            address: m_i_addr,
+            value: m_i_value,
+            datum: m_i_datum,
+            ..
+          },
+        } = merchant_input
+
+        expect InlineDatum(m_i_dat_data) = m_i_datum
+        expect FundsDatum { addr: m_dat_addr, funds_type: m_dat_f_type, .. } =
+          m_i_dat_data
+
+        // The Merchant Funds input has the validation token
+        expect [Pair(_, 1)] = tokens(m_i_value, own_hash) |> to_pairs()
+
+        // The Merchant Funds input is being consumed with the AddFunds redeemer
+        expect Some(m_i_redeemer_data) =
+          pairs.get_first(redeemers, Spend(m_o_ref))
+        expect AddFunds = m_i_redeemer_data
+
+        expect and {
+            m_i_addr.payment_credential == Script(own_hash),
+            // The Merchant Funds input has the same address in the datum than
+            // the merchantAddr passed by redeemer
+            m_dat_addr == red_merchant_addr,
+            // The Merchant Funds input has the Merchant funds_type
+            m_dat_f_type == Merchant,
+          }
+        (lovelace_of(m_i_value), Some(m_i_dat_data))
+      }
+
+      _ -> fail
+    }
+
+  // The first output is the Merchant Funds output
+  // The second output is the Remaining User Funds UTxO
+  expect [merchant_output,
+    user_output] =
+    list.filter(
+      outputs,
+      fn(o) { o.address.payment_credential == Script(own_hash) },
+    )
+
+  let Output {
+    address: m_o_addr,
+    value: m_o_value,
+    datum: m_o_datum,
+    reference_script: m_o_ref_script,
+  } = merchant_output
+
+  let Output {
+    address: u_o_addr,
+    value: u_o_value,
+    datum: u_o_datum,
+    reference_script: u_o_ref_script,
+  } = user_output
+
+  let merchant_correct_datum =
+    when m_i_datum is {
+      Some(data) -> m_o_datum == InlineDatum(data)
+      None -> {
+        let expected_datum =
+          FundsDatum {
+            addr: red_merchant_addr,
+            locked_deposit: 0,
+            funds_type: Merchant,
+          }
+        let expected_datum_data: Data = expected_datum
+        m_o_datum == InlineDatum(expected_datum_data)
+      }
+    }
+
+  let expected_merchant_funds = m_i_funds + red_amount
+
+  // If there's no Merchant Funds input, a new validation token must be minted
+  let mint_correct =
+    when m_i_datum is {
+      None -> {
+        let expected_token_name = output_reference_to_bytestring(u_i_ref)
+
+        expect [Pair(token_name, 1)] =
+          tx.mint |> tokens(own_hash) |> dict.to_pairs()
+        expected_token_name == token_name
+      }
+      Some(_) -> tokens(mint, own_hash) == empty
+    }
+
+  // The Merchant Funds output has the validation token
+  expect [Pair(_m_token_name, 1)] = tokens(m_o_value, own_hash) |> to_pairs()
+  expect [Pair(_u_token_name, 1)] = tokens(u_o_value, own_hash) |> to_pairs()
+
+  and {
+    // The msg and signature from the redeemer validate against the user vkey stored in the datum
+    verify_ed25519_signature(public_key, msg, red_sig),
+    // The ref stored in the redeemer msg is being spent
+    list.any(inputs, fn(i) { i.output_reference == red_ref }),
+    m_o_addr.payment_credential == Script(own_hash),
+    // Remaining User Funds address must be the same as User Funds UTxO
+    u_o_addr.payment_credential == Script(own_hash),
+    // The amount of lovelaces of the Merchant Funds output is the same as the
+    // amount specified in the Pay redeemer plus the Merchant Funds input (If present)
+    lovelace_of(m_o_value) >= expected_merchant_funds,
+    // The User Funds output must have at least the original amount of lovelaces
+    // minus the amount specified in the redeemer
+    match(
+      u_o_value,
+      u_i_value,
+      fn(o_lov, i_lov) { o_lov >= i_lov - red_amount },
+    ),
+    merchant_correct_datum,
+    u_o_datum == u_i_datum,
+    m_o_ref_script == None,
+    // Remaining User Funds datum must be the same as User Funds UTxO
+    u_o_ref_script == None,
+    mint_correct,
+  }
 }
 
 pub fn validate_withdraw(

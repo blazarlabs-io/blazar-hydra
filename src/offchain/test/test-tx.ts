@@ -10,57 +10,9 @@ import {
 } from "@lucid-evolution/lucid";
 import { env } from "../../config";
 import { handleDeposit } from "../handlers/deposit";
-import { mnemonicToEntropy } from "bip39";
 import { commitFunds } from "../tx-builders/commit-funds";
-import { logger } from "../../logger";
-
-function getPrivateKey(
-  seed: string,
-  options: {
-    password?: string;
-    addressType?: "Base" | "Enterprise";
-    accountIndex?: number;
-    network?: Network;
-  } = { addressType: "Base", accountIndex: 0, network: "Mainnet" }
-): CML.PrivateKey {
-  function harden(num: number): number {
-    if (typeof num !== "number") throw new Error("Type number required here!");
-    return 0x80000000 + num;
-  }
-
-  const entropy = mnemonicToEntropy(seed);
-  const rootKey = CML.Bip32PrivateKey.from_bip39_entropy(
-    fromHex(entropy),
-    options.password
-      ? new TextEncoder().encode(options.password)
-      : new Uint8Array()
-  );
-
-  const accountKey = rootKey
-    .derive(harden(1852))
-    .derive(harden(1815))
-    .derive(harden(options.accountIndex!));
-
-  const paymentKey = accountKey.derive(0).derive(0).to_raw_key();
-  return paymentKey;
-}
-
-async function waitForUtxosUpdate(lucid: LucidEvolution, txId: string): Promise<void> {
-  let userUtxosUpdated = false;
-  let scriptUtxoUpdated = false;
-  while (!userUtxosUpdated || !scriptUtxoUpdated) {
-    logger.info("Waiting for utxos update...");
-    await new Promise((r) => setTimeout(r, 10000));
-    const utxos = await lucid.wallet().getUtxos();
-    const scriptUtxos = await lucid.utxosByOutRef([
-      { txHash: txId, outputIndex: 0 },
-    ]);
-    userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
-    scriptUtxoUpdated = scriptUtxos.length !== 0;
-  }
-  // wait for 20 more seconds because sometimes it is insufficient
-  await new Promise((r) => setTimeout(r, 20000));
-}
+import { getPrivateKey, waitForUtxosUpdate } from "../lib/utils";
+import { HydraHandler, lucidUtxoToHydraUtxo } from "../lib/hydra";
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
@@ -71,36 +23,101 @@ lucid.selectWallet.fromSeed(adminSeed);
 const adminAddress = await lucid.wallet().address();
 const publicKey = toHex(getPrivateKey(adminSeed).to_public().to_raw_bytes());
 
-// let funds: OutRef[] = [];
-// for (let i = 0; i < 2; i++) {
-//   console.log(`Creating a funds utxo with 10 ADA`);
-//   const depTx = await handleDeposit(lucid, {
-//     user_address: adminAddress,
-//     public_key: publicKey,
-//     amount: 10_000_000n,
-//   });
-//   const signedTx = await lucid
-//     .fromTx(depTx.cborHex)
-//     .sign.withWallet()
-//     .complete();
-//   const txHash = await signedTx.submit();
-//   console.log(`Submitted deposit tx with hash: ${txHash}`);
-//   funds.push(depTx.fundsUtxoRef!);
-//   await waitForUtxosUpdate(lucid, txHash);
-// }
+const openHead = async () => {
+  let funds: OutRef[] = [];
+  for (let i = 0; i < 2; i++) {
+    console.log(`Creating a funds utxo with 10 ADA`);
+    const depTx = await handleDeposit(lucid, {
+      user_address: adminAddress,
+      public_key: publicKey,
+      amount: 10_000_000n,
+    });
+    const signedTx = await lucid
+      .fromTx(depTx.cborHex)
+      .sign.withWallet()
+      .complete();
+    const txHash = await signedTx.submit();
+    console.log(`Submitted deposit tx with hash: ${txHash}`);
+    funds.push(depTx.fundsUtxoRef!);
+    await waitForUtxosUpdate(lucid, txHash);
+  }
+  const userFundUtxos = await lucid.utxosByOutRef(
+    funds.map((outref) => ({ txHash: outref.txHash, outputIndex: 0 }))
+  );
 
-const fundsIds = [
-  "394f068ed0184bdbee25840401934bc4b9207c53182eb406508b353500117d30",
-  "1296b1f127d815bbb5037df8b54cdaae3f5b3d15cfb838180cd3fafecd7ae265"
-]
-const userFundUtxos = await lucid.utxosByOutRef(fundsIds.map((id) => ({ txHash: id, outputIndex: 0 })));
-const [validatorRef] = await lucid.utxosByOutRef([
-  { txHash: env.VALIDATOR_REF, outputIndex: 0 },
-]);
-const commitTx = await commitFunds(lucid, {
-  adminAddress: adminAddress,
-  userFundUtxos,
-  validatorRefUtxo: validatorRef
-})
+  // const fundsIds = [
+  //   "  ",
+  //   "1bf91d5bd031bdc8b7aea44ff2f61f75d04677614750974a99d1a31a22220b3a"
+  // ]
+  // const userFundUtxos = await lucid.utxosByOutRef(fundsIds.map((id) => ({ txHash: id, outputIndex: 0 })));
 
-console.log(commitTx.tx.toCBOR());
+  const [validatorRef] = await lucid.utxosByOutRef([
+    { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+  ]);
+
+  const commitTxAlice = await commitFunds(lucid, {
+    adminAddress: adminAddress,
+    userFundUtxos: [userFundUtxos[0]],
+    validatorRefUtxo: validatorRef,
+  });
+
+  const commitTxBob = await commitFunds(lucid, {
+    adminAddress: adminAddress,
+    userFundUtxos: [userFundUtxos[1]],
+    validatorRefUtxo: validatorRef,
+  });
+
+  /// Connect to hydra node
+  const aliceUrl = "ws://127.0.0.1:4001";
+  const bobUrl = "ws://127.0.0.1:4002";
+  const hydra = new HydraHandler(lucid, aliceUrl);
+  const initTag = await hydra.init();
+  if (initTag !== "HeadIsInitializing") {
+    throw new Error("Something went wrong when initializing the hydra head");
+  }
+
+  // Send commits to hydra node
+  const utxos1: [string, any] = [
+    userFundUtxos[0].txHash + "#" + userFundUtxos[0].outputIndex,
+    lucidUtxoToHydraUtxo(userFundUtxos[0]),
+  ];
+  const aliceCommitTxId = await hydra.sendCommit({
+    peerHost: bobUrl,
+    blueprint: commitTxAlice.tx.toCBOR(),
+    utxos: utxos1,
+  });
+  console.log(`Alice commit transaction submitted! tx id: ${aliceCommitTxId}`);
+  const aliceCommitTag = await hydra.listen("Commited");
+  if (aliceCommitTag !== "Commited") {
+    throw new Error("Alice commit was not confirmed");
+  }
+
+  const utxos2: [string, any] = [
+    userFundUtxos[1].txHash + "#" + userFundUtxos[1].outputIndex,
+    lucidUtxoToHydraUtxo(userFundUtxos[1]),
+  ];
+  const bobCommitTxId = await hydra.sendCommit({
+    peerHost: aliceUrl,
+    blueprint: commitTxBob.tx.toCBOR(),
+    utxos: utxos2,
+  });
+  console.log(`Bob commit transaction submitted! tx id: ${bobCommitTxId}`);
+  const bobCommitTag = await hydra.listen("Commited");
+  if (bobCommitTag !== "Commited") {
+    throw new Error("Bob commit was not confirmed");
+  }
+
+  const openHeadTag = await hydra.listen("HeadIsOpen");
+  if (openHeadTag !== "HeadIsOpen") {
+    throw new Error("Head was not opened");
+  }
+};
+
+// const [someUtxo] = await lucid.utxosByOutRef([
+//   {
+//     txHash: "2ef04411c87117f715bbe94c77998022178a0ed678d6912dd12c24214685a0c7",
+//     outputIndex: 0,
+//   },
+// ]);
+
+// console.log(lucidUtxoToHydraUtxo(someUtxo));

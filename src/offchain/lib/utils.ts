@@ -1,9 +1,14 @@
 import {
+  CML,
   credentialToAddress,
+  fromHex,
   getAddressDetails,
   LucidEvolution,
+  Network,
 } from "@lucid-evolution/lucid";
 import { AddressT } from "./types";
+import { mnemonicToEntropy } from "bip39";
+import { logger } from "../../logger";
 
 function dataAddressToBech32(lucid: LucidEvolution, add: AddressT): string {
   const paymentCred = add.payment_credential;
@@ -50,4 +55,60 @@ function bech32ToAddressType(lucid: LucidEvolution, add: string): AddressT {
   };
 }
 
-export { dataAddressToBech32, bech32ToAddressType };
+function getPrivateKey(
+  seed: string,
+  options: {
+    password?: string;
+    addressType?: "Base" | "Enterprise";
+    accountIndex?: number;
+    network?: Network;
+  } = { addressType: "Base", accountIndex: 0, network: "Mainnet" }
+): CML.PrivateKey {
+  function harden(num: number): number {
+    if (typeof num !== "number") throw new Error("Type number required here!");
+    return 0x80000000 + num;
+  }
+
+  const entropy = mnemonicToEntropy(seed);
+  const rootKey = CML.Bip32PrivateKey.from_bip39_entropy(
+    fromHex(entropy),
+    options.password
+      ? new TextEncoder().encode(options.password)
+      : new Uint8Array()
+  );
+
+  const accountKey = rootKey
+    .derive(harden(1852))
+    .derive(harden(1815))
+    .derive(harden(options.accountIndex!));
+
+  const paymentKey = accountKey.derive(0).derive(0).to_raw_key();
+  return paymentKey;
+}
+
+async function waitForUtxosUpdate(
+  lucid: LucidEvolution,
+  txId: string
+): Promise<void> {
+  let userUtxosUpdated = false;
+  let scriptUtxoUpdated = false;
+  while (!userUtxosUpdated || !scriptUtxoUpdated) {
+    logger.info("Waiting for utxos update...");
+    await new Promise((r) => setTimeout(r, 10000));
+    const utxos = await lucid.wallet().getUtxos();
+    const scriptUtxos = await lucid.utxosByOutRef([
+      { txHash: txId, outputIndex: 0 },
+    ]);
+    userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
+    scriptUtxoUpdated = scriptUtxos.length !== 0;
+  }
+  // wait for 20 more seconds because sometimes it is insufficient
+  await new Promise((r) => setTimeout(r, 20000));
+}
+
+export {
+  dataAddressToBech32,
+  bech32ToAddressType,
+  getPrivateKey,
+  waitForUtxosUpdate,
+};

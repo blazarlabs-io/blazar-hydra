@@ -93,7 +93,7 @@ async function waitForUtxosUpdate(
   let userUtxosUpdated = false;
   let scriptUtxoUpdated = false;
   while (!userUtxosUpdated || !scriptUtxoUpdated) {
-    logger.info("Waiting for utxos update...");
+    console.info("Waiting for utxos update...");
     await new Promise((r) => setTimeout(r, 10000));
     const utxos = await lucid.wallet().getUtxos();
     const scriptUtxos = await lucid.utxosByOutRef([

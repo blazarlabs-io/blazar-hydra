@@ -132,19 +132,29 @@ pub fn validate_minting(
     funds_type: dat_funds_type,
   } = o_datum_data
 
-  // Only users can deposit
-  expect User { public_key } = dat_funds_type
-
-  let hashed_public_key = blake2b_224(public_key)
+  let funds_type_valid =
+    when dat_funds_type is {
+      User { public_key } -> {
+        let hashed_public_key = blake2b_224(public_key)
+        and {
+          // The public key stored in the datum must sign the transaction to prove ownership
+          list.any(
+            tx.extra_signatories,
+            fn(signatory) { signatory == hashed_public_key },
+          )?,
+          // TODO: Revise what is a sensible minimum here, users must have some deposit
+          (dat_locked_deposit > 0)?,
+        }
+      }
+      Merchant ->
+        // Merchants won't pay so they don't neccesarily need a deposit
+        // must still prevent negative numbers
+        (dat_locked_deposit >= 0)?
+    }
 
   and {
-    // The public key stored in the datum must sign the transaction to prove ownership
-    list.any(
-      tx.extra_signatories,
-      fn(signatory) { signatory == hashed_public_key },
-    )?,
     // Token name should be an output reference that is being consumed to make sure it is unique
-    token_name == expected_token_name,
+    (token_name == expected_token_name)?,
     // The reference passed by redeemer is being consumed
     list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
     // The script output has the correct address
@@ -155,10 +165,10 @@ pub fn validate_minting(
     is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value
     (dat_locked_deposit < lovelace_of(o_value))?,
-    // TODO: Revise what is a sensible minimum here
-    (dat_locked_deposit > 0)?,
     // No ref script to avoid paying excessive fees
     (o_ref_script == None)?,
+    // Validations change depending on the funds_type
+    funds_type_valid?,
   }
 }
 

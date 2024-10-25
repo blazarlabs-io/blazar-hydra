@@ -14,8 +14,9 @@ use cardano/transaction.{
 }
 use config.{add_funds_min_lovelace}
 use types.{
-  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum, HydraCommit,
-  Merchant, PayInfo, User, WithdrawInfo,
+  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
+  HaskellOutputReference, HaskellTransactionId, HydraCommit, Merchant, PayInfo,
+  User, WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -187,7 +188,14 @@ pub fn validate_combined_commit(
       inputs,
       fn(i) {
         if i.output.address.payment_credential == Script(own_hash) {
-          Some(i.output_reference)
+          let h_tx_id: HaskellTransactionId =
+            HaskellTransactionId { tx_hash: i.output_reference.transaction_id }
+          let h_ref =
+            HaskellOutputReference {
+              transaction_id: h_tx_id,
+              output_index: i.output_reference.output_index,
+            }
+          Some(h_ref)
         } else {
           None
         }

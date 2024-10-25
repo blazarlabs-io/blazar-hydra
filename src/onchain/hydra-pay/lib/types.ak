@@ -1,6 +1,6 @@
-use aiken/crypto.{Signature, VerificationKey}
+use aiken/crypto.{Blake2b_256, Hash, Signature, VerificationKey}
 use cardano/address.{Address}
-use cardano/transaction.{OutputReference}
+use cardano/transaction.{OutputReference, Transaction}
 
 pub type FundsType {
   User { public_key: VerificationKey }
@@ -48,5 +48,14 @@ pub type MintRedeemer {
 
 pub type MockHydraRedeemer {
   HydraDummy
-  HydraCommit { utxos_refs: List<OutputReference> }
+  HydraCommit { utxos_refs: List<HaskellOutputReference> }
+}
+
+pub type HaskellOutputReference {
+  transaction_id: HaskellTransactionId,
+  output_index: Int,
+}
+
+pub type HaskellTransactionId {
+  tx_hash: Hash<Blake2b_256, Transaction>,
 }

@@ -9,7 +9,7 @@
     "dev": "tsx watch ./api/index.ts",
     "start": "NODE_OPTIONS='--experimental-specifier-resolution=node' node ./build/api/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "tx": "tsx offchain/test/test-tx.ts",
+    "demo": "tsx offchain/test/demo.ts",
     "ws": "tsx offchain/test/websocket.ts",
     "deploy": "tsx offchain/handlers/deploy-validator.ts"
   },

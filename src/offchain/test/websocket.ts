@@ -147,4 +147,4 @@ lucid.selectWallet.fromSeed(env.SEED);
 
 const url = "ws://127.0.0.1:4001?history=no";
 const hydraWs = new HydraHandler(lucid, url);
-const receivedTag = await hydraWs.init();
+const receivedTag = await hydraWs.abort();

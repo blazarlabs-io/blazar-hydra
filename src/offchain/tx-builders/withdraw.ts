@@ -10,7 +10,7 @@ import {
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { WithdrawParams } from "../lib/params";
-import { Combined, FundsDatum, FundsDatumT, Mint, Spend } from "../lib/types";
+import { Combined, CredentialT, FundsDatum, FundsDatumT, Mint, Spend } from "../lib/types";
 import { buildValidator } from "../validator/handle";
 import { dataAddressToBech32 } from "../lib/utils";
 
@@ -61,7 +61,7 @@ async function withdraw(
     const withdrawInfo = {
       sig: signature,
       ref: {
-        transaction_id: { hash: fundsUtxo.txHash },
+        transaction_id: fundsUtxo.txHash,
         output_index: BigInt(fundsUtxo.outputIndex),
       },
     };
@@ -108,7 +108,7 @@ function getValidator(
     }
     return validatorRef.scriptRef;
   } else {
-    const hydraCred = { Verification_key_cred: { Key: hydraKey } };
+    const hydraCred: CredentialT = { Script_cred: { Key: hydraKey } };
     return buildValidator(adminKey, hydraCred);
   }
 }

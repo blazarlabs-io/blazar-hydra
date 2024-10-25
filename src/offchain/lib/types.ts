@@ -22,9 +22,7 @@ const AddressSchema = Data.Object({
 type AddressT = Data.Static<typeof AddressSchema>;
 const Address = AddressSchema as unknown as AddressT;
 const OutputRefSchema = Data.Object({
-  transaction_id: Data.Object({
-    hash: Data.Bytes(),
-  }),
+  transaction_id: Data.Bytes(),
   output_index: Data.Integer(),
 });
 type OutputRefT = Data.Static<typeof OutputRefSchema>;

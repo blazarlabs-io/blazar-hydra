@@ -50,9 +50,7 @@ async function payMerchant(
 
   // Build values and datums
   const userRef: OutputRefT = {
-    transaction_id: {
-      hash: userFundsUtxo.txHash,
-    },
+    transaction_id: userFundsUtxo.txHash,
     output_index: BigInt(userFundsUtxo.outputIndex),
   };
   let newMerchValue: Assets = { lovelace: amountToPay };

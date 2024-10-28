@@ -23,7 +23,7 @@ class HydraHandler {
 
     this.lucid = lucid;
     this.url = wsURL;
-    this.connection = new Websocket(wsURL  + "?history=no");
+    this.connection = new Websocket(wsURL + "?history=no");
   }
 
   // listen for a message with a specific tag. TODO define tags from the hydra api
@@ -36,11 +36,10 @@ class HydraHandler {
         const data = JSON.parse(msg.data.toString());
         if (data.tag === tag) {
           console.log(`Received ${tag}`);
-          resolve(data.tag);
         } else {
           console.error(`Received: ${data.tag}`);
-          resolve(data.tag);
         }
+        resolve(data.tag);
       };
       this.connection.onerror = (error) => {
         console.error("Error on Hydra websocket: ", error);
@@ -193,10 +192,27 @@ class HydraHandler {
     });
   }
 
-  public fanout() {
+  async fanout(): Promise<void> {
+    return new Promise((resolve, _) => {
+      this.connection.resume();
       this.connection.onopen = () => {
         console.log("Sending fanout command...");
         this.connection.send(JSON.stringify({ tag: "Fanout" }));
+      };
+      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
+        const data = JSON.parse(msg.data.toString());
+        switch (data.tag) {
+          case "Greetings":
+            break;
+          case "HeadIsFinalized":
+            console.log("Received HeadIsFinalized");
+            resolve(data.tag);
+            break;
+          default:
+            console.error("Unexpected message recibed upon Close: ", data.tag);
+            resolve(data.tag);
+            break;
+        }
       };
       this.connection.onerror = (error) => {
         console.error("Error on Hydra websocket: ", error);
@@ -204,6 +220,7 @@ class HydraHandler {
       this.connection.onclose = () => {
         console.error("Hydra websocket closed");
       };
+    });
   }
 }
 

@@ -68,16 +68,15 @@ const openHead = async () => {
   });
 
   /// Connect to hydra node
-  const aliceApiUrl = "http://127.0.0.1:4001/commit"
+  const aliceApiUrl = "http://127.0.0.1:4001/commit";
   const bobApiUrl = "http://127.0.0.1:4002/commit";
 
-
-//  Send commits to hydra node
+  //  Send commits to hydra node
   const utxos1: [string, any][] = [
     [
       userFundUtxos[0].txHash + "#" + userFundUtxos[0].outputIndex,
       lucidUtxoToHydraUtxo(userFundUtxos[0]),
-    ]
+    ],
   ];
   const aliceCommitTxId = await hydra.sendCommit({
     apiUrl: aliceApiUrl,
@@ -109,12 +108,11 @@ const openHead = async () => {
     bobCommitTag = await hydra.listen("Committed");
   }
 
-  const openHeadTag = await hydra.listen("HeadIsOpen");
-  if (openHeadTag !== "HeadIsOpen") {
-    throw new Error("Head was not opened");
+  let openHeadTag = "";
+  while (openHeadTag !== "HeadIsOpen") {
+    console.log("Head not opened yet");
+    openHeadTag = await hydra.listen("HeadIsOpen");
   }
-
-  hydra.close();
 };
 
 const getSnapshot = async () => {
@@ -124,25 +122,49 @@ const getSnapshot = async () => {
 };
 
 const closeHead = async () => {
-  const hydra = new HydraHandler(lucid, aliceWsUrl);
-  // await hydra.close();
-  // await hydra.listen("ReadyToFanout");
-  //hydra.fanout();
-  hydra.connection.onopen = () => {
-    console.log("Sending fanout message...");
-    hydra.connection.send(JSON.stringify({ tag: "Fanout" }));
+  async function repeatCloseUntilSuccess(
+    hydra: HydraHandler,
+    intervalMs: number = 30000
+  ): Promise<string> {
+    return new Promise((resolve, _) => {
+      const attemptClose = async () => {
+        try {
+          const result = await hydra.close();
+          if (result === "HeadIsClosed") {
+            clearInterval(interval); // Stop further attempts when expected tag is received
+            resolve(result);
+          }
+        } catch (error) {
+          console.error("Error during close attempt,:", error);
+          console.error("Retrying...");
+        }
+      };
+
+      const interval = setInterval(attemptClose, intervalMs);
+      attemptClose(); // Initial attempt immediately
+    });
   }
-  //await hydra.listen("HeadIsFinalized");
-  //hydra.stop();
+  const hydra = new HydraHandler(lucid, aliceWsUrl);
+  await repeatCloseUntilSuccess(hydra);
+  let readyToFanoutTag = "";
+  while (readyToFanoutTag !== "ReadyToFanout") {
+    readyToFanoutTag = await hydra.listen("ReadyToFanout");
+  }
+  hydra.stop();
+};
+
+const fanout = async () => {
+  const hydra = new HydraHandler(lucid, aliceWsUrl);
+  await hydra.fanout();
+  hydra.stop();
 };
 
 const abortHead = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   await hydra.abort();
   await hydra.listen("HeadIsAborted");
-  hydra.close();
-}
-
+  hydra.stop();
+};
 
 const trace = process.env.npm_config_trace;
 switch (trace) {
@@ -157,6 +179,9 @@ switch (trace) {
     break;
   case "close":
     await closeHead();
+    break;
+  case "fanout":
+    await fanout();
     break;
   default:
     console.log("Invalid or missing trace option");

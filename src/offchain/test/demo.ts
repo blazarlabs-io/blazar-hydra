@@ -1,5 +1,6 @@
 import {
   Blockfrost,
+  Data,
   Lucid,
   LucidEvolution,
   Network,
@@ -11,9 +12,12 @@ import { handleDeposit } from "../handlers/deposit";
 import { commitFunds } from "../tx-builders/commit-funds";
 import { getPrivateKey, waitForUtxosUpdate } from "../lib/utils";
 import { HydraHandler, lucidUtxoToHydraUtxo } from "../lib/hydra";
-import { logger } from "../../logger";
+import { Layer, WithdrawSchema } from "../../shared";
+import { handleWithdraw } from "../handlers/withdraw";
+import blake2b from "blake2b";
 
 const adminSeed = env.SEED;
+const privKey = getPrivateKey(adminSeed);
 const lucid = (await Lucid(
   new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
   env.NETWORK as Network
@@ -29,7 +33,7 @@ const openHead = async () => {
   }
 
   const adminAddress = await lucid.wallet().address();
-  const publicKey = toHex(getPrivateKey(adminSeed).to_public().to_raw_bytes());
+  const publicKey = toHex(privKey.to_public().to_raw_bytes());
   let funds: OutRef[] = [];
   for (let i = 0; i < 2; i++) {
     console.log(`Creating a funds utxo with 10 ADA`);
@@ -113,12 +117,13 @@ const openHead = async () => {
     console.log("Head not opened yet");
     openHeadTag = await hydra.listen("HeadIsOpen");
   }
+  await hydra.stop();
 };
 
 const getSnapshot = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   await hydra.getSnapshot();
-  hydra.stop();
+  await hydra.stop();
 };
 
 const closeHead = async () => {
@@ -150,14 +155,36 @@ const closeHead = async () => {
   while (readyToFanoutTag !== "ReadyToFanout") {
     readyToFanoutTag = await hydra.listen("ReadyToFanout");
   }
-  hydra.stop();
+  await hydra.stop();
 };
 
 const fanout = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   await hydra.fanout();
-  hydra.stop();
+  await hydra.stop();
 };
+
+const withdraw = async (fanoutTxId: string) => {
+  const adminAddress = await lucid.wallet().address();
+  const msg = Buffer.from(fanoutTxId + Data.to<bigint>(0n), "hex");
+  const hashedMsg =  blake2b(32).update(msg).digest("hex");
+  const sig = privKey.sign(Buffer.from(hashedMsg, "hex")).to_hex();
+
+  const wSchema: WithdrawSchema = {
+    address: adminAddress,
+    owner: "user",
+    funds_utxos_ref: [{hash: fanoutTxId, index: 0}],
+    signature: sig,
+    network_layer: Layer.L1
+  }
+  const withdrawTx = await handleWithdraw(lucid, wSchema);
+  const signedTx = await lucid
+    .fromTx(withdrawTx.cborHex)
+    .sign.withWallet()
+    .complete();
+  const txHash = await signedTx.submit();
+  console.log(`Submitted withdraw tx with hash: ${txHash}`);
+}
 
 const abortHead = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
@@ -183,6 +210,12 @@ switch (trace) {
   case "fanout":
     await fanout();
     break;
+  case "withdraw":
+    const txId = process.env.npm_config_fanout;
+    if (!txId) {
+      throw new Error("Missing txid. Provide one with --fanout");
+    }
+    await withdraw(txId);
   default:
     console.log("Invalid or missing trace option");
     break;

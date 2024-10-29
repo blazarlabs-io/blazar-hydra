@@ -47,8 +47,11 @@ class HydraHandler {
     });
   }
 
-  public stop() {
-    this.connection.close();
+  public stop(): Promise<void> {
+    return new Promise((resolve, _) => {
+      this.connection.close();
+      resolve();
+    });
   }
 
   // Sends the Init tag to opean a head
@@ -127,7 +130,6 @@ class HydraHandler {
         .fromTx(updTx)
         .complete()
         .then((tx) => tx.submit());
-      console.log(txHash);
       return txHash;
     } catch (error) {
       console.log(error);

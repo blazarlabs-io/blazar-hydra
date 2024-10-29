@@ -10,7 +10,14 @@ import {
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { WithdrawParams } from "../lib/params";
-import { Combined, CredentialT, FundsDatum, FundsDatumT, Mint, Spend } from "../lib/types";
+import {
+  Combined,
+  CredentialT,
+  FundsDatum,
+  FundsDatumT,
+  Mint,
+  Spend,
+} from "../lib/types";
 import { buildValidator } from "../validator/handle";
 import { dataAddressToBech32 } from "../lib/utils";
 
@@ -37,8 +44,8 @@ async function withdraw(
     throw new Error("Invalid script address");
   }
   const sortedInputs = fundsUtxos.sort((a, b) => {
-    const ref1 = {hash: a.txHash, index: a.outputIndex};
-    const ref2 = {hash: b.txHash, index: b.outputIndex};
+    const ref1 = { hash: a.txHash, index: a.outputIndex };
+    const ref2 = { hash: b.txHash, index: b.outputIndex };
     const hashComparison = ref1.hash.localeCompare(ref2.hash);
     return hashComparison !== 0 ? hashComparison : ref1.index - ref2.index;
   });
@@ -86,9 +93,13 @@ async function withdraw(
     tx.attach.WithdrawalValidator(validator);
   }
 
-  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
+  const rewardAddress = validatorToRewardAddress(
+    lucid.config().network,
+    validator
+  );
   const txSignBuilder = await tx
     .withdraw(rewardAddress, 0n, Combined.CombinedWithdraw)
+    .attachMetadata(674, { msg: "HydraPay: Withdraw" })
     .complete();
 
   return { tx: txSignBuilder };
@@ -99,17 +110,20 @@ function getValidator(
   adminKey: string | undefined,
   hydraKey: string | undefined
 ): Script {
-  if (!validatorRef || !(adminKey && hydraKey)) {
-    throw new Error("Must include validator reference or validator parameters");
-  }
-  if (validatorRef) {
+  if (!validatorRef) {
+    if (!(adminKey || hydraKey)) {
+      throw new Error(
+        "Must include validator reference or validator parameters"
+      );
+    } else {
+      const hydraCred: CredentialT = { Script_cred: { Key: hydraKey! } };
+      return buildValidator(adminKey!, hydraCred);
+    }
+  } else {
     if (!validatorRef.scriptRef) {
       throw new Error("Validator script not found in UTxO");
     }
     return validatorRef.scriptRef;
-  } else {
-    const hydraCred: CredentialT = { Script_cred: { Key: hydraKey } };
-    return buildValidator(adminKey, hydraCred);
   }
 }
 export { withdraw };

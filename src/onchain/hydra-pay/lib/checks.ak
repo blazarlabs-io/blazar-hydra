@@ -90,8 +90,8 @@ pub fn validate_withdraw(
         expect Some(WithdrawInfo { ref, sig }) = info
         let msg = output_reference_to_bytestring(ref)
         and {
-          verify_ed25519_signature(public_key, msg, sig),
-          list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+          verify_ed25519_signature(public_key, msg, sig)?,
+          list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
         }
       }
 
@@ -99,8 +99,8 @@ pub fn validate_withdraw(
     }
 
   and {
-    check_withdraw_is_present(own_input, CombinedWithdraw, tx),
-    authorized,
+    check_withdraw_is_present(own_input, CombinedWithdraw, tx)?,
+    authorized?,
   }
 }
 
@@ -284,18 +284,17 @@ pub fn validate_combined_withdraw(own_hash: ScriptHash, tx: Transaction) {
       fn(i) { i.output.address.payment_credential == Script(own_hash) },
     )
 
-  let own_outputs =
-    list.filter(
+  expect
+    list.all(
       outputs,
-      fn(Output { address: o_address, value: o_value, .. }) {
+      fn(o) {
         // No Output should have a token with our policy
         // This effectively makes sure that all tokens are burnt and no new ones are minted
-        expect tokens(o_value, own_hash) == dict.empty
-        o_address.payment_credential == Script(own_hash)
+        (tokens(o.value, own_hash) == dict.empty)?
       },
     )
 
-  recursive_withdraw_checks(own_inputs, own_outputs)
+  recursive_withdraw_checks(own_inputs, outputs)?
 }
 
 fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
@@ -318,17 +317,17 @@ fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
 
       and {
         // Output address must match address stored in datum
-        o_addr == i_d_addr,
+        (o_addr == i_d_addr)?,
         // Output should contain at least the stored lovelaces and no other tokens
-        match(o_value, expected_value, >=),
+        match(o_value, expected_value, >=)?,
         // No datum to optimize UTxO size and tx cost
-        o_datum == NoDatum,
+        (o_datum == NoDatum)?,
         // No ref script to optimize UTxO size and tx cost
-        o_ref_script == None,
+        (o_ref_script == None)?,
         // Continue the checks recursively
-        recursive_withdraw_checks(rest_i, rest_o),
+        recursive_withdraw_checks(rest_i, rest_o)?,
       }
     }
-    _ -> False
+    _ -> False?
   }
 }

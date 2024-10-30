@@ -284,22 +284,24 @@ pub fn validate_combined_withdraw(own_hash: ScriptHash, tx: Transaction) {
       fn(i) { i.output.address.payment_credential == Script(own_hash) },
     )
 
-  expect
-    list.all(
-      outputs,
-      fn(o) {
-        // No Output should have a token with our policy
-        // This effectively makes sure that all tokens are burnt and no new ones are minted
-        (tokens(o.value, own_hash) == dict.empty)?
-      },
-    )
-
-  recursive_withdraw_checks(own_inputs, outputs)?
+  recursive_withdraw_checks(own_inputs, outputs, own_hash)?
 }
 
-fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
+fn recursive_withdraw_checks(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  own_hash: ScriptHash,
+) {
   when (inputs, outputs) is {
     ([], []) -> True
+    ([], [o, ..rest_o]) ->
+      // No Output should have a token with our policy
+      // This effectively makes sure that all tokens are burnt and no new ones are minted
+      and {
+        (tokens(o.value, own_hash) == dict.empty)?,
+        recursive_withdraw_checks([], rest_o, own_hash)?,
+      }
+
     ([i, ..rest_i], [o, ..rest_o]) -> {
       let Output { value: i_value, datum: i_datum, .. } = i.output
 
@@ -325,7 +327,7 @@ fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
         // No ref script to optimize UTxO size and tx cost
         (o_ref_script == None)?,
         // Continue the checks recursively
-        recursive_withdraw_checks(rest_i, rest_o)?,
+        recursive_withdraw_checks(rest_i, rest_o, own_hash)?,
       }
     }
     _ -> False?

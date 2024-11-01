@@ -95,12 +95,16 @@ async function waitForUtxosUpdate(
   while (!userUtxosUpdated || !scriptUtxoUpdated) {
     console.info("Waiting for utxos update...");
     await new Promise((r) => setTimeout(r, 10000));
-    const utxos = await lucid.wallet().getUtxos();
-    const scriptUtxos = await lucid.utxosByOutRef([
-      { txHash: txId, outputIndex: 0 },
-    ]);
-    userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
-    scriptUtxoUpdated = scriptUtxos.length !== 0;
+    try {
+      const utxos = await lucid.wallet().getUtxos();
+      const scriptUtxos = await lucid.utxosByOutRef([
+        { txHash: txId, outputIndex: 0 },
+      ]);
+      userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
+      scriptUtxoUpdated = scriptUtxos.length !== 0;
+    } catch (e) {
+      console.log("Failed to fetch utxos from blockfrost, retrying...");
+    }
   }
   // wait for 20 more seconds because sometimes it is insufficient
   await new Promise((r) => setTimeout(r, 20000));

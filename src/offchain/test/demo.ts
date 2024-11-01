@@ -29,7 +29,7 @@ const openHead = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   const initTag = await hydra.init();
   if (initTag !== "HeadIsInitializing") {
-    throw new Error("Something went wrong when initializing the hydra head");
+    console.log("Head already initialized");
   }
 
   const adminAddress = await lucid.wallet().address();
@@ -216,6 +216,7 @@ switch (trace) {
       throw new Error("Missing txid. Provide one with --fanout");
     }
     await withdraw(txId);
+    break;
   default:
     console.log("Invalid or missing trace option");
     break;

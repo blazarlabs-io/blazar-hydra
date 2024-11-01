@@ -1,7 +1,9 @@
 use aiken/collection/dict.{empty, size}
 use aiken/collection/list.{head, length}
 use aiken/collection/pairs
-use aiken/crypto.{ScriptHash, VerificationKeyHash, verify_ed25519_signature}
+use aiken/crypto.{
+  ScriptHash, VerificationKeyHash, blake2b_224, verify_ed25519_signature,
+}
 use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
@@ -12,8 +14,9 @@ use cardano/transaction.{
 }
 use config.{add_funds_min_lovelace}
 use types.{
-  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum, HydraCommit,
-  Merchant, PayInfo, User, WithdrawInfo,
+  CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
+  HaskellOutputReference, HaskellTransactionId, HydraCommit, Merchant, PayInfo,
+  User, WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -87,8 +90,8 @@ pub fn validate_withdraw(
         expect Some(WithdrawInfo { ref, sig }) = info
         let msg = output_reference_to_bytestring(ref)
         and {
-          verify_ed25519_signature(public_key, msg, sig),
-          list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+          verify_ed25519_signature(public_key, msg, sig)?,
+          list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
         }
       }
 
@@ -96,8 +99,8 @@ pub fn validate_withdraw(
     }
 
   and {
-    check_withdraw_is_present(own_input, CombinedWithdraw, tx),
-    authorized,
+    check_withdraw_is_present(own_input, CombinedWithdraw, tx)?,
+    authorized?,
   }
 }
 
@@ -129,26 +132,43 @@ pub fn validate_minting(
     funds_type: dat_funds_type,
   } = o_datum_data
 
-  // Only users can deposit
-  expect User { public_key: _vk } = dat_funds_type
+  let funds_type_valid =
+    when dat_funds_type is {
+      User { public_key } -> {
+        let hashed_public_key = blake2b_224(public_key)
+        and {
+          // The public key stored in the datum must sign the transaction to prove ownership
+          list.any(
+            tx.extra_signatories,
+            fn(signatory) { signatory == hashed_public_key },
+          )?,
+          // TODO: Revise what is a sensible minimum here, users must have some deposit
+          (dat_locked_deposit > 0)?,
+        }
+      }
+      Merchant ->
+        // Merchants won't pay so they don't neccesarily need a deposit
+        // must still prevent negative numbers
+        (dat_locked_deposit >= 0)?
+    }
 
   and {
     // Token name should be an output reference that is being consumed to make sure it is unique
-    token_name == expected_token_name,
+    (token_name == expected_token_name)?,
     // The reference passed by redeemer is being consumed
-    list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+    list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
     // The script output has the correct address
-    o_address == from_script(own_policy),
+    (o_address == from_script(own_policy))?,
     // The script value only has lovelaces and the minted token
-    without_lovelace(o_value) == from_asset(own_policy, token_name, 1),
+    (without_lovelace(o_value) == from_asset(own_policy, token_name, 1))?,
     // Make sure the address stored in the datum can sign messages for the rest of the operations
-    is_verification_credential(dat_addr.payment_credential),
+    is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value
-    dat_locked_deposit < lovelace_of(o_value),
-    // TODO: Revise what is a sensible minimum here
-    dat_locked_deposit > 0,
+    (dat_locked_deposit < lovelace_of(o_value))?,
     // No ref script to avoid paying excessive fees
-    o_ref_script == None,
+    (o_ref_script == None)?,
+    // Validations change depending on the funds_type
+    funds_type_valid?,
   }
 }
 
@@ -178,7 +198,14 @@ pub fn validate_combined_commit(
       inputs,
       fn(i) {
         if i.output.address.payment_credential == Script(own_hash) {
-          Some(i.output_reference)
+          let h_tx_id: HaskellTransactionId =
+            HaskellTransactionId { tx_hash: i.output_reference.transaction_id }
+          let h_ref =
+            HaskellOutputReference {
+              transaction_id: h_tx_id,
+              output_index: i.output_reference.output_index,
+            }
+          Some(h_ref)
         } else {
           None
         }
@@ -257,23 +284,24 @@ pub fn validate_combined_withdraw(own_hash: ScriptHash, tx: Transaction) {
       fn(i) { i.output.address.payment_credential == Script(own_hash) },
     )
 
-  let own_outputs =
-    list.filter(
-      outputs,
-      fn(Output { address: o_address, value: o_value, .. }) {
-        // No Output should have a token with our policy
-        // This effectively makes sure that all tokens are burnt and no new ones are minted
-        expect tokens(o_value, own_hash) == dict.empty
-        o_address.payment_credential == Script(own_hash)
-      },
-    )
-
-  recursive_withdraw_checks(own_inputs, own_outputs)
+  recursive_withdraw_checks(own_inputs, outputs, own_hash)?
 }
 
-fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
+fn recursive_withdraw_checks(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  own_hash: ScriptHash,
+) {
   when (inputs, outputs) is {
     ([], []) -> True
+    ([], [o, ..rest_o]) ->
+      // No Output should have a token with our policy
+      // This effectively makes sure that all tokens are burnt and no new ones are minted
+      and {
+        (tokens(o.value, own_hash) == dict.empty)?,
+        recursive_withdraw_checks([], rest_o, own_hash)?,
+      }
+
     ([i, ..rest_i], [o, ..rest_o]) -> {
       let Output { value: i_value, datum: i_datum, .. } = i.output
 
@@ -291,17 +319,17 @@ fn recursive_withdraw_checks(inputs: List<Input>, outputs: List<Output>) {
 
       and {
         // Output address must match address stored in datum
-        o_addr == i_d_addr,
+        (o_addr == i_d_addr)?,
         // Output should contain at least the stored lovelaces and no other tokens
-        match(o_value, expected_value, >=),
+        match(o_value, expected_value, >=)?,
         // No datum to optimize UTxO size and tx cost
-        o_datum == NoDatum,
+        (o_datum == NoDatum)?,
         // No ref script to optimize UTxO size and tx cost
-        o_ref_script == None,
+        (o_ref_script == None)?,
         // Continue the checks recursively
-        recursive_withdraw_checks(rest_i, rest_o),
+        recursive_withdraw_checks(rest_i, rest_o, own_hash)?,
       }
     }
-    _ -> False
+    _ -> False?
   }
 }

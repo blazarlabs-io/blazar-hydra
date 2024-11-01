@@ -1,5 +1,6 @@
 use aiken/cbor.{serialise}
 use aiken/collection/pairs
+use aiken/crypto.{blake2b_256}
 use aiken/primitive/bytearray
 use cardano/address.{Address, Credential, VerificationKey}
 use cardano/transaction.{Input, Output, OutputReference, Transaction, Withdraw}
@@ -15,13 +16,15 @@ pub fn is_verification_credential(cred: Credential) {
 }
 
 // Converts an OutputReference to a plain bytestring using `cbor.serialize` for
-// the output_index.
+// the output_index and blake2b_256 to hash.
 pub fn output_reference_to_bytestring(ref: OutputReference) {
   let OutputReference { transaction_id, output_index } = ref
 
   let serialized_index = serialise(output_index)
 
-  bytearray.concat(transaction_id, serialized_index)
+  let concated = bytearray.concat(transaction_id, serialized_index)
+
+  blake2b_256(concated)
 }
 
 pub fn check_withdraw_is_present(

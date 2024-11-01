@@ -121,15 +121,12 @@ class HydraHandler {
       };
       const response = await axios.post(params.apiUrl, payload);
       const txWitnessed = response.data.cborHex;
-      const signedTx = await this.lucid
+      let signedTx: any = await this.lucid
         .fromTx(txWitnessed)
         .sign.withWallet()
         .complete();
-      const updTx = setRedeemersAsMap(signedTx.toCBOR());
-      const txHash = await this.lucid
-        .fromTx(updTx)
-        .complete()
-        .then((tx) => tx.submit());
+      signedTx = setRedeemersAsMap(signedTx.toCBOR());
+      const txHash = await this.lucid.wallet().submitTx(signedTx);
       return txHash;
     } catch (error) {
       console.log(error);

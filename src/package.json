@@ -9,7 +9,8 @@
     "dev": "tsx watch ./api/index.ts",
     "start": "NODE_OPTIONS='--experimental-specifier-resolution=node' node ./build/api/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "tx": "tsx offchain/test/test-tx.ts",
+    "demo": "tsx offchain/test/demo.ts",
+    "ws": "tsx offchain/test/websocket.ts",
     "deploy": "tsx offchain/handlers/deploy-validator.ts"
   },
   "devDependencies": {
@@ -20,11 +21,14 @@
     "@types/figlet": "^1.5.8",
     "@types/json-bigint": "^1.0.4",
     "@types/lodash": "^4.17.10",
+    "@types/node": "^22.7.8",
+    "@types/ws": "^8.5.12",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.3"
   },
   "dependencies": {
-    "@lucid-evolution/lucid": "^0.3.44",
+    "@lucid-evolution/lucid": "^0.3.52",
+    "axios": "^1.7.7",
     "bip39": "^3.1.0",
     "blake2b": "^2.1.4",
     "cbor": "^9.0.2",
@@ -38,6 +42,7 @@
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
     "tsx": "^4.19.1",
+    "ws": "^8.18.0",
     "zod": "^3.23.8"
   }
 }

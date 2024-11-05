@@ -47,12 +47,18 @@ async function handleWithdraw(
       fundsUtxos,
       signature,
     };
-    switch ([owner, network_layer]) {
-      case ["merchant", Layer.L2]:
+    switch (owner) {
+      case "merchant":
+        if (network_layer === Layer.L1) {
+          throw new Error("Merchant cannot withdraw from L1");
+        };
         withdrawParams = { ...withdrawParams, adminKey, hydraKey };
         break;
 
-      case ["user", Layer.L1]:
+      case "user":
+        if (network_layer === Layer.L2) {
+          throw new Error("User cannot withdraw from L2");
+        };
         const walletUtxos = await localLucid
           .utxosAt(address)
           .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));

@@ -6,6 +6,7 @@ import {
   Network,
   scriptFromNative,
   validatorToAddress,
+  validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { env } from "../../config";
 import { buildValidator } from "../validator/handle";
@@ -31,6 +32,8 @@ async function deployScript(
   lucid.selectWallet.fromSeed(env.SEED);
 
   // TODO implement a proper script to hold the validator?
+  const validator = buildValidator(adminKey, { Script_cred: { Key: hydraKey } });
+  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
   const refScriptAddress = validatorToAddress(
     lucid.config().network,
     scriptFromNative({ type: "sig", keyHash: adminKey })
@@ -44,8 +47,9 @@ async function deployScript(
         value: Data.void(),
       },
       {},
-      buildValidator(adminKey, { Script_cred: { Key: hydraKey } })
+      validator
     )
+    .register.Stake(rewardAddress)
     .complete()
     .then((txSignBuilder) => txSignBuilder.sign.withWallet().complete())
     .then((txSigned) => txSigned.submit());

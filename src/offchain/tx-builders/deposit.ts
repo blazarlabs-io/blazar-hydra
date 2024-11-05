@@ -83,6 +83,7 @@ async function deposit(
       { kind: "inline", value: datum },
       { ["lovelace"]: totalAmount, [validationToken]: 1n }
     )
+    .attachMetadata(674, {"msg": "HydraPay: Deposit"})
     .complete();
 
   const newFundsUtxo = {

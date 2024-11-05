@@ -48,12 +48,6 @@ async function commitFunds(
   signers.add(signer);
   txBody.set_required_signers(signers);
 
-  // Add reference inputs
-  const refInput = utxoToCore(validatorRefUtxo).input();
-  const refInputs = CML.TransactionInputList.new();
-  refInputs.add(refInput);
-  txBody.set_reference_inputs(refInputs);
-
   // Add withdrawal
   const rewAddress = CML.RewardAddress.from_address(
     CML.Address.from_bech32(rewardAddress)
@@ -88,6 +82,12 @@ async function commitFunds(
   );
   const redeemers = CML.Redeemers.new_arr_legacy_redeemer(legacyRedeemers);
   txWitnessSet.set_redeemers(redeemers);
+
+  // Add plutus script
+  const scripts = CML.PlutusV3ScriptList.new();
+  const script = CML.PlutusV3Script.from_cbor_hex(validator.script);
+  scripts.add(script);
+  txWitnessSet.set_plutus_v3_scripts(scripts);
 
   const cmlTx = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();
   const tx = lucid.fromTx(cmlTx);

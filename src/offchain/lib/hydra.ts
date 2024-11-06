@@ -101,25 +101,27 @@ class HydraHandler {
     });
   }
 
-  async sendCommit(params: {
-    apiUrl: string;
-    blueprint: CBORHex;
-    utxos: [string, any][];
-  }): Promise<string> {
+  async sendCommit(
+    apiUrl: string,
+    blueprint: CBORHex,
+    utxos: UTxO[]
+  ): Promise<string> {
     try {
-      const utxos: Record<string, any> = {};
-      params.utxos.map(([ref, utxo]: [string, any]) => {
-        utxos[ref] = utxo;
+      const payloadUtxos: Record<string, any> = {};
+      utxos.map((utxo) => {
+        const key = utxo.txHash + "#" + utxo.outputIndex;
+        const val = lucidUtxoToHydraUtxo(utxo);
+        payloadUtxos[key] = val;
       });
       const payload = {
         blueprintTx: {
-          cborHex: params.blueprint,
+          cborHex: blueprint,
           description: "",
           type: "Tx BabbageEra",
         },
-        utxo: utxos,
+        utxo: payloadUtxos,
       };
-      const response = await axios.post(params.apiUrl, payload);
+      const response = await axios.post(apiUrl, payload);
       const txWitnessed = response.data.cborHex;
       let signedTx: any = await this.lucid
         .fromTx(txWitnessed)

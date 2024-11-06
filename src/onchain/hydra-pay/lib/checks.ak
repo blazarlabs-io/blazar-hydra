@@ -141,12 +141,12 @@ pub fn validate_pay(
         expect AddFunds = m_i_redeemer_data
 
         expect and {
-            m_i_addr.payment_credential == Script(own_hash),
+            (m_i_addr.payment_credential == Script(own_hash))?,
             // The Merchant Funds input has the same address in the datum than
             // the merchantAddr passed by redeemer
-            m_dat_addr == red_merchant_addr,
+            (m_dat_addr == red_merchant_addr)?,
             // The Merchant Funds input has the Merchant funds_type
-            m_dat_f_type == Merchant,
+            (m_dat_f_type == Merchant)?,
           }
         (lovelace_of(m_i_value), Some(m_i_dat_data))
       }
@@ -177,9 +177,10 @@ pub fn validate_pay(
     reference_script: u_o_ref_script,
   } = user_output
 
+  // If there's a Merchant input, datum must match. If not, build the datum from scratch
   let merchant_correct_datum =
     when m_i_datum is {
-      Some(data) -> m_o_datum == InlineDatum(data)
+      Some(data) -> (m_o_datum == InlineDatum(data))?
       None -> {
         let expected_datum =
           FundsDatum {
@@ -188,7 +189,7 @@ pub fn validate_pay(
             funds_type: Merchant,
           }
         let expected_datum_data: Data = expected_datum
-        m_o_datum == InlineDatum(expected_datum_data)
+        (m_o_datum == InlineDatum(expected_datum_data))?
       }
     }
 
@@ -202,9 +203,9 @@ pub fn validate_pay(
 
         expect [Pair(token_name, 1)] =
           tx.mint |> tokens(own_hash) |> dict.to_pairs()
-        expected_token_name == token_name
+        (expected_token_name == token_name)?
       }
-      Some(_) -> tokens(mint, own_hash) == empty
+      Some(_) -> (tokens(mint, own_hash) == empty)?
     }
 
   // The Merchant Funds output has the validation token
@@ -213,28 +214,29 @@ pub fn validate_pay(
 
   and {
     // The msg and signature from the redeemer validate against the user vkey stored in the datum
-    verify_ed25519_signature(public_key, msg, red_sig),
+    verify_ed25519_signature(public_key, msg, red_sig)?,
     // The ref stored in the redeemer msg is being spent
-    list.any(inputs, fn(i) { i.output_reference == red_ref }),
-    m_o_addr.payment_credential == Script(own_hash),
-    // Remaining User Funds address must be the same as User Funds UTxO
-    u_o_addr.payment_credential == Script(own_hash),
+    list.any(inputs, fn(i) { i.output_reference == red_ref })?,
+    // Merchant and User Funds UTxOs must be paid to our script
+    (m_o_addr.payment_credential == Script(own_hash))?,
+    (u_o_addr.payment_credential == Script(own_hash))?,
     // The amount of lovelaces of the Merchant Funds output is the same as the
     // amount specified in the Pay redeemer plus the Merchant Funds input (If present)
-    lovelace_of(m_o_value) >= expected_merchant_funds,
+    (lovelace_of(m_o_value) >= expected_merchant_funds)?,
     // The User Funds output must have at least the original amount of lovelaces
     // minus the amount specified in the redeemer
     match(
       u_o_value,
       u_i_value,
       fn(o_lov, i_lov) { o_lov >= i_lov - red_amount },
-    ),
-    merchant_correct_datum,
-    u_o_datum == u_i_datum,
-    m_o_ref_script == None,
+    )?,
+    merchant_correct_datum?,
     // Remaining User Funds datum must be the same as User Funds UTxO
-    u_o_ref_script == None,
-    mint_correct,
+    (u_o_datum == u_i_datum)?,
+    // No ref script to avoid paying excessive fees
+    (m_o_ref_script == None)?,
+    (u_o_ref_script == None)?,
+    mint_correct?,
   }
 }
 

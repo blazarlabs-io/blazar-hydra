@@ -21,6 +21,8 @@ const envSchema = z
     ADMIN_KEY: z.string(),
     HYDRA_KEY: z.string(),
     SEED: z.string(),
+    ADMIN_NODE_WS_URL: z.string(),
+    ADMIN_ADDRESS: z.string(),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;

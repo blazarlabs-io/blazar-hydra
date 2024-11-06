@@ -1,8 +1,10 @@
+use aiken/cbor.{serialise}
 use aiken/collection/dict.{empty, size, to_pairs}
 use aiken/collection/list.{head, length}
 use aiken/collection/pairs
 use aiken/crypto.{
-  ScriptHash, VerificationKeyHash, blake2b_224, verify_ed25519_signature,
+  ScriptHash, Signature, VerificationKeyHash, blake2b_224,
+  verify_ed25519_signature,
 }
 use cardano/address.{Address, Credential, Script, from_script}
 use cardano/assets.{
@@ -20,7 +22,7 @@ use types.{
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
-  output_reference_to_bytestring, pay_info_to_bytestring,
+  output_reference_to_bytestring,
 }
 
 pub fn validate_add_funds(own_input: Input, tx: Transaction) {
@@ -69,7 +71,8 @@ pub fn validate_merge(own_input: Input, tx: Transaction) {
 }
 
 pub fn validate_pay(
-  info: PayInfo,
+  red_info: PayInfo,
+  red_sig: Signature,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
@@ -92,10 +95,9 @@ pub fn validate_pay(
     amount: red_amount,
     merchant_addr: red_merchant_addr,
     ref: red_ref,
-    sig: red_sig,
-  } = info
+  } = red_info
 
-  let msg = pay_info_to_bytestring(info)
+  let msg = serialise(red_info)
 
   let own_inputs =
     list.filter(
@@ -237,7 +239,7 @@ pub fn validate_pay(
 }
 
 pub fn validate_withdraw(
-  info: Option<WithdrawInfo>,
+  red_opt_info: Option<(WithdrawInfo, Signature)>,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
@@ -246,11 +248,12 @@ pub fn validate_withdraw(
   let authorized =
     when datum.funds_type is {
       User { public_key } -> {
-        expect Some(WithdrawInfo { ref, sig }) = info
-        let msg = output_reference_to_bytestring(ref)
+        expect Some((red_info, red_sig)) = red_opt_info
+        let WithdrawInfo { ref } = red_info
+        let msg = serialise(red_info)
         and {
-          verify_ed25519_signature(public_key, msg, sig)?,
-          list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
+          verify_ed25519_signature(public_key, msg, red_sig),
+          list.any(tx.inputs, fn(i) { i.output_reference == ref }),
         }
       }
 

@@ -4,7 +4,7 @@ use aiken/crypto.{blake2b_256}
 use aiken/primitive/bytearray
 use cardano/address.{Address, Credential, VerificationKey}
 use cardano/transaction.{Input, Output, OutputReference, Transaction, Withdraw}
-use types.{CombinedFundsActions, PayInfo}
+use types.{CombinedFundsActions}
 
 // Checks that the given credential is indeed a wallet credential.
 // More efficient than using expect
@@ -42,11 +42,4 @@ pub fn check_withdraw_is_present(
   let expected_redeemer_data: Data = expected_redeemer
 
   expected_redeemer_data == redeemer_data
-}
-
-// TODO: Complete
-pub fn pay_info_to_bytestring(info: PayInfo) {
-  let PayInfo { amount, merchant_addr, ref, sig } = info
-
-  output_reference_to_bytestring(ref)
 }

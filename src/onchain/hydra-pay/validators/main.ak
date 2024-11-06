@@ -30,9 +30,9 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
       AddFunds -> validate_add_funds(own_input, tx)
       Commit -> validate_commit(datum, own_input, tx)
       Merge -> validate_merge(own_input, tx)
-      Pay { info } -> validate_pay(info, datum, own_input, tx)
-      UserWithdraw { info } ->
-        validate_withdraw(Some(info), datum, own_input, tx)
+      Pay { info, sig } -> validate_pay(info, sig, datum, own_input, tx)
+      UserWithdraw { info, sig } ->
+        validate_withdraw(Some((info, sig)), datum, own_input, tx)
       MerchantWithdraw -> validate_withdraw(None, datum, own_input, tx)
     }
   }

@@ -1,11 +1,10 @@
 import {
-  addAssets,
-  Data,
   fromUnit,
   getAddressDetails,
   LucidEvolution,
   OutRef,
   TxSignBuilder,
+  UTxO,
   validatorToAddress,
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
@@ -15,7 +14,7 @@ import { Combined, Mint, Spend } from "../lib/types";
 async function mergeFunds(
   lucid: LucidEvolution,
   params: MergeFundsParams
-): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
+): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef; newAdminUtxos: UTxO[] }> {
   const { userFundsUtxos, adminUtxos, validatorRef } = params;
 
   // Script UTxO related boilerplate
@@ -54,7 +53,10 @@ async function mergeFunds(
   }
 
   // Start transaction building
-  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
+  const rewardAddress = validatorToRewardAddress(
+    lucid.config().network,
+    validator
+  );
   const tx = lucid
     .newTx()
     .readFrom([validatorRef])
@@ -85,13 +87,13 @@ async function mergeFunds(
   }
 
   // Complete tx
-  const txSignBuilder = await tx.complete();
+  const [newAdminUtxos, _, txSignBuilder] = await tx.chain();
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),
     outputIndex: 0,
   };
 
-  return { tx: txSignBuilder, newFundsUtxo };
+  return { tx: txSignBuilder, newFundsUtxo, newAdminUtxos };
 }
 
 export { mergeFunds };

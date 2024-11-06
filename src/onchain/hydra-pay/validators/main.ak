@@ -55,8 +55,8 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
     }
   }
 
-  publish(_redeemer: Data, _cert: Certificate, _tx: Transaction) {
-    True
+  publish(_redeemer: Data, _cert: Certificate, tx: Transaction) {
+    list.any(tx.extra_signatories, fn(signatory) { signatory == admin_key })?
   }
 
   else(_) {

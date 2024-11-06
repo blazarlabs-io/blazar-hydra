@@ -141,7 +141,6 @@ pub fn validate_pay(
         expect AddFunds = m_i_redeemer_data
 
         expect and {
-            (m_i_addr.payment_credential == Script(own_hash))?,
             // The Merchant Funds input has the same address in the datum than
             // the merchantAddr passed by redeemer
             (m_dat_addr == red_merchant_addr)?,

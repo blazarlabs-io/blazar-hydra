@@ -49,8 +49,9 @@ Context: An Admin wants to collect User deposits and open the hydra head
 - The backend submits the merge transactions to the cardano node and waits for the confirmation (6)
 - The backend builds a transaction consuming the user deposit UTxOs (7)
 - The backend sends a Commit request to the hydra-node using the built transactions as a blueprint (8)
-- The hydra node builds and submits the Commit transaction (9&10)
-- The hydra node builds and submits the CollectCom transaction
+- The hydra node builds the Commit transaction (9)
+- The backend signs the transaction with the admin key (10)
+- The backend submits the transaction to the cardano node (11)
 
 ![OpenHeadDiagram](img/diagram-open-head.png)
 

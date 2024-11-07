@@ -108,7 +108,7 @@ Context: An Admin wants to close the hydra head for the day, preparing for the o
 
 ## Technical Details
 
-For the implementation we propose using Aiken (Latest version being V1.1.3) for the on-chain validators and typescript with the Blaze library for the off-chain code and backend. In terms of infrastructure a Cardano Node is needed for querying and submitting transactions to L1, and a collection of hydra nodes to manage the hydra head.
+For the implementation we propose using Aiken (Latest version being V1.1.3) for the on-chain validators and typescript with the Lucid Evolution library for the off-chain code and backend. In terms of infrastructure a Cardano Node is needed for querying and submitting transactions to L1, and a collection of hydra nodes to manage the hydra head.
 
 ### Hydra limitations
 

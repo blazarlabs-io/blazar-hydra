@@ -147,7 +147,8 @@ Another way to support more users is to use Incremental Commits when they become
 ### Datum
 
 - address: Address
-- funds_type: User {vkey: VerificationKey} | Merchant
+- locked_deposit: Int
+- funds_type: User {public_key: VerificationKey} | Merchant
 
 ### Value
 

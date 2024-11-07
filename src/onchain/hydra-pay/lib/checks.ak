@@ -13,6 +13,7 @@ use cardano/assets.{
 }
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
+  find_script_outputs,
 }
 use config.{add_funds_min_lovelace}
 use types.{
@@ -120,12 +121,7 @@ pub fn validate_pay(
 
         let Input {
           output_reference: m_o_ref,
-          output: Output {
-            address: m_i_addr,
-            value: m_i_value,
-            datum: m_i_datum,
-            ..
-          },
+          output: Output { value: m_i_value, datum: m_i_datum, .. },
         } = merchant_input
 
         expect InlineDatum(m_i_dat_data) = m_i_datum
@@ -155,12 +151,7 @@ pub fn validate_pay(
 
   // The first output is the Merchant Funds output
   // The second output is the Remaining User Funds UTxO
-  expect [merchant_output,
-    user_output] =
-    list.filter(
-      outputs,
-      fn(o) { o.address.payment_credential == Script(own_hash) },
-    )
+  expect [merchant_output, user_output] = find_script_outputs(outputs, own_hash)
 
   let Output {
     address: m_o_addr,

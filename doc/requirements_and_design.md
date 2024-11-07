@@ -200,6 +200,7 @@ For the **AddFunds** redeemer, the validations are the following:
 - Validation token is present in the output
 - Lovelace amount in the value increases by at least N (N can be a parameter or decided later, to discourage DDOS attack)
 - Value doesn't include any other AssetClass
+- Output doesn't include reference scripts
 
 For the **Commit** redeemer, the validations are the following:
 
@@ -213,7 +214,7 @@ For the **Pay** redeemer, the validations are the following:
 - The script UTxO being validated has User funds_type
 - The msg and signature in the redeemer are valid considering the vkey of the User in the datum
 - At most, one other input at the script address is present. This input is considered the Merchant Funds input
-- If present, the Merchant Funds input has the Merchant funds_type (CAN WE PAY TO ANOTHER USER?)
+- If present, the Merchant Funds input has the Merchant funds_type
 - If present, the Merchant Funds input has the same address than the merchantAddr passed by redeemer
 - If present, the Merchant Funds input has the validation token
 - If present, the Merchant Funds input is being consumed with the AddFunds redeemer
@@ -224,9 +225,9 @@ For the **Pay** redeemer, the validations are the following:
 - It must have at least the original amount of lovelaces minus the amount specified in the redeemer
 - Remaining User Funds datum must be the same as User Funds UTxO
 - Remaining User Funds address must be the same as User Funds UTxO
-
-- If there's no Remaining User Funds, the validation token must be burnt
 - If there's no Merchant Funds input, a new validation token must be minted
+- The User Funds output doesn't have a reference script
+- The Merchant Funds output doesn't have a reference script
 
 For the **Withdraw** redeemer, the validations are the following:
 
@@ -247,12 +248,13 @@ For the **Commit** redemeer the validations are the following:
 - There's a single input that has the Hydra Init script address
 - The redeemer of the Hydra Init UTxO is the list of utxo refs of all inputs from out script address
 - The transaction is signed by the blazar admin
+- No tokens from our policy are minted or burned
 
 For the **Merge** redeemer the validations are the following:
 
 - All inputs at the script address have the same datum
 - There's more than one script input
-- There's only one output at the script address
+- There's only one output that has a token from our policy
 - The datum of the output is the same as all the inputs
 - The output has the sum of all lovelaces of the inputs
 - The output has one validation token
@@ -262,13 +264,9 @@ For the **Withdraw** redeemer the validations are the following:
 
 - For each script input check that:
   - There's an output whose address is the same as the address stored in the datum of the input
-  - The value contains at least the amount of lovelaces specified in the redeemer
+  - The value contains at least the amount of lovelaces that were in the input
   - The value doesn't contain any other tokens
-  - If there's leftover lovelaces, the next output must be the User Funds output
-  - If present, the User Funds output must have at least the leftover lovelaces and the validation token
-  - If present, the User Funds output must not have any other tokens
-  - If present, the User Funds output must have the same datum as the input
-  - If there's no leftover lovelaces, the validation_token must be burnt
+  - The validation_token must be burnt
 
 ### Minting Policy
 
@@ -276,11 +274,17 @@ Validates that the Funds UTxOs are created correctly.
 
 The validations are the following when **minting**:
 
-- The minted token is paid to the script address
 - Only one token is being minted
-- The token name is the same as the UTxO ref passed by redeemer
+- The minted token is paid to the script address
+- The token name is the same as the hashed UTxO ref passed by redeemer
 - The UTxO ref passed by redeemer is being consumed
 - The value where the validation token is being paid only contains the token and lovelaces
+- The payment part of the address stored in the datum is not a script hash
+- The locked deposit field of the datum is not greater than the amount of lovelaces in the value
+- The output doesn't contain a reference script
+- If the output has User funds type, the public key stored is being used to sign the transaction
+- If the output has User funds type, the locked deposit is greater than 0
+- If the output has Merchant funds type, the locked deposit is greater or equal to 0
 
 And the following when **burning**:
 

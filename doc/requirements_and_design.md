@@ -60,11 +60,11 @@ Context: An Admin wants to collect User deposits and open the hydra head
 Context: A User or Merchant wants to know how much funds they have in the protocol
 
 - The backend receives a request with the user or merchant address (1)
-- The backend queries L2 and gets the funds UTxO and the withdraw UTxOs if any (2)
+- The backend queries L2 and gets the funds UTxO (2)
 - The backend queries L1 and gets a list of user deposit UTxOs (3)
-- The backend returns the amount of ADAs that are pending deposit, ready to use and pending withdrawal (4)
+- The backend returns the UTxOs that are pending deposit and ready to use
 
-![OpenHeadDiagram](img/diagram-open-head.png)
+![OpenHeadDiagram](img/diagram-query-funds.png)
 
 ### Use case: Pay merchant
 

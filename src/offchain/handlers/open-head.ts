@@ -35,10 +35,11 @@ async function handleOpenHead(
     throw new Error("Unauthorized");
   }
   const localLucid = _.cloneDeep(lucid);
+  localLucid.selectWallet.fromSeed(env.SEED);
 
   // Step 1: Initialize the head
   logger.info("Initializing head...");
-  const hydra = new HydraHandler(lucid, wsUrl);
+  const hydra = new HydraHandler(localLucid, wsUrl);
   const initTag = await hydra.init();
   if (initTag !== "HeadIsInitializing") {
     logger.error("Head already initialized");
@@ -68,13 +69,18 @@ async function handleOpenHead(
   }
   let currentAdminUtxos = await localLucid.utxosAt(adminAddress).then((utxos) =>
     selectUTxOs(utxos, {
-      ["lovelace"]: BigInt(userToDepositsMap.size * 1_000_000),
+      ["lovelace"]: BigInt(userToDepositsMap.size * 1_000_000 + 5_000_000),
     })
   );
   let mergeTxs: string[] = [];
   let fundsRefs: OutRef[] = [];
   logger.info("Preparing merge transactions...");
   for (const [_, deposits] of userToDepositsMap) {
+    if (deposits.length === 1) {
+      // User has only one funds utxo, no need for a merge transaction
+      fundsRefs.push(deposits.pop()!);
+      continue;
+    }
     const params = {
       adminAddress,
       userFundsUtxos: deposits,
@@ -93,36 +99,45 @@ async function handleOpenHead(
     mergeTxs.push(signedTx);
     currentAdminUtxos = newAdminUtxos;
   }
-  logger.info("Submitting merge transactions...");
-  for (const tx of mergeTxs) {
-    await localLucid.wallet().submitTx(tx);
+  if (mergeTxs.length > 0) {
+    logger.info("Submitting merge transactions...");
+    for (const tx of mergeTxs) {
+      const txid = await localLucid.wallet().submitTx(tx);
+      logger.info(
+        `Merge transaction submitted! tx id: https://preprod.cexplorer.io/tx/${txid}`
+      );
+    }
+    const lastSubmittedTxHash = localLucid
+      .fromTx(mergeTxs[mergeTxs.length - 1])
+      .toHash();
+    logger.info(
+      "Merge transactions submitted succesfully, last tx: " +
+        lastSubmittedTxHash
+    );
+    await waitForUtxosUpdate(localLucid, adminAddress, lastSubmittedTxHash);
   }
-  const lastSubmittedTxHash = lucid
-    .fromTx(mergeTxs[mergeTxs.length - 1])
-    .toHash();
-  await waitForUtxosUpdate(localLucid, lastSubmittedTxHash);
-  logger.info(
-    "Merge transactions submitted succesfully, last tx: " + lastSubmittedTxHash
-  );
 
   // Step 3: Commit the funds
-  logger.info("Committing the funds...");
   let fundsUtxosToCommit = await localLucid.utxosByOutRef(fundsRefs);
   const utxosPerPeer = fundsUtxosToCommit.length / peerUrls.length;
   for (let i = 0; i < peerUrls.length; i++) {
     const peerUrl = peerUrls[i];
-    const thisPeerUtxos = fundsUtxosToCommit.slice(0, utxosPerPeer - 1);
-    fundsUtxosToCommit = fundsUtxosToCommit.splice(0 , utxosPerPeer);
+    const thisPeerUtxos = fundsUtxosToCommit.slice(0, utxosPerPeer);
+    fundsUtxosToCommit.splice(0, utxosPerPeer);
     const params: CommitFundsParams = {
       adminAddress,
       userFundUtxos: thisPeerUtxos,
       validatorRefUtxo: validatorRef,
     };
     const { tx } = await commitFunds(localLucid, params);
-    const peerCommitTxId = await hydra.sendCommit(peerUrl, tx.toCBOR(), thisPeerUtxos);
+    const peerCommitTxId = await hydra.sendCommit(
+      peerUrl,
+      tx.toCBOR(),
+      thisPeerUtxos
+    );
     logger.info(`Commit transaction submitted! tx id: ${peerCommitTxId}`);
     let commitTag = "";
-    console.info("Waiting for last commit to be confirmed by the hydra node");
+    logger.info("Waiting for last commit to be confirmed by the hydra node");
     while (commitTag !== "Committed") {
       commitTag = await hydra.listen("Committed");
     }
@@ -131,7 +146,7 @@ async function handleOpenHead(
 
   let openHeadTag = "";
   while (openHeadTag !== "HeadIsOpen") {
-    console.log("Head not opened yet");
+    logger.info("Head not opened yet");
     openHeadTag = await hydra.listen("HeadIsOpen");
   }
   await hydra.stop();

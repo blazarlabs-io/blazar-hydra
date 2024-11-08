@@ -16,6 +16,7 @@ async function mergeFunds(
   params: MergeFundsParams
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef; newAdminUtxos: UTxO[] }> {
   const { userFundsUtxos, adminUtxos, validatorRef } = params;
+  lucid.overrideUTxOs(adminUtxos);
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
@@ -38,10 +39,10 @@ async function mergeFunds(
   );
   if (!validationToken) {
     throw new Error(
-      `Couldn't find validation token in ${{
+      `Couldn't find validation token in ${JSON.stringify({
         hash: userFundsUtxos[0].txHash,
         index: userFundsUtxos[0].outputIndex,
-      }}`
+      })}`
     );
   }
   const newFundsValue = {
@@ -72,15 +73,15 @@ async function mergeFunds(
   // Burn all validation tokens but one
   for (let i = 1; i < userFundsUtxos.length; i++) {
     const utxo = userFundsUtxos[i];
-    const validationToken = Object.keys(utxo).find(
+    const validationToken = Object.keys(utxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
       throw new Error(
-        `Couldn't find validation token in ${{
+        `Couldn't find validation token in ${JSON.stringify({
           hash: userFundsUtxos[0].txHash,
           index: userFundsUtxos[0].outputIndex,
-        }}`
+        })}`
       );
     }
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);

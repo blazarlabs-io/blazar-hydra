@@ -91,22 +91,23 @@ function getPrivateKey(
 
 async function waitForUtxosUpdate(
   lucid: LucidEvolution,
+  address: string,
   txId: string
 ): Promise<void> {
   let userUtxosUpdated = false;
   let scriptUtxoUpdated = false;
-  while (!userUtxosUpdated || !scriptUtxoUpdated) {
-    console.info("Waiting for utxos update...");
+  while (!scriptUtxoUpdated || !userUtxosUpdated) {
+    logger.info("Waiting for utxos update...");
     await new Promise((r) => setTimeout(r, 10000));
     try {
-      const utxos = await lucid.wallet().getUtxos();
+      const utxos = await lucid.utxosAt(address);
       const scriptUtxos = await lucid.utxosByOutRef([
         { txHash: txId, outputIndex: 0 },
       ]);
       userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
       scriptUtxoUpdated = scriptUtxos.length !== 0;
     } catch (e) {
-      console.log("Failed to fetch utxos from blockfrost, retrying...");
+      logger.info("Failed to fetch utxos from blockfrost, retrying...");
     }
   }
   // wait for 20 more seconds because sometimes it is insufficient

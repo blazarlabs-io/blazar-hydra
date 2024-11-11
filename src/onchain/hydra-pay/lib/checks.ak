@@ -89,8 +89,14 @@ pub fn validate_pay(
     output_reference: u_i_ref,
   } = own_input
 
+  let FundsDatum {
+    funds_type: i_dat_funds_type,
+    locked_deposit: i_dat_locked_deposit,
+    ..
+  } = datum
+
   // The script UTxO being validated has User funds_type
-  expect User { public_key } = datum.funds_type
+  expect User { public_key } = i_dat_funds_type
 
   let PayInfo {
     amount: red_amount,
@@ -214,11 +220,14 @@ pub fn validate_pay(
     // amount specified in the Pay redeemer plus the Merchant Funds input (If present)
     (lovelace_of(m_o_value) >= expected_merchant_funds)?,
     // The User Funds output must have at least the original amount of lovelaces
-    // minus the amount specified in the redeemer
+    // minus the amount specified in the redeemer and be greater than or equal
+    // to the locked deposit specified in the datum
     match(
       u_o_value,
       u_i_value,
-      fn(o_lov, i_lov) { o_lov >= i_lov - red_amount },
+      fn(o_lov, i_lov) {
+        o_lov >= i_lov - red_amount && o_lov >= i_dat_locked_deposit
+      },
     )?,
     merchant_correct_datum?,
     // Remaining User Funds datum must be the same as User Funds UTxO

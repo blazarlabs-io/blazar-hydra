@@ -1,11 +1,10 @@
 import {
-  addAssets,
-  Data,
   fromUnit,
   getAddressDetails,
   LucidEvolution,
   OutRef,
   TxSignBuilder,
+  UTxO,
   validatorToAddress,
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
@@ -15,8 +14,9 @@ import { Combined, Mint, Spend } from "../lib/types";
 async function mergeFunds(
   lucid: LucidEvolution,
   params: MergeFundsParams
-): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
+): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef; newAdminUtxos: UTxO[] }> {
   const { userFundsUtxos, adminUtxos, validatorRef } = params;
+  lucid.overrideUTxOs(adminUtxos);
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
@@ -39,10 +39,10 @@ async function mergeFunds(
   );
   if (!validationToken) {
     throw new Error(
-      `Couldn't find validation token in ${{
+      `Couldn't find validation token in ${JSON.stringify({
         hash: userFundsUtxos[0].txHash,
         index: userFundsUtxos[0].outputIndex,
-      }}`
+      })}`
     );
   }
   const newFundsValue = {
@@ -54,7 +54,10 @@ async function mergeFunds(
   }
 
   // Start transaction building
-  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
+  const rewardAddress = validatorToRewardAddress(
+    lucid.config().network,
+    validator
+  );
   const tx = lucid
     .newTx()
     .readFrom([validatorRef])
@@ -70,28 +73,28 @@ async function mergeFunds(
   // Burn all validation tokens but one
   for (let i = 1; i < userFundsUtxos.length; i++) {
     const utxo = userFundsUtxos[i];
-    const validationToken = Object.keys(utxo).find(
+    const validationToken = Object.keys(utxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
       throw new Error(
-        `Couldn't find validation token in ${{
+        `Couldn't find validation token in ${JSON.stringify({
           hash: userFundsUtxos[0].txHash,
           index: userFundsUtxos[0].outputIndex,
-        }}`
+        })}`
       );
     }
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
   }
 
   // Complete tx
-  const txSignBuilder = await tx.complete();
+  const [newAdminUtxos, _, txSignBuilder] = await tx.chain();
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),
     outputIndex: 0,
   };
 
-  return { tx: txSignBuilder, newFundsUtxo };
+  return { tx: txSignBuilder, newFundsUtxo, newAdminUtxos };
 }
 
 export { mergeFunds };

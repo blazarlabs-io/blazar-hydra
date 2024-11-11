@@ -150,6 +150,7 @@ const PayMerchantZodSchema = z.object({
 
 const ManageHeadZodSchema = z.object({
   auth_token: z.string(),
+  peer_api_urls: z.array(z.string()),
 });
 
 export {

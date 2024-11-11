@@ -8,6 +8,7 @@ import {
   UTxO,
 } from "@lucid-evolution/lucid";
 import blake2b from "blake2b";
+import { logger } from "../../logger";
 
 /**
  * Listen and send messages to a Hydra node.
@@ -30,19 +31,19 @@ class HydraHandler {
   public listen(tag: string): Promise<string> {
     return new Promise((resolve, _) => {
       this.connection.onopen = () => {
-        console.log(`Awaiting for ${tag} events...`);
+        logger.info(`Awaiting for ${tag} events...`);
       };
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
         if (data.tag === tag) {
-          console.log(`Received ${tag}`);
+          logger.info(`Received ${tag}`);
         } else {
-          console.error(`Received: ${data.tag}`);
+          logger.error(`Received: ${data.tag}`);
         }
         resolve(data.tag);
       };
       this.connection.onerror = (error) => {
-        console.error("Error on Hydra websocket: ", error);
+        logger.error("Error on Hydra websocket: ", error);
       };
     });
   }
@@ -58,7 +59,7 @@ class HydraHandler {
   async init(): Promise<string> {
     return new Promise((resolve, _) => {
       this.connection.onopen = () => {
-        console.log("Sending init command...");
+        logger.info("Sending init command...");
         this.connection.send(JSON.stringify({ tag: "Init" }));
       };
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -67,20 +68,20 @@ class HydraHandler {
           case "Greetings":
             break;
           case "HeadIsInitializing":
-            console.log("Received HeadIsInitializing");
+            logger.info("Received HeadIsInitializing");
             resolve(data.tag);
             break;
           default:
-            console.error("Unexpected message recibed upon Init: ", data.tag);
+            logger.error("Unexpected message recibed upon Init: ", data.tag);
             resolve(data.tag);
             break;
         }
       };
       this.connection.onerror = (error) => {
-        console.error("Error on Hydra websocket: ", error);
+        logger.error("Error on Hydra websocket: ", error);
       };
       this.connection.onclose = () => {
-        console.error("Hydra websocket closed");
+        logger.info("Hydra websocket closed");
       };
     });
   }
@@ -89,37 +90,54 @@ class HydraHandler {
   async abort(): Promise<string> {
     return new Promise((resolve, _) => {
       this.connection.onopen = () => {
-        console.log("Aborting head opening...");
+        logger.info("Aborting head opening...");
         this.connection.send(JSON.stringify({ tag: "Abort" }));
       };
+      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
+        const data = JSON.parse(msg.data.toString());
+        switch (data.tag) {
+          case "Greetings":
+            break;
+          case "HeadIsAborted":
+            logger.info("Received HeadIsAborted");
+            resolve(data.tag);
+            break;
+          default:
+            logger.error("Unexpected message recibed upon Abort: ", data.tag);
+            resolve(data.tag);
+            break;
+        }
+      };
       this.connection.onerror = (error) => {
-        console.error("Error on Hydra websocket: ", error);
+        logger.error("Error on Hydra websocket: ", error);
       };
       this.connection.onclose = () => {
-        console.error("Hydra websocket closed");
+        logger.info("Hydra websocket closed");
       };
     });
   }
 
-  async sendCommit(params: {
-    apiUrl: string;
-    blueprint: CBORHex;
-    utxos: [string, any][];
-  }): Promise<string> {
+  async sendCommit(
+    apiUrl: string,
+    blueprint: CBORHex,
+    utxos: UTxO[]
+  ): Promise<string> {
     try {
-      const utxos: Record<string, any> = {};
-      params.utxos.map(([ref, utxo]: [string, any]) => {
-        utxos[ref] = utxo;
+      const payloadUtxos: Record<string, any> = {};
+      utxos.map((utxo) => {
+        const key = utxo.txHash + "#" + utxo.outputIndex;
+        const val = lucidUtxoToHydraUtxo(utxo);
+        payloadUtxos[key] = val;
       });
       const payload = {
         blueprintTx: {
-          cborHex: params.blueprint,
+          cborHex: blueprint,
           description: "",
           type: "Tx BabbageEra",
         },
-        utxo: utxos,
+        utxo: payloadUtxos,
       };
-      const response = await axios.post(params.apiUrl, payload);
+      const response = await axios.post(apiUrl, payload);
       const txWitnessed = response.data.cborHex;
       let signedTx: any = await this.lucid
         .fromTx(txWitnessed)
@@ -129,7 +147,7 @@ class HydraHandler {
       const txHash = await this.lucid.wallet().submitTx(signedTx);
       return txHash;
     } catch (error) {
-      console.log(error);
+      logger.error(error as unknown as string);
       throw error;
     }
   }
@@ -140,14 +158,14 @@ class HydraHandler {
       transaction: tx,
     };
     this.connection.onopen = () => {
-      console.log("Sending transaction...");
+      logger.info("Sending transaction...");
       this.connection.send(JSON.stringify(message));
     };
     this.connection.onerror = (error) => {
-      console.error("Error on Hydra websocket: ", error);
+      logger.error("Error on Hydra websocket: ", error);
     };
     this.connection.onclose = () => {
-      console.error("Hydra websocket closed");
+      logger.info("Hydra websocket closed");
     };
   }
 
@@ -155,16 +173,16 @@ class HydraHandler {
     const apiURL = `${this.url.origin.replace("ws", "http")}/snapshot/utxo`;
     try {
       const response = await axios.get(apiURL);
-      console.log(response.data);
+      logger.info(response.data);
     } catch (error) {
-      console.log(error);
+      logger.info(error as unknown as string);
     }
   }
 
   async close(): Promise<string> {
     return new Promise((resolve, _) => {
       this.connection.onopen = () => {
-        console.log("Closing head...");
+        logger.info("Closing head...");
         this.connection.send(JSON.stringify({ tag: "Close" }));
       };
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -173,20 +191,20 @@ class HydraHandler {
           case "Greetings":
             break;
           case "HeadIsClosed":
-            console.log("Received HeadIsClosed");
+            logger.info("Received HeadIsClosed");
             resolve(data.tag);
             break;
           default:
-            console.error("Unexpected message recibed upon Close: ", data.tag);
+            logger.error("Unexpected message recibed upon Close: ", data.tag);
             resolve(data.tag);
             break;
         }
       };
       this.connection.onerror = (error) => {
-        console.error("Error on Hydra websocket: ", error);
+        logger.error("Error on Hydra websocket: ", error);
       };
       this.connection.onclose = () => {
-        console.error("Hydra websocket closed");
+        logger.info("Hydra websocket closed");
       };
     });
   }
@@ -195,7 +213,7 @@ class HydraHandler {
     return new Promise((resolve, _) => {
       this.connection.resume();
       this.connection.onopen = () => {
-        console.log("Sending fanout command...");
+        logger.info("Sending fanout command...");
         this.connection.send(JSON.stringify({ tag: "Fanout" }));
       };
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -204,20 +222,20 @@ class HydraHandler {
           case "Greetings":
             break;
           case "HeadIsFinalized":
-            console.log("Received HeadIsFinalized");
+            logger.info("Received HeadIsFinalized");
             resolve(data.tag);
             break;
           default:
-            console.error("Unexpected message recibed upon Close: ", data.tag);
+            logger.error("Unexpected message recibed upon Close: ", data.tag);
             resolve(data.tag);
             break;
         }
       };
       this.connection.onerror = (error) => {
-        console.error("Error on Hydra websocket: ", error);
+        logger.error("Error on Hydra websocket: ", error);
       };
       this.connection.onclose = () => {
-        console.error("Hydra websocket closed");
+        logger.info("Hydra websocket closed");
       };
     });
   }

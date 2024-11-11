@@ -19,7 +19,7 @@ import {
   Spend,
 } from "../lib/types";
 import { buildValidator } from "../validator/handle";
-import { dataAddressToBech32 } from "../lib/utils";
+import { dataAddressToBech32, getValidator } from "../lib/utils";
 
 async function withdraw(
   lucid: LucidEvolution,
@@ -105,25 +105,4 @@ async function withdraw(
   return { tx: txSignBuilder };
 }
 
-function getValidator(
-  validatorRef: UTxO | undefined,
-  adminKey: string | undefined,
-  hydraKey: string | undefined
-): Script {
-  if (!validatorRef) {
-    if (!(adminKey || hydraKey)) {
-      throw new Error(
-        "Must include validator reference or validator parameters"
-      );
-    } else {
-      const hydraCred: CredentialT = { Script_cred: { Key: hydraKey! } };
-      return buildValidator(adminKey!, hydraCred);
-    }
-  } else {
-    if (!validatorRef.scriptRef) {
-      throw new Error("Validator script not found in UTxO");
-    }
-    return validatorRef.scriptRef;
-  }
-}
 export { withdraw };

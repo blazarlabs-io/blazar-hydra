@@ -5,10 +5,13 @@ import {
   getAddressDetails,
   LucidEvolution,
   Network,
+  Script,
+  UTxO,
 } from "@lucid-evolution/lucid";
-import { AddressT } from "./types";
+import { AddressT, CredentialT } from "./types";
 import { mnemonicToEntropy } from "bip39";
 import { logger } from "../../logger";
+import { buildValidator } from "../validator/handle";
 
 function dataAddressToBech32(lucid: LucidEvolution, add: AddressT): string {
   const paymentCred = add.payment_credential;
@@ -88,31 +91,54 @@ function getPrivateKey(
 
 async function waitForUtxosUpdate(
   lucid: LucidEvolution,
+  address: string,
   txId: string
 ): Promise<void> {
   let userUtxosUpdated = false;
   let scriptUtxoUpdated = false;
-  while (!userUtxosUpdated || !scriptUtxoUpdated) {
-    console.info("Waiting for utxos update...");
+  while (!scriptUtxoUpdated || !userUtxosUpdated) {
+    logger.info("Waiting for utxos update...");
     await new Promise((r) => setTimeout(r, 10000));
     try {
-      const utxos = await lucid.wallet().getUtxos();
+      const utxos = await lucid.utxosAt(address);
       const scriptUtxos = await lucid.utxosByOutRef([
         { txHash: txId, outputIndex: 0 },
       ]);
       userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
       scriptUtxoUpdated = scriptUtxos.length !== 0;
     } catch (e) {
-      console.log("Failed to fetch utxos from blockfrost, retrying...");
+      logger.info("Failed to fetch utxos from blockfrost, retrying...");
     }
   }
   // wait for 20 more seconds because sometimes it is insufficient
   await new Promise((r) => setTimeout(r, 20000));
 }
 
+function getValidator(
+  validatorRef: UTxO | undefined,
+  adminKey?: string,
+  hydraKey?: string
+): Script {
+  if (!validatorRef) {
+    if (!(adminKey || hydraKey)) {
+      throw new Error(
+        "Must include validator reference or validator parameters"
+      );
+    } else {
+      const hydraCred: CredentialT = { Script_cred: { Key: hydraKey! } };
+      return buildValidator(adminKey!, hydraCred);
+    }
+  } else {
+    if (!validatorRef.scriptRef) {
+      throw new Error("Validator script not found in UTxO");
+    }
+    return validatorRef.scriptRef;
+  }
+}
 export {
   dataAddressToBech32,
   bech32ToAddressType,
   getPrivateKey,
+  getValidator,
   waitForUtxosUpdate,
 };

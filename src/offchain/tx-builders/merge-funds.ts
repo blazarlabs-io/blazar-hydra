@@ -1,4 +1,6 @@
 import {
+  CML,
+  coreToUtxo,
   fromUnit,
   getAddressDetails,
   LucidEvolution,
@@ -88,11 +90,30 @@ async function mergeFunds(
   }
 
   // Complete tx
-  const [newAdminUtxos, _, txSignBuilder] = await tx.chain();
+  //const [newAdminUtxos, _, txSignBuilder] = await tx.chain();
+  const txSignBuilder = await tx.complete({ setCollateral: 10_000_000n });
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),
     outputIndex: 0,
   };
+  const txOutputs = lucid
+    .fromTx(txSignBuilder.toCBOR())
+    .toTransaction()
+    .body()
+    .outputs();
+  const newAdminUtxos = [];
+  const adminAddress = adminUtxos[0].address;
+  for (let i = 0; i < txOutputs.len(); i++) {
+    const output = txOutputs.get(i);
+    if (output.address().to_bech32() === adminAddress) {
+      let input = CML.TransactionInput.new(
+        CML.TransactionHash.from_hex(txSignBuilder.toHash()),
+        BigInt(i)
+      );
+      let utxo = CML.TransactionUnspentOutput.new(input, output);
+      newAdminUtxos.push(coreToUtxo(utxo));
+    }
+  }
 
   return { tx: txSignBuilder, newFundsUtxo, newAdminUtxos };
 }

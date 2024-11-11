@@ -91,12 +91,11 @@ async function payMerchant(
     amount: amountToPay,
     merchant_addr: bech32ToAddressType(lucid, merchantAddress),
     ref: userRef,
-    sig: signature,
   };
 
   // Complete the transaction
   let txSignBuilder = await tx
-    .collectFrom([userFundsUtxo], Spend.Pay(payInfo))
+    .collectFrom([userFundsUtxo], Spend.Pay(payInfo, signature))
     .pay.ToContract(
       scriptAddress,
       { kind: "inline", value: Data.to<FundsDatumT>(merchDatum, FundsDatum) },

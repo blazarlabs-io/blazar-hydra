@@ -17,6 +17,7 @@ import { handleWithdraw } from "../handlers/withdraw";
 import blake2b from "blake2b";
 import { handleOpenHead } from "../handlers/open-head";
 import { logger } from "../../logger";
+import { WithdrawInfo, WithdrawInfoT } from "../lib/types";
 
 const adminSeed = env.SEED;
 const privKey = getPrivateKey(adminSeed);
@@ -121,7 +122,13 @@ const fanout = async () => {
 
 const withdraw = async (fanoutTxId: string) => {
   const adminAddress = await lucid.wallet().address();
-  const msg = Buffer.from(fanoutTxId + Data.to<bigint>(0n), "hex");
+  const withdrawInfo: WithdrawInfoT = {
+    ref: {
+      transaction_id: fanoutTxId,
+      output_index: 0n
+    },
+  }
+  const msg = Buffer.from(Data.to<WithdrawInfoT>(withdrawInfo, WithdrawInfo), "hex");
   const hashedMsg = blake2b(32).update(msg).digest("hex");
   const sig = privKey.sign(Buffer.from(hashedMsg, "hex")).to_hex();
 

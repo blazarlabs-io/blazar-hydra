@@ -52,13 +52,11 @@ const PayInfoSchema = Data.Object({
   amount: Data.Integer(),
   merchant_addr: AddressSchema,
   ref: OutputRefSchema,
-  sig: Data.Bytes(),
 });
 type PayInfoT = Data.Static<typeof PayInfoSchema>;
 const PayInfo = PayInfoSchema as unknown as PayInfoT;
 const WithdrawInfoSchema = Data.Object({
   ref: OutputRefSchema,
-  sig: Data.Bytes(),
 });
 type WithdrawInfoT = Data.Static<typeof WithdrawInfoSchema>;
 const WithdrawInfo = WithdrawInfoSchema as unknown as WithdrawInfoT;
@@ -66,8 +64,10 @@ const FundsRedeemerSchema = Data.Enum([
   Data.Literal("AddFunds"),
   Data.Literal("Commit"),
   Data.Literal("Merge"),
-  Data.Object({ Pay: Data.Object({ info: PayInfoSchema }) }),
-  Data.Object({ UserWithdraw: Data.Object({ info: WithdrawInfoSchema }) }),
+  Data.Object({ Pay: Data.Object({ info: PayInfoSchema, sig: Data.Bytes() }) }),
+  Data.Object({
+    UserWithdraw: Data.Object({ info: WithdrawInfoSchema, sig: Data.Bytes() }),
+  }),
   Data.Literal("MerchantWithdraw"),
 ]);
 type FundsRedeemerT = Data.Static<typeof FundsRedeemerSchema>;
@@ -76,12 +76,14 @@ namespace Spend {
   export const AddFunds = Data.to<FundsRedeemerT>("AddFunds", FundsRedeemer);
   export const Commit = Data.to<FundsRedeemerT>("Commit", FundsRedeemer);
   export const Merge = Data.to<FundsRedeemerT>("Merge", FundsRedeemer);
-  export const Pay = (info: PayInfoT) =>
-    Data.to<FundsRedeemerT>({ Pay: { info } }, FundsRedeemer);
-  export const UserWithdraw = (info: WithdrawInfoT) =>
-    Data.to<FundsRedeemerT>({ UserWithdraw: { info } }, FundsRedeemer);
-  export const MerchantWithdraw =
-    Data.to<FundsRedeemerT>("MerchantWithdraw", FundsRedeemer);
+  export const Pay = (info: PayInfoT, sig: string) =>
+    Data.to<FundsRedeemerT>({ Pay: { info, sig } }, FundsRedeemer);
+  export const UserWithdraw = (info: WithdrawInfoT, sig: string) =>
+    Data.to<FundsRedeemerT>({ UserWithdraw: { info, sig } }, FundsRedeemer);
+  export const MerchantWithdraw = Data.to<FundsRedeemerT>(
+    "MerchantWithdraw",
+    FundsRedeemer
+  );
 }
 
 const CombinedActionSchema = Data.Enum([
@@ -92,12 +94,18 @@ const CombinedActionSchema = Data.Enum([
 type CombinedActionT = Data.Static<typeof CombinedActionSchema>;
 const CombinedAction = CombinedActionSchema as unknown as CombinedActionT;
 namespace Combined {
-  export const CombinedCommit =
-    Data.to<CombinedActionT>("CombinedCommit", CombinedAction);
-  export const CombinedMerge =
-    Data.to<CombinedActionT>("CombinedMerge", CombinedAction);
-  export const CombinedWithdraw =
-    Data.to<CombinedActionT>("CombinedWithdraw", CombinedAction);
+  export const CombinedCommit = Data.to<CombinedActionT>(
+    "CombinedCommit",
+    CombinedAction
+  );
+  export const CombinedMerge = Data.to<CombinedActionT>(
+    "CombinedMerge",
+    CombinedAction
+  );
+  export const CombinedWithdraw = Data.to<CombinedActionT>(
+    "CombinedWithdraw",
+    CombinedAction
+  );
 }
 
 const MintRedeemerSchema = Data.Enum([
@@ -136,5 +144,6 @@ export {
   PayInfoT,
   Spend,
   WithdrawInfoSchema,
+  WithdrawInfo,
   WithdrawInfoT,
 };

@@ -17,6 +17,7 @@ import {
   FundsDatumT,
   Mint,
   Spend,
+  WithdrawInfoT,
 } from "../lib/types";
 import { buildValidator } from "../validator/handle";
 import { dataAddressToBech32, getValidator } from "../lib/utils";
@@ -65,8 +66,7 @@ async function withdraw(
     if (!validationToken) {
       throw new Error("Validation token not found in funds UTxO");
     }
-    const withdrawInfo = {
-      sig: signature,
+    const withdrawInfo: WithdrawInfoT = {
       ref: {
         transaction_id: fundsUtxo.txHash,
         output_index: BigInt(fundsUtxo.outputIndex),
@@ -75,7 +75,7 @@ async function withdraw(
     const redeemer =
       kind === "merchant"
         ? Spend.MerchantWithdraw
-        : Spend.UserWithdraw(withdrawInfo);
+        : Spend.UserWithdraw(withdrawInfo, signature);
 
     tx.collectFrom([fundsUtxo], redeemer);
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);

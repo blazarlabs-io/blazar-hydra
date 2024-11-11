@@ -155,28 +155,42 @@ class HydraHandler {
   }
 
   async sendTx(tx: CBORHex): Promise<string> {
-    logger.info("Inside Send...");
     return new Promise((resolve, _) => {
-     const message = {
-       tag: "NewTx",
-       transaction: {
-         cborHex: tx,
-         description: "",
-         type: "Tx BabbageEra",
-      },
-    };
-    this.connection.onopen = () => {
-      logger.info("Sending transaction...");
-      this.connection.send(JSON.stringify(message));
-    };
-    this.connection.onerror = (error) => {
-      logger.error("Error on Hydra websocket: ", error);
-    };
-    this.connection.onclose = () => {
-      logger.info("Hydra websocket closed");
-    };
-  })
-}
+      const message = {
+        tag: "NewTx",
+        transaction: {
+          cborHex: tx,
+          description: "",
+          type: "Tx BabbageEra",
+       },
+      }
+      this.connection.onopen = () => {
+        logger.info("Sending transaction...");
+        this.connection.send(JSON.stringify(message));
+      };
+      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
+        const data = JSON.parse(msg.data.toString());
+        switch (data.tag) {
+          case "Greetings":
+            break;
+          case "TxValid":
+            logger.info("Received TxValid");
+            resolve(data.tag);
+            break;
+          default:
+            logger.error("Unexpected message recibed upon SendTx: ", data.tag);
+            resolve(data.tag);
+            break;
+        }
+      };
+      this.connection.onerror = (error) => {
+        logger.error("Error on Hydra websocket: ", error);
+      };
+      this.connection.onclose = () => {
+        logger.info("Hydra websocket closed");
+      };
+    });
+  }
 
   async getSnapshot(): Promise<UTxO[]> {
     const apiURL = `${this.url.origin.replace("ws", "http")}/snapshot/utxo`;

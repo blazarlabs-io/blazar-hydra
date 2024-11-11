@@ -25,6 +25,7 @@ import { logger } from "../../logger";
 import { PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
 import { handlePay } from "../handlers/pay-merchant";
 import { PayMerchantParams } from "../lib/params";
+import { handleCloseHead } from "../handlers/close-head";
 
 const adminSeed = env.SEED;
 const privKey = getPrivateKey(adminSeed);
@@ -83,7 +84,6 @@ const deposit = async (fromWallet: 1 | 2) => {
 };
 
 const getSnapshot = async () => {
-  console.dir(await lucid.utxosAt("addr_test1wqdjuvzskdekwcm703czqlrvt23s7dshjalwa6mdwt5tpugw00mdu"), { depth: null });
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   const utxos = await hydra.getSnapshot();
   console.dir(utxos, { depth: null });
@@ -229,7 +229,7 @@ switch (trace) {
     await getSnapshot();
     break;
   case "close":
-    await closeHead();
+    await handleCloseHead(lucid, {auth_token: "", peer_api_urls: [aliceApiUrl, bobApiUrl]});
     break;
   case "pay":
     const amount = process.env.npm_config_amount;

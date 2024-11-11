@@ -6,6 +6,7 @@ import {
   CML,
   fromUnit,
   LucidEvolution,
+  toHex,
   UTxO,
 } from "@lucid-evolution/lucid";
 import blake2b from "blake2b";

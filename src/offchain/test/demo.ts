@@ -83,6 +83,7 @@ const deposit = async (fromWallet: 1 | 2) => {
 };
 
 const getSnapshot = async () => {
+  console.dir(await lucid.utxosAt("addr_test1wqdjuvzskdekwcm703czqlrvt23s7dshjalwa6mdwt5tpugw00mdu"), { depth: null });
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   const utxos = await hydra.getSnapshot();
   console.dir(utxos, { depth: null });

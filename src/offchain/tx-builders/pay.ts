@@ -10,6 +10,7 @@ import {
   utxoToCore,
   validatorToAddress,
   assetsToValue,
+  PROTOCOL_PARAMETERS_DEFAULT,
 } from "@lucid-evolution/lucid";
 import { PayMerchantParams } from "../lib/params";
 import { buildValidator } from "../validator/handle";
@@ -175,6 +176,14 @@ async function payMerchant(
   const script = CML.PlutusV3Script.from_cbor_hex(validator.script);
   scripts.add(script);
   txWitnessSet.set_plutus_v3_scripts(scripts);
+
+  // Calculate script data hash
+  const costModels = lucid.config().costModels;
+  const scriptDataHash = CML.calc_script_data_hash_from_witness(txWitnessSet, costModels);
+  if(!scriptDataHash) {
+    throw new Error(`Could not calculate script data hash`);
+  }
+  txBody.set_script_data_hash(scriptDataHash);
 
   // Complete transaction
   const cmlTx = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();

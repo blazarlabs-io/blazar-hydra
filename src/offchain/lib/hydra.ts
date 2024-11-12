@@ -1,6 +1,7 @@
 import Websocket from "ws";
 import axios from "axios";
 import {
+  Assets,
   CBORHex,
   CML,
   fromUnit,
@@ -55,7 +56,7 @@ class HydraHandler {
     });
   }
 
-  // Sends the Init tag to opean a head
+  // Sends the Init tag to open a head
   async init(): Promise<string> {
     return new Promise((resolve, _) => {
       this.connection.onopen = () => {
@@ -169,13 +170,20 @@ class HydraHandler {
     };
   }
 
-  async getSnapshot() {
+  async getSnapshot(): Promise<UTxO[]> {
     const apiURL = `${this.url.origin.replace("ws", "http")}/snapshot/utxo`;
     try {
       const response = await axios.get(apiURL);
-      logger.info(response.data);
+      const hydraUtxos = Object.entries(response.data);
+      const lucidUtxos = hydraUtxos.map((utxo: any) => {
+        const [hash, idx] = utxo[0].split("#");
+        const output = utxo[1];
+        return hydraUtxoToLucidUtxo(hash, idx, output);
+      });
+      return lucidUtxos;
     } catch (error) {
       logger.info(error as unknown as string);
+      throw error;
     }
   }
 
@@ -301,6 +309,29 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
     inlineDatum,
     inlineDatumhash,
     referenceScript,
+  };
+}
+
+function hydraUtxoToLucidUtxo(hash: string, idx: number, output: any): UTxO {
+  const datumBytes = output.inlineDatum ? output.inlineDatumRaw : null;
+  const assets: Assets = {};
+  for (const [policy, value] of Object.entries(output.value)) {
+    if (policy === "lovelace") {
+      assets[policy] = BigInt(value as number);
+    } else {
+      const namesAndAmounts: [string, number][] = Object.entries(value as any);
+      for (const [assetName, amount] of namesAndAmounts) {
+        const unit = `${policy}${assetName}`;
+        assets[unit] = BigInt(amount as number);
+      }
+    }
+  }
+  return {
+    txHash: hash,
+    outputIndex: idx,
+    assets: assets,
+    address: output.address,
+    datum: datumBytes,
   };
 }
 

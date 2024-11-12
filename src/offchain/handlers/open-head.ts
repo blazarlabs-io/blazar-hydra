@@ -118,12 +118,17 @@ async function handleOpenHead(
   }
 
   // Step 3: Commit the funds
-  let fundsUtxosToCommit = await localLucid.utxosByOutRef(fundsRefs);
-  const utxosPerPeer = fundsUtxosToCommit.length / peerUrls.length;
+  const adminUtxos = await localLucid.utxosAt(adminAddress).then((utxos) =>
+    utxos.filter((utxo) => utxo.assets["lovelace"] >= 1)
+  );
+  const adminCollateral = adminUtxos[0];
+  const utxosToCommit = await localLucid.utxosByOutRef(fundsRefs);
+  utxosToCommit.push(adminCollateral);
+  const utxosPerPeer = utxosToCommit.length / peerUrls.length;
   for (let i = 0; i < peerUrls.length; i++) {
     const peerUrl = peerUrls[i];
-    const thisPeerUtxos = fundsUtxosToCommit.slice(0, utxosPerPeer);
-    fundsUtxosToCommit.splice(0, utxosPerPeer);
+    const thisPeerUtxos = utxosToCommit.slice(0, utxosPerPeer);
+    utxosToCommit.splice(0, utxosPerPeer);
     const params: CommitFundsParams = {
       adminAddress,
       userFundUtxos: thisPeerUtxos,

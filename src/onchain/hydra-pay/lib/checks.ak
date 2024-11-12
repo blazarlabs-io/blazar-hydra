@@ -18,8 +18,7 @@ use cardano/transaction.{
 use config.{add_funds_min_lovelace}
 use types.{
   AddFunds, CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
-  HaskellOutputReference, HaskellTransactionId, HydraCommit, Merchant, PayInfo,
-  User, WithdrawInfo,
+  HydraCommit, Merchant, PayInfo, User, WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -253,8 +252,8 @@ pub fn validate_withdraw(
         let WithdrawInfo { ref } = red_info
         let msg = serialise(red_info)
         and {
-          verify_ed25519_signature(public_key, msg, red_sig),
-          list.any(tx.inputs, fn(i) { i.output_reference == ref }),
+          verify_ed25519_signature(public_key, msg, red_sig)?,
+          list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
         }
       }
 
@@ -361,14 +360,7 @@ pub fn validate_combined_commit(
       inputs,
       fn(i) {
         if i.output.address.payment_credential == Script(own_hash) {
-          let h_tx_id: HaskellTransactionId =
-            HaskellTransactionId { tx_hash: i.output_reference.transaction_id }
-          let h_ref =
-            HaskellOutputReference {
-              transaction_id: h_tx_id,
-              output_index: i.output_reference.output_index,
-            }
-          Some(h_ref)
+          Some(i.output_reference)
         } else {
           None
         }
@@ -383,11 +375,11 @@ pub fn validate_combined_commit(
 
   and {
     // Hydra redeemer must contain the complete list of own input refs
-    hydra_redeemer == expected_redeemer_data,
+    (hydra_redeemer == expected_redeemer_data)?,
     // Must be authorized by the admin
-    list.any(extra_signatories, fn(sig) { sig == admin_key }),
+    list.any(extra_signatories, fn(sig) { sig == admin_key })?,
     // No token mint or burn under our policy
-    tokens(mint, own_hash) == empty,
+    (tokens(mint, own_hash) == empty)?,
   }
 }
 

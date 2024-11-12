@@ -24,12 +24,15 @@ async function handlePay(
     } = params;
     const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
     let fundsUtxo,
-      merchantFundsUtxo: UTxO | undefined = undefined;
+      merchantFundsUtxo,
+      adminCollateral: UTxO | undefined = undefined;
     if (funds_utxo_ref) {
       const { hash: txHash, index: outputIndex } = funds_utxo_ref;
-      [fundsUtxo] = await localLucid.utxosByOutRef([{ txHash, outputIndex }]);
+      [fundsUtxo, adminCollateral] = await localLucid.utxosByOutRef([
+        { txHash, outputIndex },
+      ]);
     }
-    if (!fundsUtxo) {
+    if (!fundsUtxo || !adminCollateral) {
       throw new Error(`User funds utxo not found`);
     }
     if (merchant_funds_utxo) {
@@ -43,6 +46,7 @@ async function handlePay(
     }
 
     const payMerchantParams: PayMerchantParams = {
+      adminCollateral,
       userAddress,
       merchantAddress,
       amountToPay,

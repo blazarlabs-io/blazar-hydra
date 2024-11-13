@@ -20,6 +20,7 @@ import { mergeFunds } from "../tx-builders/merge-funds";
 import { logger } from "../../logger";
 import { commitFunds } from "../tx-builders/commit-funds";
 import { CommitFundsParams } from "../lib/params";
+import { register } from "../tx-builders/register";
 
 async function handleOpenHead(
   lucid: LucidEvolution,
@@ -72,7 +73,7 @@ async function handleOpenHead(
       .utxosAt(adminAddress)
       .then((utxos) =>
         selectUTxOs(utxos, {
-          ["lovelace"]: BigInt(userToDepositsMap.size * 1_000_000 + 5_000_000),
+          ["lovelace"]: BigInt(userToDepositsMap.size * 1_000_000 + 10_000_000),
         })
       );
     let mergeTxs: string[] = [];
@@ -128,7 +129,7 @@ async function handleOpenHead(
       );
     const adminCollateral = adminUtxos[0];
     const utxosToCommit = await localLucid.utxosByOutRef(fundsRefs);
-    const utxosPerPeer = utxosToCommit.length / peerUrls.length;
+    const utxosPerPeer = 1 + utxosToCommit.length / peerUrls.length;
     for (let i = 0; i < peerUrls.length; i++) {
       const peerUrl = peerUrls[i];
       const thisPeerUtxos = utxosToCommit.slice(0, utxosPerPeer);

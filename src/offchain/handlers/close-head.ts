@@ -6,7 +6,7 @@ import _ from "lodash";
 import { env } from "../../config";
 import { FundsDatum, FundsDatumT } from "../lib/types";
 import { WithdrawParams } from "../lib/params";
-import { withdraw } from "../tx-builders/withdraw";
+import { withdrawMerchant } from "../tx-builders/withdrawMerchant";
 
 async function handleCloseHead(
   lucid: LucidEvolution,
@@ -27,12 +27,19 @@ async function handleCloseHead(
     // Step 1: Withdraw Merchant utxos
     const fundUtxos = await hydra.getSnapshot();
     const merchantUtxos = fundUtxos.filter((utxo) => {
-      const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
-      return datum.funds_type === "Merchant";
+      if (utxo.address !== adminAddress) {
+        const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
+        return datum.funds_type === "Merchant";
+      }
+      return false;
     });
+    // TODO deal with possible several decommits
     if (merchantUtxos.length !== 0) {
       logger.info("Withdrawing merchant utxos...");
-      const walletUtxos = await localLucid.utxosAt(adminAddress);
+      const utxosInL2 = await hydra.getSnapshot();
+      const walletUtxos = utxosInL2.filter((utxo) => {
+        return utxo.address === adminAddress;
+      });
       const withdrawParams: WithdrawParams = {
         kind: "merchant",
         fundsUtxos: merchantUtxos,
@@ -40,18 +47,22 @@ async function handleCloseHead(
         hydraKey,
         walletUtxos,
       };
-      const { tx } = await withdraw(localLucid, withdrawParams);
+      const { tx } = await withdrawMerchant(localLucid, withdrawParams);
       const signedTx = await tx.sign
         .withWallet()
         .complete()
         .then((tx) => tx.toCBOR());
-      while (currentExpectedTag !== "TxValid") {
-        currentExpectedTag = await hydra.sendTx(signedTx);
-        if (currentExpectedTag !== "TxValid") {
-          throw new Error("Tx is not valid, retrying...");
+      const decommitResponse = await hydra.decommit(
+        `${env.ADMIN_NODE_API_URL}/decommit`,
+        signedTx
+      );
+      while (currentExpectedTag !== "DecommitFinalized") {
+        currentExpectedTag = await hydra.listen("DecommitRequested");
+        if (currentExpectedTag === "DecommitInvalid") {
+          throw new Error("Decommit rejected by Hydra");
         }
-        _.delay(() => {}, 10000);
       }
+      logger.info("Decommit finalized, sending next decommit...");
     }
 
     // Step 2: Send close command
@@ -66,13 +77,11 @@ async function handleCloseHead(
         ),
         hydra.close(),
       ])) as string;
-      hydra.stop();
     }
     logger.info("Waiting for fanout tag...");
     while (currentExpectedTag !== "ReadyToFanout") {
       currentExpectedTag = await hydra.listen("ReadyToFanout");
     }
-
     // Step 3: Fanout
     logger.info("Sending fanout command...");
     await hydra.fanout();

@@ -22,6 +22,7 @@ const envSchema = z
     HYDRA_KEY: z.string(),
     SEED: z.string(),
     ADMIN_NODE_WS_URL: z.string(),
+    ADMIN_NODE_API_URL: z.string(),
     ADMIN_ADDRESS: z.string(),
     USER_ADDRESS: z.string(),
     USER_SEED: z.string(),

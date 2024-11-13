@@ -6,7 +6,7 @@ use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash, blake2b_224,
   verify_ed25519_signature,
 }
-use cardano/address.{Address, Credential, Script, from_script}
+use cardano/address.{Address, Credential, Script, from_script, VerificationKey}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
   lovelace_of, match, quantity_of, tokens, without_lovelace,
@@ -359,7 +359,8 @@ pub fn validate_combined_commit(
     list.filter_map(
       inputs,
       fn(i) {
-        if i.output.address.payment_credential == Script(own_hash) {
+        let cred = i.output.address.payment_credential
+        if cred == Script(own_hash) || cred == VerificationKey(admin_key) {
           Some(i.output_reference)
         } else {
           None

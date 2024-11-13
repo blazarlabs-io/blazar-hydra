@@ -84,7 +84,8 @@ const deposit = async (fromWallet: 1 | 2) => {
 
 const getSnapshot = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
-  await hydra.getSnapshot();
+  const utxos = await hydra.getSnapshot();
+  console.dir(utxos, { depth: null });
   await hydra.stop();
 };
 

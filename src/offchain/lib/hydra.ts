@@ -187,7 +187,6 @@ class HydraHandler {
         const output = utxo[1];
         return hydraUtxoToLucidUtxo(hash, idx, output);
       });
-      console.log(lucidUtxos);
       return lucidUtxos;
     } catch (error) {
       logger.info(error as unknown as string);

@@ -30,7 +30,7 @@ async function handlePay(
     if (funds_utxo_ref) {
       const { hash: txHash, index: outputIndex } = funds_utxo_ref;
       userFundsUtxo = utxosInL2.find((utxo) => {
-        utxo.txHash === txHash && utxo.outputIndex === outputIndex;
+        return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
       });
     }
     const adminCollateral = utxosInL2.find((utxo) => utxo.address === env.ADMIN_ADDRESS);
@@ -62,6 +62,7 @@ async function handlePay(
       localLucid,
       payMerchantParams
     );
+    await hydra.stop()
 
     return {
       cborHex: tx.toCBOR(),

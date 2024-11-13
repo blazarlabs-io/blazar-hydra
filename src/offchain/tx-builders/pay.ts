@@ -10,12 +10,12 @@ import {
   utxoToCore,
   validatorToAddress,
   assetsToValue,
-  PROTOCOL_PARAMETERS_DEFAULT,
 } from "@lucid-evolution/lucid";
 import { PayMerchantParams } from "../lib/params";
 import { buildValidator } from "../validator/handle";
 import { FundsDatum, FundsDatumT, Mint, PayInfoT, Spend } from "../lib/types";
 import { bech32ToAddressType, dataAddressToBech32 } from "../lib/utils";
+import blake2b from "blake2b";
 
 async function payMerchant(
   lucid: LucidEvolution,
@@ -32,7 +32,7 @@ async function payMerchant(
     merchantFundsUtxo,
   } = params;
   const validator = buildValidator(adminKey, {
-    Verification_key_cred: { Key: hydraKey },
+    Script_cred: { Key: hydraKey },
   });
   if (!validator) {
     throw new Error("Invalid validator");
@@ -77,8 +77,12 @@ async function payMerchant(
   );
   // Merchant
   const serializedIndex = Data.to<bigint>(BigInt(userFundsUtxo.outputIndex));
-  const newTokenName = userFundsUtxo.txHash + serializedIndex;
-  const validationToken = toUnit(policyId, newTokenName);
+  const newTokenName = Buffer.from(
+    userFundsUtxo.txHash + serializedIndex,
+    "hex"
+  );
+  const tokenNameHash = blake2b(32).update(newTokenName).digest("hex");
+  const validationToken = toUnit(policyId, tokenNameHash);
   const newMerchValue = {
     [validationToken]: 1n,
     ["lovelace"]:
@@ -98,8 +102,9 @@ async function payMerchant(
     assetsToValue(newMerchValue),
     CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(merchDatum))
   );
-  outputs.add(userOutput);
+  // Merchant output first
   outputs.add(merchantOutput);
+  outputs.add(userOutput);
 
   // Build txBody
   const fee = 0n;
@@ -108,7 +113,7 @@ async function payMerchant(
   // Set mint
   const mint = CML.Mint.new();
   const policy = CML.ScriptHash.from_hex(policyId);
-  const name = CML.AssetName.from_hex(newTokenName);
+  const name = CML.AssetName.from_hex(tokenNameHash);
   mint.set(policy, name, 1n);
   txBody.set_mint(mint);
 
@@ -134,7 +139,7 @@ async function payMerchant(
     const index = BigInt(idx);
     const inpDatum = Data.from<FundsDatumT>(inp.datum!, FundsDatum);
     let data, units;
-    if (dataAddressToBech32(lucid, inpDatum.addr) === merchantAddress) {
+    if (inpDatum.funds_type === "Merchant") {
       data = CML.PlutusData.from_cbor_hex(Spend.AddFunds);
       units = CML.ExUnits.new(0n, 0n);
     } else {
@@ -147,7 +152,7 @@ async function payMerchant(
         },
       };
       data = CML.PlutusData.from_cbor_hex(Spend.Pay(payInfo, signature));
-      units = CML.ExUnits.new(0n, 0n);
+      units = CML.ExUnits.new(3_000_000n, 3_000_000_000n);
     }
     legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
   });
@@ -163,7 +168,7 @@ async function payMerchant(
           output_index: BigInt(userFundsUtxo.outputIndex),
         })
       ),
-      CML.ExUnits.new(0n, 0n)
+      CML.ExUnits.new(3_000_000n, 3_000_000_000n)
     )
   );
 
@@ -179,18 +184,25 @@ async function payMerchant(
 
   // Calculate script data hash
   const costModels = lucid.config().costModels;
-  const scriptDataHash = CML.calc_script_data_hash_from_witness(txWitnessSet, costModels);
-  if(!scriptDataHash) {
+  const language = CML.LanguageList.new();
+  language.add(CML.Language.PlutusV3);
+  const scriptDataHash = CML.calc_script_data_hash(
+    redeemers,
+    CML.PlutusDataList.new(),
+    costModels,
+    language
+  );
+  if (!scriptDataHash) {
     throw new Error(`Could not calculate script data hash`);
+  } else {
+    txBody.set_script_data_hash(scriptDataHash);
   }
-  txBody.set_script_data_hash(scriptDataHash);
 
   // Complete transaction
   const cmlTx = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();
   const tx = lucid.fromTx(cmlTx);
-
   return {
-    tx: tx,
+    tx,
     merchantUtxo: { txHash: tx.toCBOR(), outputIndex: 0 },
     userUtxo: { txHash: tx.toCBOR(), outputIndex: 1 },
   };

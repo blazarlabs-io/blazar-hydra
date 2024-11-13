@@ -4,6 +4,7 @@ import {
   LucidEvolution,
   TxSignBuilder,
   utxoToCore,
+  validatorToAddress,
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { CommitFundsParams } from "../lib/params";
@@ -13,17 +14,23 @@ async function commitFunds(
   lucid: LucidEvolution,
   params: CommitFundsParams
 ): Promise<{ tx: TxSignBuilder }> {
-  const { adminAddress, userFundUtxos, validatorRefUtxo } = params;
+  const { adminAddress, userFundUtxos, validatorRefUtxo, adminCollateral } =
+    params;
 
   const validator = validatorRefUtxo.scriptRef;
   if (!validator) {
     throw new Error(`Validator not found at UTxO: ${validatorRefUtxo}`);
   }
+  const scriptAddress = validatorToAddress(lucid.config().network, validator);
   const rewardAddress = validatorToRewardAddress(
     lucid.config().network,
     validator
   );
-  const sortedInputs = userFundUtxos.sort((a, b) => {
+  let allInputs = userFundUtxos;
+  if (adminCollateral) {
+    allInputs.push(adminCollateral);
+  }
+  const sortedInputs = allInputs.sort((a, b) => {
     const ref1 = { hash: a.txHash, index: a.outputIndex };
     const ref2 = { hash: b.txHash, index: b.outputIndex };
     const hashComparison = ref1.hash.localeCompare(ref2.hash);
@@ -41,7 +48,8 @@ async function commitFunds(
   const txBody = CML.TransactionBody.new(inputs, outputs, fee);
 
   // Add required signers
-  const adminKey = getAddressDetails(adminAddress).paymentCredential?.hash as string;
+  const adminKey = getAddressDetails(adminAddress).paymentCredential
+    ?.hash as string;
   const signer = CML.Ed25519KeyHash.from_hex(adminKey);
   const signers = CML.Ed25519KeyHashList.new();
   signers.add(signer);
@@ -63,12 +71,14 @@ async function commitFunds(
 
   // Add spend redeemers
   const legacyRedeemers = CML.LegacyRedeemerList.new();
-  sortedInputs.map((_, idx) => {
-    const tag = CML.RedeemerTag.Spend;
-    const index = BigInt(idx);
-    const data = CML.PlutusData.from_cbor_hex(Spend.Commit);
-    const units = CML.ExUnits.new(0n, 0n);
-    legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
+  sortedInputs.map((inp, idx) => {
+    if (inp.address === scriptAddress) {
+      const tag = CML.RedeemerTag.Spend;
+      const index = BigInt(idx);
+      const data = CML.PlutusData.from_cbor_hex(Spend.Commit);
+      const units = CML.ExUnits.new(0n, 0n);
+      legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
+    }
   });
   // Add withdraw redeemer
   legacyRedeemers.add(

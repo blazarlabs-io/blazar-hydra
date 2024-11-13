@@ -118,22 +118,25 @@ async function handleOpenHead(
   }
 
   // Step 3: Commit the funds
-  const adminUtxos = await localLucid.utxosAt(adminAddress).then((utxos) =>
-    utxos.filter((utxo) => utxo.assets["lovelace"] >= 1)
-  );
+  const adminUtxos = await localLucid
+    .utxosAt(adminAddress)
+    .then((utxos) => utxos.filter((utxo) => utxo.assets["lovelace"] > 20_000_000));
   const adminCollateral = adminUtxos[0];
   const utxosToCommit = await localLucid.utxosByOutRef(fundsRefs);
-  utxosToCommit.push(adminCollateral);
   const utxosPerPeer = utxosToCommit.length / peerUrls.length;
   for (let i = 0; i < peerUrls.length; i++) {
     const peerUrl = peerUrls[i];
     const thisPeerUtxos = utxosToCommit.slice(0, utxosPerPeer);
     utxosToCommit.splice(0, utxosPerPeer);
-    const params: CommitFundsParams = {
+    let params: CommitFundsParams = {
       adminAddress,
       userFundUtxos: thisPeerUtxos,
       validatorRefUtxo: validatorRef,
     };
+    // Add admin collateral to the last commit tx
+    if (i === peerUrls.length - 1) {
+      params = { ...params, adminCollateral };
+    }
     const { tx } = await commitFunds(localLucid, params);
     const peerCommitTxId = await hydra.sendCommit(
       peerUrl,

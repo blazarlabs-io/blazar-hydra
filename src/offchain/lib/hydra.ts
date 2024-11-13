@@ -162,8 +162,8 @@ class HydraHandler {
           cborHex: tx,
           description: "",
           type: "Tx BabbageEra",
-       },
-      }
+        },
+      };
       this.connection.onopen = () => {
         logger.info("Sending transaction...");
         this.connection.send(JSON.stringify(message));
@@ -175,6 +175,10 @@ class HydraHandler {
             break;
           case "TxValid":
             logger.info("Received TxValid");
+            resolve(data.tag);
+            break;
+          case "SnapshotConfirmed":
+            logger.info("Received SnapshotConfirmed");
             resolve(data.tag);
             break;
           default:
@@ -205,6 +209,21 @@ class HydraHandler {
       return lucidUtxos;
     } catch (error) {
       logger.info(error as unknown as string);
+      throw error;
+    }
+  }
+
+  async decommit(apiUrl: string, tx: CBORHex): Promise<string> {
+    try {
+      const payload = {
+        cborHex: tx,
+        description: "",
+        type: "Tx BabbageEra",
+      };
+      const response = await axios.post(apiUrl, payload);
+      return response.data;
+    } catch (error) {
+      logger.error(error as unknown as string);
       throw error;
     }
   }

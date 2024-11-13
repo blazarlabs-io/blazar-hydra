@@ -47,6 +47,7 @@ type CommitFundsParams = {
   adminAddress: string;
   userFundUtxos: UTxO[];
   validatorRefUtxo: UTxO;
+  adminCollateral?: UTxO;
 };
 
 export {

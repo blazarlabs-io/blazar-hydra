@@ -153,10 +153,16 @@ class HydraHandler {
     }
   }
 
-  async sendTx(tx: CBORHex) {
-    const message = {
-      tag: "NewTx",
-      transaction: tx,
+  async sendTx(tx: CBORHex): Promise<string> {
+    logger.info("Inside Send...");
+    return new Promise((resolve, _) => {
+     const message = {
+       tag: "NewTx",
+       transaction: {
+         cborHex: tx,
+         description: "",
+         type: "Tx BabbageEra",
+      },
     };
     this.connection.onopen = () => {
       logger.info("Sending transaction...");
@@ -168,7 +174,8 @@ class HydraHandler {
     this.connection.onclose = () => {
       logger.info("Hydra websocket closed");
     };
-  }
+  })
+}
 
   async getSnapshot(): Promise<UTxO[]> {
     const apiURL = `${this.url.origin.replace("ws", "http")}/snapshot/utxo`;
@@ -180,6 +187,7 @@ class HydraHandler {
         const output = utxo[1];
         return hydraUtxoToLucidUtxo(hash, idx, output);
       });
+      console.log(lucidUtxos);
       return lucidUtxos;
     } catch (error) {
       logger.info(error as unknown as string);
@@ -328,7 +336,7 @@ function hydraUtxoToLucidUtxo(hash: string, idx: number, output: any): UTxO {
   }
   return {
     txHash: hash,
-    outputIndex: idx,
+    outputIndex: Number(idx),
     assets: assets,
     address: output.address,
     datum: datumBytes,

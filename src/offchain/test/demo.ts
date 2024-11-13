@@ -1,4 +1,5 @@
 import {
+  Address,
   Blockfrost,
   Data,
   Lucid,
@@ -10,14 +11,20 @@ import {
 import { env } from "../../config";
 import { handleDeposit } from "../handlers/deposit";
 import { commitFunds } from "../tx-builders/commit-funds";
-import { getPrivateKey, waitForUtxosUpdate } from "../lib/utils";
+import {
+  bech32ToAddressType,
+  getPrivateKey,
+  waitForUtxosUpdate,
+} from "../lib/utils";
 import { HydraHandler } from "../lib/hydra";
-import { Layer, WithdrawSchema } from "../../shared";
+import { Layer, PayMerchantSchema, WithdrawSchema } from "../../shared";
 import { handleWithdraw } from "../handlers/withdraw";
 import blake2b from "blake2b";
 import { handleOpenHead } from "../handlers/open-head";
 import { logger } from "../../logger";
-import { WithdrawInfo, WithdrawInfoT } from "../lib/types";
+import { PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
+import { handlePay } from "../handlers/pay-merchant";
+import { PayMerchantParams } from "../lib/params";
 
 const adminSeed = env.SEED;
 const privKey = getPrivateKey(adminSeed);
@@ -26,8 +33,7 @@ const lucid = (await Lucid(
   env.NETWORK as Network
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);
-const aliceWsUrl = "ws://127.0.0.1:4001";
-
+const aliceWsUrl = "ws://127.0.0.1:4002";
 
 const aliceApiUrl = "http://127.0.0.1:4001/commit";
 const bobApiUrl = "http://127.0.0.1:4002/commit";
@@ -114,6 +120,39 @@ const closeHead = async () => {
   await hydra.stop();
 };
 
+const pay = async (amount: bigint, mAddrB32: Address, fRef: string, withWallet: 1 | 2) => {
+  const hydra = new HydraHandler(lucid, aliceWsUrl);
+  const [fundsTxId, fundsIx] = fRef.split("#");
+  const mAddr = bech32ToAddressType(lucid, mAddrB32);
+  const payInfo: PayInfoT = {
+    amount: amount,
+    merchant_addr: mAddr,
+    ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
+  };
+  const signatureSeed = withWallet === 1 ? env.SEED : env.USER_SEED;
+  const userPrivKey = getPrivateKey(signatureSeed);
+  const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), "hex");
+  const sig = userPrivKey.sign(msg).to_hex();
+
+  const pSchema: PayMerchantSchema = {
+    merchant_address: mAddrB32,
+    funds_utxo_ref: { hash: fundsTxId, index: Number(fundsIx) },
+    amount: amount,
+    signature: sig,
+    merchant_funds_utxo: undefined,
+    user_address: "",
+  };
+  const { cborHex } = await handlePay(lucid, pSchema);
+  lucid.selectWallet.fromSeed(adminSeed);
+  console.log(cborHex);
+
+  const signedTx = await lucid.fromTx(cborHex).sign.withWallet().complete();
+  console.log(signedTx.toCBOR());
+  logger.info("Before send tx");
+  const tag = await hydra.sendTx(signedTx.toCBOR());
+  logger.info("After send tx");
+};
+
 const fanout = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   await hydra.fanout();
@@ -125,10 +164,13 @@ const withdraw = async (fanoutTxId: string) => {
   const withdrawInfo: WithdrawInfoT = {
     ref: {
       transaction_id: fanoutTxId,
-      output_index: 0n
+      output_index: 0n,
     },
-  }
-  const msg = Buffer.from(Data.to<WithdrawInfoT>(withdrawInfo, WithdrawInfo), "hex");
+  };
+  const msg = Buffer.from(
+    Data.to<WithdrawInfoT>(withdrawInfo, WithdrawInfo),
+    "hex"
+  );
   const hashedMsg = blake2b(32).update(msg).digest("hex");
   const sig = privKey.sign(Buffer.from(hashedMsg, "hex")).to_hex();
 
@@ -157,7 +199,7 @@ const abortHead = async () => {
 
 const trace = process.env.npm_config_trace;
 switch (trace) {
-  case "deposit":
+  case "deposit": {
     const wallet = process.env.npm_config_wallet;
     if (!wallet) {
       throw new Error("Missing wallet. Provide one with --wallet");
@@ -174,6 +216,7 @@ switch (trace) {
         break;
     }
     break;
+  }
   case "open":
     await openHead();
     break;
@@ -185,6 +228,28 @@ switch (trace) {
     break;
   case "close":
     await closeHead();
+    break;
+  case "pay":
+    const amount = process.env.npm_config_amount;
+    const mAddr = process.env.npm_config_merchant_address;
+    const fundsRef = process.env.npm_config_funds_ref;
+    const wallet = process.env.npm_config_wallet;
+    if (!amount) {
+      throw new Error("Missing amount. Provide with --amount");
+    }
+    if (!mAddr) {
+      throw new Error(
+        "Missing merchant address. Provide with --merchant-address"
+      );
+    }
+    if (!fundsRef) {
+      throw new Error("Missing Funds UTxO Ref. Provide with --funds-ref");
+    }
+    if (!wallet) {
+      throw new Error("Missing wallet. Provide one with --wallet");
+    }
+    const withWallet = wallet === "admin" ? 1 : 2;
+    await pay(BigInt(amount), mAddr, fundsRef, withWallet);
     break;
   case "fanout":
     await fanout();

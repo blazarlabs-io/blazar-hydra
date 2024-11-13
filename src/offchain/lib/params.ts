@@ -25,6 +25,7 @@ type WithdrawParams = {
 };
 
 type PayMerchantParams = {
+  adminCollateral: UTxO;
   userAddress: string;
   merchantAddress: string;
   amountToPay: bigint;
@@ -46,6 +47,7 @@ type CommitFundsParams = {
   adminAddress: string;
   userFundUtxos: UTxO[];
   validatorRefUtxo: UTxO;
+  adminCollateral?: UTxO;
 };
 
 export {

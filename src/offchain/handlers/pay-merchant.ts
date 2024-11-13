@@ -6,14 +6,15 @@ import { TxBuiltResponse } from "../../api/schemas/response";
 import { env } from "../../config";
 import { logger } from "../../logger";
 import _ from "lodash";
+import { HydraHandler } from "../lib/hydra";
 
 async function handlePay(
   lucid: LucidEvolution,
   params: PayMerchantSchema
 ): Promise<TxBuiltResponse & { merchUtxo: OutRef }> {
   try {
-    // TODO here lucid needs instantiation with the correct network
     const localLucid = _.cloneDeep(lucid);
+    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const {
       user_address: userAddress,
       merchant_address: merchantAddress,
@@ -23,30 +24,35 @@ async function handlePay(
       merchant_funds_utxo,
     } = params;
     const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
-    let fundsUtxo,
+    let userFundsUtxo,
       merchantFundsUtxo: UTxO | undefined = undefined;
+    const utxosInL2 = await hydra.getSnapshot();
     if (funds_utxo_ref) {
       const { hash: txHash, index: outputIndex } = funds_utxo_ref;
-      [fundsUtxo] = await localLucid.utxosByOutRef([{ txHash, outputIndex }]);
+      userFundsUtxo = utxosInL2.find((utxo) => {
+        return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
+      });
     }
-    if (!fundsUtxo) {
-      throw new Error(`User funds utxo not found`);
+    const adminCollateral = utxosInL2.find((utxo) => utxo.address === env.ADMIN_ADDRESS);
+    if (!userFundsUtxo || !adminCollateral) {
+      throw new Error(`User funds or collateral utxo not found`);
     }
     if (merchant_funds_utxo) {
       const { hash: txHash, index: outputIndex } = merchant_funds_utxo;
-      const [merchantFundsUtxo] = await localLucid.utxosByOutRef([
-        { txHash, outputIndex },
-      ]);
+      const merchantFundsUtxo = utxosInL2.find((utxo) => {
+        utxo.txHash === txHash && utxo.outputIndex === outputIndex;
+      });
       if (!merchantFundsUtxo) {
         throw new Error(`Merchant funds utxo not found`);
       }
     }
 
     const payMerchantParams: PayMerchantParams = {
+      adminCollateral,
       userAddress,
       merchantAddress,
       amountToPay,
-      userFundsUtxo: fundsUtxo,
+      userFundsUtxo,
       signature,
       adminKey,
       hydraKey,
@@ -56,6 +62,7 @@ async function handlePay(
       localLucid,
       payMerchantParams
     );
+    await hydra.stop()
 
     return {
       cborHex: tx.toCBOR(),
@@ -64,11 +71,11 @@ async function handlePay(
     };
   } catch (e) {
     if (e instanceof Error) {
-      logger.error("500 /deposit - " + e.message);
+      logger.error("500 /pay - " + e.message);
     } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
-      logger.error("400 /deposit - " + e);
+      logger.error("400 /pay - " + e);
     } else {
-      logger.error("520 /deposit - Unknown error type");
+      logger.error("520 /pay - Unknown error type");
       logger.error(JSON.stringify(e));
     }
     throw e;

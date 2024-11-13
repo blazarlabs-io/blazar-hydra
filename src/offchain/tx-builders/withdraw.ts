@@ -3,23 +3,19 @@ import {
   fromUnit,
   getAddressDetails,
   LucidEvolution,
-  Script,
   TxSignBuilder,
-  UTxO,
   validatorToAddress,
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
 import { WithdrawParams } from "../lib/params";
 import {
   Combined,
-  CredentialT,
   FundsDatum,
   FundsDatumT,
   Mint,
   Spend,
   WithdrawInfoT,
 } from "../lib/types";
-import { buildValidator } from "../validator/handle";
 import { dataAddressToBech32, getValidator } from "../lib/utils";
 
 async function withdraw(

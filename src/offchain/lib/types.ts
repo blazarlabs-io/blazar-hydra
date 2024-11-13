@@ -142,6 +142,7 @@ export {
   OutputRefT,
   PayInfoSchema,
   PayInfoT,
+  PayInfo,
   Spend,
   WithdrawInfoSchema,
   WithdrawInfo,

@@ -11,7 +11,7 @@ import { HydraHandler } from "../lib/hydra";
 async function handlePay(
   lucid: LucidEvolution,
   params: PayMerchantSchema
-): Promise<TxBuiltResponse & { merchUtxo: OutRef }> {
+): Promise<{fundsUtxoRef: OutRef, merchUtxo: OutRef }> {
   try {
     const localLucid = _.cloneDeep(lucid);
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
@@ -62,10 +62,18 @@ async function handlePay(
       localLucid,
       payMerchantParams
     );
-    await hydra.stop()
+
+    logger.info("Submitting payment to hydra head...");
+    lucid.selectWallet.fromSeed(env.SEED);
+    const signedTx = await lucid.fromTx(tx.toCBOR()).sign.withWallet().complete();
+    const tag = await hydra.sendTx(signedTx.toCBOR());
+    if (tag !== "TxValid") {
+      await hydra.stop()
+      throw new Error(`Failed to submit payment tx to hydra head`);
+    }
+    await hydra.stop();
 
     return {
-      cborHex: tx.toCBOR(),
       fundsUtxoRef: userUtxo,
       merchUtxo: merchantUtxo,
     };

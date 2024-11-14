@@ -66,12 +66,11 @@ async function handleCloseHead(
     }
 
     // Step 2: Send close command
-    logger.info("Closing head...");
     while (currentExpectedTag !== "HeadIsClosed") {
       currentExpectedTag = (await Promise.race([
         new Promise((resolve, _) =>
           setTimeout(() => {
-            logger.error("Close command not received, retrying...");
+            logger.error("Close command not sent, retrying...");
             resolve("IncorrectTag");
           }, 40_000)
         ),
@@ -83,7 +82,6 @@ async function handleCloseHead(
       currentExpectedTag = await hydra.listen("ReadyToFanout");
     }
     // Step 3: Fanout
-    logger.info("Sending fanout command...");
     await hydra.fanout();
     hydra.stop();
     return;

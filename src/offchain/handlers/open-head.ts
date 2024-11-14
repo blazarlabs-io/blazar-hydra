@@ -20,7 +20,6 @@ import { mergeFunds } from "../tx-builders/merge-funds";
 import { logger } from "../../logger";
 import { commitFunds } from "../tx-builders/commit-funds";
 import { CommitFundsParams } from "../lib/params";
-import { register } from "../tx-builders/register";
 
 async function handleOpenHead(
   lucid: LucidEvolution,
@@ -125,7 +124,7 @@ async function handleOpenHead(
     const adminUtxos = await localLucid
       .utxosAt(adminAddress)
       .then((utxos) =>
-        utxos.filter((utxo) => utxo.assets["lovelace"] > 20_000_000)
+        utxos.filter((utxo) => Object.entries(utxo.assets).length === 1)
       );
     const adminCollateral = adminUtxos[0];
     const utxosToCommit = await localLucid.utxosByOutRef(fundsRefs);

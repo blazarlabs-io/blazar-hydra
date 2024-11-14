@@ -24,7 +24,6 @@ import { handleOpenHead } from "../handlers/open-head";
 import { logger } from "../../logger";
 import { PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
 import { handlePay } from "../handlers/pay-merchant";
-import { PayMerchantParams } from "../lib/params";
 import { handleCloseHead } from "../handlers/close-head";
 
 const adminSeed = env.SEED;
@@ -73,7 +72,6 @@ const deposit = async (fromWallet: 1 | 2) => {
       .fromTx(depTx.cborHex)
       .sign.withWallet()
       .complete();
-    console.log(signedTx.toCBOR());
     const txHash = await signedTx.submit();
     console.log(`Submitted deposit tx with hash: ${txHash}`);
     funds.push(depTx.fundsUtxoRef!);
@@ -90,40 +88,12 @@ const getSnapshot = async () => {
   await hydra.stop();
 };
 
-const closeHead = async () => {
-  async function repeatCloseUntilSuccess(
-    hydra: HydraHandler,
-    intervalMs: number = 10000
-  ): Promise<string> {
-    return new Promise((resolve, _) => {
-      const attemptClose = async () => {
-        try {
-          const result = await hydra.close();
-          if (result === "HeadIsClosed") {
-            clearInterval(interval); // Stop further attempts when expected tag is received
-            resolve(result);
-          }
-        } catch (error) {
-          console.error("Error during close attempt,:", error);
-          console.error("Retrying...");
-        }
-      };
-
-      const interval = setInterval(attemptClose, intervalMs);
-      attemptClose(); // Initial attempt immediately
-    });
-  }
-  const hydra = new HydraHandler(lucid, aliceWsUrl);
-  await repeatCloseUntilSuccess(hydra);
-  let readyToFanoutTag = "";
-  while (readyToFanoutTag !== "ReadyToFanout") {
-    readyToFanoutTag = await hydra.listen("ReadyToFanout");
-  }
-  await hydra.stop();
-};
-
-const pay = async (amount: bigint, mAddrB32: Address, fRef: string, withWallet: 1 | 2) => {
-  const hydra = new HydraHandler(lucid, aliceWsUrl);
+const pay = async (
+  amount: bigint,
+  mAddrB32: Address,
+  fRef: string,
+  withWallet: 1 | 2
+) => {
   const [fundsTxId, fundsIx] = fRef.split("#");
   const mAddr = bech32ToAddressType(lucid, mAddrB32);
   const payInfo: PayInfoT = {
@@ -144,14 +114,8 @@ const pay = async (amount: bigint, mAddrB32: Address, fRef: string, withWallet: 
     merchant_funds_utxo: undefined,
     user_address: "",
   };
-  const { cborHex } = await handlePay(lucid, pSchema);
-  lucid.selectWallet.fromSeed(adminSeed);
-  console.log(cborHex);
-
-  const signedTx = await lucid.fromTx(cborHex).sign.withWallet().complete();
-  console.log(signedTx.toCBOR());
   logger.info("Before send tx");
-  const tag = await hydra.sendTx(signedTx.toCBOR());
+  await handlePay(lucid, pSchema);
   logger.info("After send tx");
 };
 
@@ -229,7 +193,10 @@ switch (trace) {
     await getSnapshot();
     break;
   case "close":
-    await handleCloseHead(lucid, {auth_token: "", peer_api_urls: [aliceApiUrl, bobApiUrl]});
+    await handleCloseHead(lucid, {
+      auth_token: "",
+      peer_api_urls: [aliceApiUrl, bobApiUrl],
+    });
     break;
   case "pay":
     const amount = process.env.npm_config_amount;

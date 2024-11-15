@@ -6,11 +6,21 @@ import {
   CML,
   fromUnit,
   LucidEvolution,
-  toHex,
   UTxO,
 } from "@lucid-evolution/lucid";
 import blake2b from "blake2b";
 import { logger } from "../../logger";
+
+
+const ERROR_TAGS = [
+  "PeerHandshakeFailure",
+  "TxInvalid",
+  "InvalidInput",
+  "PostTxOnChainFailed",
+  "CommandFailed",
+  "DecommitInvalid",
+]
+
 
 /**
  * Listen and send messages to a Hydra node.
@@ -71,6 +81,8 @@ class HydraHandler {
           logger.info(`Received ${tag}`);
           clearTimeout(timeoutId);
           resolve(data);
+        } else if (ERROR_TAGS.includes(data.tag)) {
+          logger.error(`Received ${data.tag}`);
         } else {
           logger.info(`Received ${data.tag} while waiting for ${tag}`);
         }
@@ -91,11 +103,11 @@ class HydraHandler {
       };
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
-        if (data.tag === tag) {
-          logger.info(`Received ${tag}`);
-        } else {
+        if (ERROR_TAGS.includes(data.tag)) {
           logger.error(`Received: ${data.tag}`);
+          resolve(data.tag);
         }
+        logger.info(`Received: ${data.tag}`);
         resolve(data.tag);
       };
       this.connection.onerror = (error) => {
@@ -213,7 +225,7 @@ class HydraHandler {
   /**
    * Sends a raw transaction to the Hydra node.
    * @param tx - The CBOR-encoded transaction to send.
-   * @returns  the tag "TxValid" when the transaction is valid or "SnapshotConfirmed" when the snapshot is confirmed.
+   * @returns  the tag "TxValid" when the transaction is valid and "SnapshotConfirmed" when the snapshot is confirmed.
    */
   async sendTx(tx: CBORHex): Promise<string> {
     await this.ensureConnectionReady();

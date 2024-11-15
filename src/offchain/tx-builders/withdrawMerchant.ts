@@ -126,7 +126,7 @@ async function withdrawMerchant(
     const index = BigInt(idx);
     let data, units;
     data = CML.PlutusData.from_cbor_hex(Spend.MerchantWithdraw);
-    units = CML.ExUnits.new(500_000n, 100_000_000n);
+    units = CML.ExUnits.new(20_000_000n, 1000_000_000_000n);
     legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
   });
 
@@ -136,7 +136,7 @@ async function withdrawMerchant(
       CML.RedeemerTag.Mint,
       0n,
       CML.PlutusData.from_cbor_hex(Mint.Burn),
-      CML.ExUnits.new(500_000n, 100_000_000n)
+      CML.ExUnits.new(20_000_000n, 1000_000_000_000n)
     )
   );
 

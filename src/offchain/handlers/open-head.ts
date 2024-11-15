@@ -21,6 +21,8 @@ import { logger } from "../../logger";
 import { commitFunds } from "../tx-builders/commit-funds";
 import { CommitFundsParams } from "../lib/params";
 
+const MAX_UTXOS_PER_COMMIT = 10;
+
 async function handleOpenHead(
   lucid: LucidEvolution,
   params: ManageHeadSchema
@@ -55,7 +57,10 @@ async function handleOpenHead(
       localLucid.config().network,
       validator
     );
-    const scriptUtxos = await localLucid.utxosAt(scriptAddress);
+    const maxScriptUtxos = MAX_UTXOS_PER_COMMIT * peerUrls.length;
+    const scriptUtxos = await localLucid
+      .utxosAt(scriptAddress)
+      .then((utxos) => utxos.slice(0, maxScriptUtxos));
     if (scriptUtxos.length === 0) {
       throw new Error("No deposits to commit");
     }
@@ -75,13 +80,17 @@ async function handleOpenHead(
           ["lovelace"]: BigInt(userToDepositsMap.size * 1_000_000 + 10_000_000),
         })
       );
+    if (currentAdminUtxos.length === 0) {
+      throw new Error("Insufficient admin funds");
+    }
     let mergeTxs: string[] = [];
     let fundsRefs: OutRef[] = [];
     logger.info("Preparing merge transactions...");
     for (const [_, deposits] of userToDepositsMap) {
       if (deposits.length === 1) {
         // User has only one funds utxo, no need for a merge transaction
-        fundsRefs.push(deposits.pop()!);
+        const {txHash, outputIndex} = deposits[0];
+        fundsRefs.push({txHash, outputIndex});
         continue;
       }
       const params = {
@@ -165,7 +174,7 @@ async function handleOpenHead(
     await hydra.stop();
     return;
   } catch (error) {
-    logger.error("Error during open head");
+    logger.error("Error while open head");
     throw error;
   }
 }

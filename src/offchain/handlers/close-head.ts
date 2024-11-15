@@ -8,6 +8,8 @@ import { FundsDatum, FundsDatumT } from "../lib/types";
 import { WithdrawParams } from "../lib/params";
 import { withdrawMerchant } from "../tx-builders/withdrawMerchant";
 
+const MAX_UTXOS_PER_DECOMMIT = 2;
+
 async function handleCloseHead(
   lucid: LucidEvolution,
   params: ManageHeadSchema
@@ -33,36 +35,41 @@ async function handleCloseHead(
       }
       return false;
     });
-    // TODO deal with possible several decommits
     if (merchantUtxos.length !== 0) {
+      const roundsOfDecommit = Math.ceil(merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT);
       logger.info("Withdrawing merchant utxos...");
       const utxosInL2 = await hydra.getSnapshot();
       const walletUtxos = utxosInL2.filter((utxo) => {
         return utxo.address === adminAddress;
       });
-      const withdrawParams: WithdrawParams = {
-        kind: "merchant",
-        fundsUtxos: merchantUtxos,
-        adminKey,
-        hydraKey,
-        walletUtxos,
-      };
-      const { tx } = await withdrawMerchant(localLucid, withdrawParams);
-      const signedTx = await tx.sign
-        .withWallet()
-        .complete()
-        .then((tx) => tx.toCBOR());
-      const decommitResponse = await hydra.decommit(
-        `${env.ADMIN_NODE_API_URL}/decommit`,
-        signedTx
-      );
-      while (currentExpectedTag !== "DecommitFinalized") {
-        currentExpectedTag = await hydra.listen("DecommitRequested");
-        if (currentExpectedTag === "DecommitInvalid") {
-          throw new Error("Decommit rejected by Hydra");
+      let thisRoundUtxos = [];
+      for (let i = 0; i < roundsOfDecommit; i++) {
+        thisRoundUtxos = merchantUtxos.slice(0, MAX_UTXOS_PER_DECOMMIT);
+        merchantUtxos.splice(0, MAX_UTXOS_PER_DECOMMIT);
+        const withdrawParams: WithdrawParams = {
+          kind: "merchant",
+          fundsUtxos: thisRoundUtxos,
+          adminKey,
+          hydraKey,
+          walletUtxos,
+        };
+        const { tx } = await withdrawMerchant(localLucid, withdrawParams);
+        const signedTx = await tx.sign
+          .withWallet()
+          .complete()
+          .then((tx) => tx.toCBOR());
+        const decommitResponse = await hydra.decommit(
+          `${env.ADMIN_NODE_API_URL}/decommit`,
+          signedTx
+        );
+        while (currentExpectedTag !== "DecommitFinalized") {
+          currentExpectedTag = await hydra.listen("DecommitRequested");
+          if (currentExpectedTag === "DecommitInvalid") {
+            throw new Error("Decommit rejected by Hydra");
+          }
         }
+        logger.info("Decommit finalized, sending next decommit...");
       }
-      logger.info("Decommit finalized, sending next decommit...");
     }
 
     // Step 2: Send close command

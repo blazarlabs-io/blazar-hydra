@@ -8,7 +8,7 @@ import { FundsDatum, FundsDatumT } from "../lib/types";
 import { WithdrawParams } from "../lib/params";
 import { withdrawMerchant } from "../tx-builders/withdrawMerchant";
 
-const MAX_UTXOS_PER_DECOMMIT = 2;
+const MAX_UTXOS_PER_DECOMMIT = 15;
 
 async function handleCloseHead(
   lucid: LucidEvolution,
@@ -37,6 +37,8 @@ async function handleCloseHead(
     });
     if (merchantUtxos.length !== 0) {
       const roundsOfDecommit = Math.ceil(merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT);
+      logger.info(roundsOfDecommit + " rounds of decommit");
+      logger.info(merchantUtxos.length + " merchant utxos to withdraw");
       logger.info("Withdrawing merchant utxos...");
       const utxosInL2 = await hydra.getSnapshot();
       const walletUtxos = utxosInL2.filter((utxo) => {
@@ -44,6 +46,7 @@ async function handleCloseHead(
       });
       let thisRoundUtxos = [];
       for (let i = 0; i < roundsOfDecommit; i++) {
+        logger.info(`Sending decommit ${i + 1} of ${roundsOfDecommit}`);
         thisRoundUtxos = merchantUtxos.slice(0, MAX_UTXOS_PER_DECOMMIT);
         merchantUtxos.splice(0, MAX_UTXOS_PER_DECOMMIT);
         const withdrawParams: WithdrawParams = {
@@ -58,17 +61,18 @@ async function handleCloseHead(
           .withWallet()
           .complete()
           .then((tx) => tx.toCBOR());
-        const decommitResponse = await hydra.decommit(
+        await hydra.decommit(
           `${env.ADMIN_NODE_API_URL}/decommit`,
           signedTx
         );
+        currentExpectedTag = "NotDecommitFinalized";
         while (currentExpectedTag !== "DecommitFinalized") {
-          currentExpectedTag = await hydra.listen("DecommitRequested");
+          currentExpectedTag = await hydra.listen("DecommitFinalized");
           if (currentExpectedTag === "DecommitInvalid") {
-            throw new Error("Decommit rejected by Hydra");
+            throw new Error("Decommit rejected by Hydra node");
           }
         }
-        logger.info("Decommit finalized, sending next decommit...");
+        logger.info("Decommit finalized.");
       }
     }
 
@@ -90,7 +94,7 @@ async function handleCloseHead(
     }
     // Step 3: Fanout
     await hydra.fanout();
-    hydra.stop();
+    await hydra.stop();
     return;
   } catch (error) {
     logger.error("Error during close head");

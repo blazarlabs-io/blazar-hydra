@@ -73,7 +73,6 @@ class HydraHandler {
           resolve(data);
         } else {
           logger.info(`Received ${data.tag} while waiting for ${tag}`);
-          resolve(data);
         }
       };
     });

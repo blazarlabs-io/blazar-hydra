@@ -22,7 +22,7 @@ import { handleWithdraw } from "../handlers/withdraw";
 import blake2b from "blake2b";
 import { handleOpenHead } from "../handlers/open-head";
 import { logger } from "../../logger";
-import { PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
+import { FundsDatum, FundsDatumT, PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
 import { handlePay } from "../handlers/pay-merchant";
 import { handleCloseHead } from "../handlers/close-head";
 
@@ -66,7 +66,7 @@ const deposit = async (fromWallet: 1 | 2) => {
     const depTx = await handleDeposit(lucid, {
       user_address: address,
       public_key: publicKey,
-      amount: 10_000_000n,
+      amount: 40_000_000n,
     });
     const signedTx = await lucid
       .fromTx(depTx.cborHex)
@@ -229,6 +229,27 @@ switch (trace) {
       throw new Error("Missing txid. Provide one with --fanout");
     }
     await withdraw(txId);
+    break;
+  case "paymany":
+    const hydra = new HydraHandler(lucid, aliceWsUrl);
+    const utxos = await hydra.getSnapshot();
+    const magia = utxos.filter((utxo) => { const dat = utxo.datum
+
+      if (!dat) {
+        return false
+      }
+
+      if (utxo.address == "addr_test1qztpj076fax0h3hy7vekhzuls2ezd7kh3mphanxh944yuhka76a8nz64ccpusr9q0w7q7kt2ze49d4dtu8564a2m23as8k20j9") {
+        return false
+      }
+
+      const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type
+      return type != "Merchant"
+    }).map((utxo) => { return utxo.txHash + "#" + utxo.outputIndex}).forEach(async (ref) => {
+      await pay(2000000n, "addr_test1qpkxq49y8vv5vwmacfs58h9dr6tzmdet8e4jvp5dkxxmaaqx69fzeuykylvmlcaav5eyp49stczujq0c2xxv83eukf5sc0ed6m", ref, 2)
+    })
+    console.dir(magia, { depth: null });
+    await hydra.stop();
     break;
   default:
     console.log("Invalid or missing trace option");

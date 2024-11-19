@@ -82,12 +82,10 @@ Context: A User wants to use their available funds to pay a Merchant
 
 Context: A User wants to withdraw ADAs from the protocol
 
-- The backend receives a request with the user address, amount to withdraw and signature (1)
-- The backend queries the L2 User Funds UTxOs (2)
-- The backend builds an L2 transaction that spends the user funds UTxO and creates a new UTxO at the user address (3)
-- The backend sends the transaction to the hydra node (4)
-- The hydra node responds with the confirmation of the transaction
-- The backend returns the confirmation and the updated User Funds
+- The backend receives a request with the user UTxO ref and signature (1)
+- The backend builds an L1 transaction that spends the user funds UTxO and creates a new UTxO at the user address (2)
+- The backend sends the transaction to the cardano node (3)
+- The backend returns the confirmation and the updated UTxO ref
 
 ![WithdrawFundsDiagram](img/diagram-withdraw-user-funds.png)
 

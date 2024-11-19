@@ -17,9 +17,8 @@ The complete proposed flow looks like this:
 - Users can pay Merchants using the funds committed into the head
 - Each Merchant will have at most one UTxO inside the hydra head, combining all the payments they received so far
 - Users can also deposit more funds in the L1. But it won't be available until the current head is closed and the new head is open
-- Users and Merchants can request a withdrawal at any moment, and the funds will be returned to them when the head closes.
-- Once the day has ended, all Merchants UTxOs will be withdrawn. Meaning that the funds will leave the smart contract UTxO and go to their respective addresses, still in the L2
-- Then, the head will close and fanout the User and Merchant UTxOs to the L1
+- Once the day has ended, all Merchants UTxOs will be withdrawn. Meaning that the funds will leave the smart contract UTxO and go to their respective addresses, using Incremental Decommits to move them to the L1.
+- Then, the head will close and fanout the User UTxOs to the L1
 - Before opening a new head, any deposit UTxOs that share the same User will be merged. Including new deposits and remaining funds from the previous head
 - Now that every user has only one deposit UTxO in their name, a new head can be opened
 
@@ -99,8 +98,9 @@ Context: An Admin wants to close the hydra head for the day, preparing for the o
 - The backend receives a request to close the head
 - The backend queries all Merchant Funds UTxOs from L2 (1)
 - The backend builds and submits L2 transactions to withdraw all merchant funds (2&3)
-- The backend sends a Close command to the hydra node (4)
-- The hydra node builds and submits the L1 transaction to close the head (5&6)
+- The hydra node builds and submits decommit transactions to the L1 (4)
+- The backend sends a Close command to the hydra node (5)
+- The hydra node builds and submits the L1 transaction to close the head (6&7)
 - Once the contestation period has ended, the backed sends a Fanout command to the hydra node
 - The hydra node builds and submits the L1 transaction to fan-out the head, opening new user funds UTxOs and sending merchant funds to their address
 - The backend returns a success or error message

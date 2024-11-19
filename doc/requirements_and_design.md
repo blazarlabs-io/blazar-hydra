@@ -69,10 +69,9 @@ Context: A User or Merchant wants to know how much funds they have in the protoc
 
 Context: A User wants to use their available funds to pay a Merchant
 
-- The backend receives a request with the user address, merchant address, payment amount and user signature (1)
-- The backend queries the User Funds UTxOs in the L2 (2)
-- The backend builds an L2 transaction that spends the user funds UTxO and creates a Merchant UTxO (3)
-- The backend sends the transaction to the hydra-node (4)
+- The backend receives a request with the user UTxO ref, merchant address, payment amount and user signature (1)
+- The backend builds an L2 transaction that spends the user funds UTxO and creates a Merchant UTxO (2)
+- The backend sends the transaction to the hydra-node (3)
 - The hydra node submits the transaction
 - The backend returns a success or error message
 
@@ -245,7 +244,7 @@ Validates the actions that contain multiple script inputs interacting together
 For the **Commit** redemeer the validations are the following:
 
 - There's a single input that has the Hydra Init script address
-- The redeemer of the Hydra Init UTxO is the list of utxo refs of all inputs from out script address
+- The redeemer of the Hydra Init UTxO is the list of UTxOs refs of all inputs from out script address
 - The transaction is signed by the blazar admin
 - No tokens from our policy are minted or burned
 

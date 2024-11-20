@@ -1,14 +1,66 @@
-import { addAssets, LucidEvolution } from "@lucid-evolution/lucid";
+import {
+  addAssets,
+  Data,
+  LucidEvolution,
+  UTxO,
+  validatorToAddress,
+} from "@lucid-evolution/lucid";
 import { QueryFundsResponse } from "../../api/schemas/response";
+import { HydraHandler } from "../lib/hydra";
+import _ from "lodash";
+import { env } from "../../config";
+import { dataAddressToBech32, getValidator } from "../lib/utils";
+import { FundsDatum, FundsDatumT } from "../lib/types";
+import { logger } from "../../logger";
 
 async function handleQueryFunds(
   lucid: LucidEvolution,
-  address: string,
+  address: string
 ): Promise<QueryFundsResponse> {
-  const funds = {
-    adaInL1: 0n,
-    adaInL2: 0n,
+  let fundsInL1: UTxO[] = [], fundsInL2: UTxO[] = [];
+  const localLucid = _.cloneDeep(lucid);
+  const [vRef] = await lucid.utxosByOutRef([
+    { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+  ]);
+  const validator = getValidator(vRef);
+  const validatorAddr = validatorToAddress(lucid.config().network, validator);
+  const isOwnUtxo = (utxo: UTxO, addr: string) => {
+    if (!utxo.datum) {
+      return false;
+    }
+    if (utxo.address !== validatorAddr) {
+      return false;
+    }
+    const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
+    return dataAddressToBech32(localLucid, datum.addr) === addr;
+  };
+  try {
+    fundsInL1 = await localLucid
+      .utxosAt(validatorAddr)
+      .then((utxos) => utxos.filter((utxo) => isOwnUtxo(utxo, address)));
+  } catch (error) {
+    logger.error(`Error querying funds in L1: ${error}`);
+    throw new Error(`Error querying funds in L1: ${error}`);
   }
+  try {
+    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
+    fundsInL2 = await hydra
+      .getSnapshot()
+      .then((utxos) => utxos.filter((utxo) => isOwnUtxo(utxo, address)));
+    await hydra.stop();
+  } catch (error) {
+    logger.error(`Snapshot not found`);
+  }
+  const getTotalLvc = (acc: bigint, utxo: UTxO) =>
+    acc + utxo.assets["lovelace"];
+  const totalInL1 = fundsInL1.reduce(getTotalLvc, 0n);
+  const totalInL2 = fundsInL2.reduce(getTotalLvc, 0n);
+  const funds: QueryFundsResponse = {
+    fundsInL1,
+    totalInL1,
+    fundsInL2,
+    totalInL2,
+  };
   return funds;
 }
 

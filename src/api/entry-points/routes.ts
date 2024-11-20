@@ -25,7 +25,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     try {
       const depositSchema = DepositZodSchema.parse(req.body);
       const _res = await handleDeposit(lucid, depositSchema);
-      res.status(200).json(_res);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.DEPOSIT}`);
     } catch (e) {
       if (e instanceof Error) {
@@ -49,7 +49,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     try {
       const withdrawSchema = WithdrawZodSchema.parse(req.body);
       const _res = await handleWithdraw(lucid, withdrawSchema);
-      res.status(200).json(_res);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.WITHDRAW}`);
     } catch (e) {
       if (e instanceof Error) {
@@ -73,7 +73,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     try {
       const payMerchantSchema = PayMerchantZodSchema.parse(req.body);
       const _res = await handlePay(lucid, payMerchantSchema);
-      res.status(200).json(_res);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.PAY}`);
     } catch (e) {
       if (e instanceof Error) {
@@ -110,7 +110,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     try {
       const openHeadSchema = ManageHeadZodSchema.parse(req.body);
       const _res = await handleOpenHead(lucid, openHeadSchema);
-      res.status(200).json(_res);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.OPEN_HEAD}`);
     } catch (e) {
       if (e instanceof Error) {
@@ -134,7 +134,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     try {
       const closeHeadSchema = ManageHeadZodSchema.parse(req.body);
       const _res = await handleCloseHead(lucid, closeHeadSchema);
-      res.status(200).json(_res);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.CLOSE_HEAD}`);
     } catch (e) {
       if (e instanceof Error) {

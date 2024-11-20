@@ -12,6 +12,7 @@ import { env } from "../../config";
 import { dataAddressToBech32, getValidator } from "../lib/utils";
 import { FundsDatum, FundsDatumT } from "../lib/types";
 import { logger } from "../../logger";
+import Websocket from "ws";
 
 async function handleQueryFunds(
   lucid: LucidEvolution,
@@ -56,8 +57,12 @@ async function handleQueryFunds(
       .getSnapshot()
       .then((utxos) => utxos.filter((utxo) => isOwnUtxo(utxo, address)));
     await hydra.stop();
-  } catch (error) {
-    logger.error(`Snapshot not found`);
+  } catch (error: any) {
+    if (JSON.stringify(error).includes("ECONNREFUSED")) {
+      logger.error(`Not connected to websocket`);
+    } else {
+      logger.error(`Error querying funds in L2: ${error}`);
+    }
   }
   const getTotalLvc = (acc: bigint, utxo: UTxO) =>
     acc + utxo.assets["lovelace"];

@@ -61,6 +61,7 @@ class HydraHandler {
 
     this.connection.onerror = (error) => {
       logger.error("Error on Hydra websocket: ", error);
+      throw new Error("Error on Hydra websocket: " + error);
     };
 
     this.connection.onclose = () => {

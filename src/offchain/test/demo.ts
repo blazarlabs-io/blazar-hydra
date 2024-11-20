@@ -13,6 +13,7 @@ import { handleDeposit } from "../handlers/deposit";
 import { commitFunds } from "../tx-builders/commit-funds";
 import {
   bech32ToAddressType,
+  dataAddressToBech32,
   getPrivateKey,
   waitForUtxosUpdate,
 } from "../lib/utils";
@@ -22,7 +23,14 @@ import { handleWithdraw } from "../handlers/withdraw";
 import blake2b from "blake2b";
 import { handleOpenHead } from "../handlers/open-head";
 import { logger } from "../../logger";
-import { FundsDatum, FundsDatumT, PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
+import {
+  FundsDatum,
+  FundsDatumT,
+  PayInfo,
+  PayInfoT,
+  WithdrawInfo,
+  WithdrawInfoT,
+} from "../lib/types";
 import { handlePay } from "../handlers/pay-merchant";
 import { handleCloseHead } from "../handlers/close-head";
 
@@ -33,7 +41,7 @@ const lucid = (await Lucid(
   env.NETWORK as Network
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);
-const aliceWsUrl = "ws://127.0.0.1:4002";
+const aliceWsUrl = "ws://127.0.0.1:4001";
 
 const aliceApiUrl = "http://127.0.0.1:4001/commit";
 const bobApiUrl = "http://127.0.0.1:4002/commit";
@@ -55,7 +63,7 @@ const openHead = async () => {
 };
 
 const deposit = async (fromWallet: 1 | 2) => {
-  const thisSeed = fromWallet === 1 ? env.SEED : env.USER_SEED;
+  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   lucid.selectWallet.fromSeed(thisSeed);
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed);
@@ -90,24 +98,39 @@ const getSnapshot = async () => {
 
 const pay = async (
   amount: bigint,
-  mAddrB32: Address,
-  fRef: string,
+  from: Address,
+  to: Address,
   withWallet: 1 | 2
 ) => {
-  const [fundsTxId, fundsIx] = fRef.split("#");
-  const mAddr = bech32ToAddressType(lucid, mAddrB32);
+  const hydra = new HydraHandler(lucid, aliceWsUrl);
+  const utxos = await hydra.getSnapshot();
+  const [fRef] = utxos.filter((utxo) => {
+    if (utxo.address === env.ADMIN_ADDRESS) {
+      return false;
+    }
+    const dat = utxo.datum;
+    if (!dat) {
+      return false;
+    }
+    const owner = Data.from<FundsDatumT>(dat, FundsDatum).addr;
+    return dataAddressToBech32(lucid, owner) === from;
+  });
+  await hydra.stop();
+
+  const [fundsTxId, fundsIx] = [fRef.txHash, fRef.outputIndex];
+  const mAddr = bech32ToAddressType(lucid, to);
   const payInfo: PayInfoT = {
     amount: amount,
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
-  const signatureSeed = withWallet === 1 ? env.SEED : env.USER_SEED;
+  const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   const userPrivKey = getPrivateKey(signatureSeed);
   const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), "hex");
   const sig = userPrivKey.sign(msg).to_hex();
 
   const pSchema: PayMerchantSchema = {
-    merchant_address: mAddrB32,
+    merchant_address: to,
     funds_utxo_ref: { hash: fundsTxId, index: Number(fundsIx) },
     amount: amount,
     signature: sig,
@@ -171,10 +194,10 @@ switch (trace) {
       throw new Error("Missing wallet. Provide one with --wallet");
     }
     switch (wallet) {
-      case "admin":
+      case "user1":
         await deposit(1);
         break;
-      case "user":
+      case "user2":
         await deposit(2);
         break;
       default:
@@ -200,9 +223,8 @@ switch (trace) {
     break;
   case "pay":
     const amount = process.env.npm_config_amount;
+    const user = process.env.npm_config_from;
     const mAddr = process.env.npm_config_merchant_address;
-    const fundsRef = process.env.npm_config_funds_ref;
-    const wallet = process.env.npm_config_wallet;
     if (!amount) {
       throw new Error("Missing amount. Provide with --amount");
     }
@@ -211,43 +233,55 @@ switch (trace) {
         "Missing merchant address. Provide with --merchant-address"
       );
     }
-    if (!fundsRef) {
-      throw new Error("Missing Funds UTxO Ref. Provide with --funds-ref");
+    if (!user) {
+      throw new Error("User not specified. Provide with --from. Options: user1, user2");
     }
-    if (!wallet) {
-      throw new Error("Missing wallet. Provide one with --wallet");
-    }
-    const withWallet = wallet === "admin" ? 1 : 2;
-    await pay(BigInt(amount), mAddr, fundsRef, withWallet);
+    const withWallet = user === "user1" ? 1 : 2;
+    const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
+    await pay(BigInt(amount), userAddr, mAddr, withWallet);
     break;
   case "fanout":
     await fanout();
     break;
   case "withdraw":
-    const txId = process.env.npm_config_fanout;
+    const txId = process.env.npm_config_fanout_txid;
     if (!txId) {
-      throw new Error("Missing txid. Provide one with --fanout");
+      throw new Error("Missing txid. Provide one with --fanout_txid");
     }
     await withdraw(txId);
     break;
   case "paymany":
     const hydra = new HydraHandler(lucid, aliceWsUrl);
     const utxos = await hydra.getSnapshot();
-    const magia = utxos.filter((utxo) => { const dat = utxo.datum
+    const magia = utxos
+      .filter((utxo) => {
+        const dat = utxo.datum;
 
-      if (!dat) {
-        return false
-      }
+        if (!dat) {
+          return false;
+        }
 
-      if (utxo.address == "addr_test1qztpj076fax0h3hy7vekhzuls2ezd7kh3mphanxh944yuhka76a8nz64ccpusr9q0w7q7kt2ze49d4dtu8564a2m23as8k20j9") {
-        return false
-      }
+        if (
+          utxo.address ==
+          "addr_test1qztpj076fax0h3hy7vekhzuls2ezd7kh3mphanxh944yuhka76a8nz64ccpusr9q0w7q7kt2ze49d4dtu8564a2m23as8k20j9"
+        ) {
+          return false;
+        }
 
-      const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type
-      return type != "Merchant"
-    }).map((utxo) => { return utxo.txHash + "#" + utxo.outputIndex}).forEach(async (ref) => {
-      await pay(2000000n, "addr_test1qpkxq49y8vv5vwmacfs58h9dr6tzmdet8e4jvp5dkxxmaaqx69fzeuykylvmlcaav5eyp49stczujq0c2xxv83eukf5sc0ed6m", ref, 2)
-    })
+        const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type;
+        return type != "Merchant";
+      })
+      .map((utxo) => {
+        return utxo.txHash + "#" + utxo.outputIndex;
+      })
+      .forEach(async (ref) => {
+        await pay(
+          2000000n,
+          "addr_test1qpkxq49y8vv5vwmacfs58h9dr6tzmdet8e4jvp5dkxxmaaqx69fzeuykylvmlcaav5eyp49stczujq0c2xxv83eukf5sc0ed6m",
+          ref,
+          2
+        );
+      });
     console.dir(magia, { depth: null });
     await hydra.stop();
     break;

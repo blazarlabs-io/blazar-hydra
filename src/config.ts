@@ -26,6 +26,8 @@ const envSchema = z
     ADMIN_ADDRESS: z.string(),
     USER_ADDRESS: z.string(),
     USER_SEED: z.string(),
+    USER_ADDRESS_2: z.string(),
+    USER_SEED_2: z.string(),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;

@@ -1,4 +1,4 @@
-import { LucidEvolution, OutRef, UTxO } from "@lucid-evolution/lucid";
+import { Data, LucidEvolution, OutRef, UTxO } from "@lucid-evolution/lucid";
 import { PayMerchantParams } from "../lib/params";
 import { PayMerchantSchema } from "../../shared";
 import { payMerchant } from "../tx-builders/pay";
@@ -6,6 +6,7 @@ import { env } from "../../config";
 import { logger } from "../../logger";
 import _ from "lodash";
 import { HydraHandler } from "../lib/hydra";
+import { FundsDatum, FundsDatumT } from "../lib/types";
 
 async function handlePay(
   lucid: LucidEvolution,
@@ -25,17 +26,19 @@ async function handlePay(
     let userFundsUtxo: UTxO | undefined, merchantFundsUtxo: UTxO | undefined;
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const utxosInL2 = await hydra.getSnapshot();
-    if (funds_utxo_ref) {
-      const { hash: txHash, index: outputIndex } = funds_utxo_ref;
-      userFundsUtxo = utxosInL2.find((utxo) => {
-        return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
-      });
-    }
+    const { hash: txHash, index: outputIndex } = funds_utxo_ref;
+    userFundsUtxo = utxosInL2.find((utxo) => {
+      return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
+    });
     const adminCollateral = utxosInL2.find(
       (utxo) => utxo.address === env.ADMIN_ADDRESS
     );
     if (!userFundsUtxo || !adminCollateral) {
       throw new Error(`User funds or collateral utxo not found`);
+    }
+    const datum = Data.from<FundsDatumT>(userFundsUtxo.datum!, FundsDatum);
+    if (amountToPay > userFundsUtxo.assets["lovelace"] - datum.locked_deposit) {
+      throw new Error(`Insufficient funds`);
     }
     if (merchant_funds_utxo) {
       const { hash: txHash, index: outputIndex } = merchant_funds_utxo;

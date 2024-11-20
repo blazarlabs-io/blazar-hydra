@@ -33,6 +33,9 @@ import {
 } from "../lib/types";
 import { handlePay } from "../handlers/pay-merchant";
 import { handleCloseHead } from "../handlers/close-head";
+import axios from "axios";
+import JSONbig from "json-bigint";
+import { API_ROUTES } from "../../api/schemas/routes";
 
 const adminSeed = env.SEED;
 const privKey = getPrivateKey(adminSeed);
@@ -46,6 +49,36 @@ const aliceWsUrl = "ws://127.0.0.1:4001";
 const aliceApiUrl = "http://127.0.0.1:4001/commit";
 const bobApiUrl = "http://127.0.0.1:4002/commit";
 
+const ownServerUrl = "http://localhost:3002";
+const postEp = async (path: string, param: any): Promise<any> => {
+  return axios
+    .post(path, JSONbig.stringify(param), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      transformRequest: [(data) => data],
+      transformResponse: [(data) => JSONbig.parse(data)],
+    })
+    .then((response) => {
+      if (response.status === 200) {
+        return response.data;
+      }
+      throw response;
+    });
+};
+
+const getEp = async (path: string): Promise<any> => {
+  return axios.get(path).then((response) => {
+    if (response.status === 200) {
+      return response.data;
+    }
+    throw response;
+  });
+};
+
+
 logger.configureLogger(
   {
     level: "debug", //env.LOGGER_LEVEL,
@@ -56,7 +89,7 @@ logger.configureLogger(
 
 const openHead = async () => {
   lucid.selectWallet.fromSeed(adminSeed);
-  await handleOpenHead(lucid, {
+  const openRes = await postEp(ownServerUrl + API_ROUTES.OPEN_HEAD, {
     auth_token: "",
     peer_api_urls: [aliceApiUrl, bobApiUrl],
   });
@@ -131,15 +164,13 @@ const pay = async (
 
   const pSchema: PayMerchantSchema = {
     merchant_address: to,
-    funds_utxo_ref: { hash: fundsTxId, index: Number(fundsIx) },
+    funds_utxo_ref: { hash: fundsTxId, index: BigInt(fundsIx) },
     amount: amount,
     signature: sig,
     merchant_funds_utxo: undefined,
-    user_address: "",
   };
-  logger.info("Before send tx");
-  await handlePay(lucid, pSchema);
-  logger.info("After send tx");
+  const res = await postEp(ownServerUrl + API_ROUTES.PAY, pSchema);
+  logger.info(res)
 };
 
 const fanout = async () => {
@@ -216,7 +247,7 @@ switch (trace) {
     await getSnapshot();
     break;
   case "close":
-    await handleCloseHead(lucid, {
+    const closeRes = await postEp(ownServerUrl + API_ROUTES.CLOSE_HEAD, {
       auth_token: "",
       peer_api_urls: [aliceApiUrl, bobApiUrl],
     });

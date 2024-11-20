@@ -80,23 +80,27 @@ async function commitFunds(
       legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
     }
   });
-  // Add withdraw redeemer
-  legacyRedeemers.add(
-    CML.LegacyRedeemer.new(
-      CML.RedeemerTag.Reward,
-      0n,
-      CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
-      CML.ExUnits.new(0n, 0n)
-    )
-  );
-  const redeemers = CML.Redeemers.new_arr_legacy_redeemer(legacyRedeemers);
-  txWitnessSet.set_redeemers(redeemers);
 
-  // Add plutus script
-  const scripts = CML.PlutusV3ScriptList.new();
-  const script = CML.PlutusV3Script.from_cbor_hex(validator.script);
-  scripts.add(script);
-  txWitnessSet.set_plutus_v3_scripts(scripts);
+  // Add redeemers and validator only if there were script utxos being committed
+  if (userFundUtxos.length > 0) {
+    // Add withdraw redeemer
+    legacyRedeemers.add(
+      CML.LegacyRedeemer.new(
+        CML.RedeemerTag.Reward,
+        0n,
+        CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
+        CML.ExUnits.new(0n, 0n)
+      )
+    );
+    const redeemers = CML.Redeemers.new_arr_legacy_redeemer(legacyRedeemers);
+    txWitnessSet.set_redeemers(redeemers);
+
+    // Add plutus script
+    const scripts = CML.PlutusV3ScriptList.new();
+    const script = CML.PlutusV3Script.from_cbor_hex(validator.script);
+    scripts.add(script);
+    txWitnessSet.set_plutus_v3_scripts(scripts);
+  }
 
   const cmlTx = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();
   const tx = lucid.fromTx(cmlTx);

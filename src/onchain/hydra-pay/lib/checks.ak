@@ -239,7 +239,8 @@ pub fn validate_pay(
 }
 
 pub fn validate_withdraw(
-  red_opt_info: Option<(WithdrawInfo, Signature)>,
+  red_info: WithdrawInfo,
+  red_sig: Signature,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
@@ -248,7 +249,6 @@ pub fn validate_withdraw(
   let authorized =
     when datum.funds_type is {
       User { public_key } -> {
-        expect Some((red_info, red_sig)) = red_opt_info
         let WithdrawInfo { ref } = red_info
         let msg = serialise(red_info)
         and {
@@ -257,12 +257,71 @@ pub fn validate_withdraw(
         }
       }
 
-      Merchant -> True
+      Merchant -> False
     }
 
   and {
     check_withdraw_is_present(own_input, CombinedWithdraw, tx)?,
     authorized?,
+  }
+}
+
+pub fn validate_merchant_withdraw(
+  i_datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
+) {
+  let Transaction { outputs, mint, .. } = tx
+
+  expect Input {
+    output_reference: i_ref,
+    output: Output {
+      address: Address { payment_credential: Script(own_hash), .. },
+      value: i_value,
+      ..
+    },
+  } = own_input
+
+  expect [validation_token_name] = tokens(i_value, own_hash) |> dict.keys()
+
+  expect Some(validation_token_mint_amount) =
+    tokens(mint, own_hash) |> dict.get(validation_token_name)
+
+  expect FundsDatum { addr: dat_addr, funds_type: Merchant, .. } = i_datum
+
+  let valid_merch_output =
+    list.any(
+      outputs,
+      fn(o) {
+        let Output {
+          address: o_addr,
+          value: o_value,
+          datum: o_datum,
+          reference_script: o_ref_script,
+        } = o
+
+        when o_datum is {
+          InlineDatum(o_dat_data) -> {
+            let expected_datum = i_ref
+            let expected_datum_data: Data = expected_datum
+
+            let expected_value = from_lovelace(lovelace_of(i_value))
+
+            and {
+              (o_addr == dat_addr)?,
+              match(o_value, expected_value, >=)?,
+              (o_dat_data == expected_datum_data)?,
+              (o_ref_script == None)?,
+            }
+          }
+          _ -> False
+        }
+      },
+    )
+
+  and {
+    validation_token_mint_amount == -1,
+    valid_merch_output?,
   }
 }
 

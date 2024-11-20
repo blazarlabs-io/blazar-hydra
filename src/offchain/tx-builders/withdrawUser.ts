@@ -17,6 +17,7 @@ import {
   WithdrawInfoT,
 } from "../lib/types";
 import { dataAddressToBech32, getValidator } from "../lib/utils";
+import _ from "lodash";
 
 async function withdraw(
   lucid: LucidEvolution,
@@ -71,7 +72,7 @@ async function withdraw(
     const redeemer =
       kind === "merchant"
         ? Spend.MerchantWithdraw
-        : Spend.UserWithdraw(withdrawInfo, signature);
+        : Spend.UserWithdraw(withdrawInfo, signature!);
 
     tx.collectFrom([fundsUtxo], redeemer);
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);

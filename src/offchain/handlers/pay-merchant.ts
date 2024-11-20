@@ -1,20 +1,19 @@
-import { LucidEvolution, OutRef, UTxO } from "@lucid-evolution/lucid";
+import { Data, LucidEvolution, OutRef, UTxO } from "@lucid-evolution/lucid";
 import { PayMerchantParams } from "../lib/params";
 import { PayMerchantSchema } from "../../shared";
 import { payMerchant } from "../tx-builders/pay";
-import { TxBuiltResponse } from "../../api/schemas/response";
 import { env } from "../../config";
 import { logger } from "../../logger";
 import _ from "lodash";
 import { HydraHandler } from "../lib/hydra";
+import { FundsDatum, FundsDatumT } from "../lib/types";
 
 async function handlePay(
   lucid: LucidEvolution,
   params: PayMerchantSchema
-): Promise<TxBuiltResponse & { merchUtxo: OutRef }> {
+): Promise<{ fundsUtxoRef: OutRef; merchUtxo: OutRef }> {
   try {
     const localLucid = _.cloneDeep(lucid);
-    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const {
       user_address: userAddress,
       merchant_address: merchantAddress,
@@ -24,18 +23,22 @@ async function handlePay(
       merchant_funds_utxo,
     } = params;
     const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
-    let userFundsUtxo,
-      merchantFundsUtxo: UTxO | undefined = undefined;
+    let userFundsUtxo: UTxO | undefined, merchantFundsUtxo: UTxO | undefined;
+    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const utxosInL2 = await hydra.getSnapshot();
-    if (funds_utxo_ref) {
-      const { hash: txHash, index: outputIndex } = funds_utxo_ref;
-      userFundsUtxo = utxosInL2.find((utxo) => {
-        return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
-      });
-    }
-    const adminCollateral = utxosInL2.find((utxo) => utxo.address === env.ADMIN_ADDRESS);
+    const { hash: txHash, index: outputIndex } = funds_utxo_ref;
+    userFundsUtxo = utxosInL2.find((utxo) => {
+      return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
+    });
+    const adminCollateral = utxosInL2.find(
+      (utxo) => utxo.address === env.ADMIN_ADDRESS
+    );
     if (!userFundsUtxo || !adminCollateral) {
       throw new Error(`User funds or collateral utxo not found`);
+    }
+    const datum = Data.from<FundsDatumT>(userFundsUtxo.datum!, FundsDatum);
+    if (amountToPay > userFundsUtxo.assets["lovelace"] - datum.locked_deposit) {
+      throw new Error(`Insufficient funds`);
     }
     if (merchant_funds_utxo) {
       const { hash: txHash, index: outputIndex } = merchant_funds_utxo;
@@ -62,10 +65,21 @@ async function handlePay(
       localLucid,
       payMerchantParams
     );
-    await hydra.stop()
+
+    logger.info("Submitting payment to hydra head...");
+    lucid.selectWallet.fromSeed(env.SEED);
+    const signedTx = await lucid
+      .fromTx(tx.toCBOR())
+      .sign.withWallet()
+      .complete();
+    const tag = await hydra.sendTx(signedTx.toCBOR());
+    if (tag !== "TxValid") {
+      await hydra.stop();
+      throw new Error(`Failed to submit payment tx to hydra head`);
+    }
+    await hydra.stop();
 
     return {
-      cborHex: tx.toCBOR(),
       fundsUtxoRef: userUtxo,
       merchUtxo: merchantUtxo,
     };

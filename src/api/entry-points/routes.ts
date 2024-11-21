@@ -1,9 +1,19 @@
 import e from "express";
 import { API_ROUTES } from "../schemas/routes";
 import { ERRORS } from "../schemas/errors";
-import { DepositZodSchema, PayMerchantZodSchema, WithdrawZodSchema } from "../schemas/zod";
-import { handleDeposit, handlePay, handleWithdraw } from "../../offchain";
+import {
+  DepositZodSchema,
+  PayMerchantZodSchema,
+  WithdrawZodSchema,
+} from "../schemas/zod";
+import {
+  handleDeposit,
+  handlePay,
+  handleQueryFunds,
+  handleWithdraw,
+} from "../../offchain";
 import { LucidEvolution } from "@lucid-evolution/lucid";
+import { JSONBig } from "./server";
 
 const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
   // User Routes
@@ -14,11 +24,15 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       res.status(200).json(_res);
     } catch (e) {
       if (e instanceof Error) {
-        res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        res
+          .status(500)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
       } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
       } else {
-        res.status(520).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        res
+          .status(520)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
       }
     }
   });
@@ -30,11 +44,15 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       res.status(200).json(_res);
     } catch (e) {
       if (e instanceof Error) {
-        res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        res
+          .status(500)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
       } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
       } else {
-        res.status(520).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        res
+          .status(520)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
       }
     }
   });
@@ -46,19 +64,28 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       res.status(200).json(_res);
     } catch (e) {
       if (e instanceof Error) {
-        res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        res
+          .status(500)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
       } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
       } else {
-        res.status(520).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        res
+          .status(520)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
       }
     }
   });
 
-  expressApp.get(API_ROUTES.QUERY_FUNDS, (req, res) => {
-    res.send("Query funds route");
+  expressApp.get(API_ROUTES.QUERY_FUNDS, async (req, res) => {
+    try {
+      const { address } = req.query as { address: string };
+      const _res = await handleQueryFunds(lucid, address);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
+    } catch (e) {
+      res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+    }
   });
-
 
   // Admin Routes
   expressApp.post(API_ROUTES.OPEN_HEAD, (req, res) => {

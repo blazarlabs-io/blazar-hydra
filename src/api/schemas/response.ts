@@ -1,8 +1,10 @@
 import { OutRef } from "@lucid-evolution/lucid";
 
 type QueryFundsResponse = {
-  adaInL1: bigint;
-  adaInL2: bigint;
+  fundsInL1: OutRef[];
+  totalInL1: bigint;
+  fundsInL2: OutRef[];
+  totalInL2: bigint;
 };
 
 type TxBuiltResponse = {

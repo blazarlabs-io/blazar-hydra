@@ -60,7 +60,7 @@ class HydraHandler {
     };
 
     this.connection.onerror = (error) => {
-      logger.error("Error on Hydra websocket: ", error);
+      logger.error("Error on Hydra websocket");
     };
 
     this.connection.onclose = () => {
@@ -109,9 +109,6 @@ class HydraHandler {
         }
         logger.info(`Received: ${data.tag}`);
         resolve(data.tag);
-      };
-      this.connection.onerror = (error) => {
-        logger.error("Error on Hydra websocket: ", error);
       };
     });
   }

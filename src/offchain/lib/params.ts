@@ -26,7 +26,6 @@ type WithdrawParams = {
 
 type PayMerchantParams = {
   adminCollateral: UTxO;
-  userAddress: string;
   merchantAddress: string;
   amountToPay: bigint;
   userFundsUtxo: UTxO;

@@ -203,8 +203,8 @@ async function payMerchant(
   const tx = lucid.fromTx(cmlTx);
   return {
     tx,
-    merchantUtxo: { txHash: tx.toCBOR(), outputIndex: 0 },
-    userUtxo: { txHash: tx.toCBOR(), outputIndex: 1 },
+    merchantUtxo: { txHash: tx.toHash(), outputIndex: 0 },
+    userUtxo: { txHash: tx.toHash(), outputIndex: 1 },
   };
 }
 

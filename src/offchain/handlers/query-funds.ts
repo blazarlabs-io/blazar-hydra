@@ -17,7 +17,8 @@ async function handleQueryFunds(
   lucid: LucidEvolution,
   address: string
 ): Promise<QueryFundsResponse> {
-  let fundsInL1: UTxO[] = [], fundsInL2: UTxO[] = [];
+  let fundsInL1: UTxO[] = [],
+    fundsInL2: UTxO[] = [];
   const localLucid = _.cloneDeep(lucid);
   const [vRef] = await lucid.utxosByOutRef([
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
@@ -31,8 +32,15 @@ async function handleQueryFunds(
     if (utxo.address !== validatorAddr) {
       return false;
     }
-    const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
-    return dataAddressToBech32(localLucid, datum.addr) === addr;
+    try {
+      const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
+      return dataAddressToBech32(localLucid, datum.addr) === addr;
+    } catch (error) {
+      logger.warning(
+        `Utxo at validator address with unknown datum: ${utxo.txHash}#${utxo.outputIndex}`
+      );
+      return false;
+    }
   };
   try {
     fundsInL1 = await localLucid

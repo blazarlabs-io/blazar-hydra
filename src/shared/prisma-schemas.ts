@@ -1,19 +1,15 @@
-const Status = {
+const DBStatus = {
   INITIALIZING: "INITIALIZING",
   MERGING: "MERGING",
   COMMITTING: "COMMITTING",
   AWAITING: "AWAITING",
   RUNNING: "RUNNING",
+  DECOMMITING: "DECOMMITING",
+  CLOSING: "CLOSING",
   CLOSED: "CLOSED",
   FAILED: "FAILED",
 } as const;
 
-const Kind = {
-  OPEN_HEAD: "OPEN",
-  CLOSE_HEAD: "CLOSE",
-} as const;
+type DBStatus = keyof typeof DBStatus;
 
-type Status = keyof typeof Status;
-type Kind = keyof typeof Kind;
-
-export { Status, Kind };
+export { DBStatus };

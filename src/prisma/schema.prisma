@@ -15,6 +15,5 @@ datasource db {
 
 model Process {
   id     String   @id @default(uuid())
-  kind   String
   status String
 }

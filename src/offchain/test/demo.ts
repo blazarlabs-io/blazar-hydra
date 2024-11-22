@@ -89,10 +89,11 @@ logger.configureLogger(
 
 const openHead = async () => {
   lucid.selectWallet.fromSeed(adminSeed);
-  const openRes = await postEp(ownServerUrl + API_ROUTES.OPEN_HEAD, {
+  const { operationId } = await postEp(ownServerUrl + API_ROUTES.OPEN_HEAD, {
     auth_token: "",
     peer_api_urls: [aliceApiUrl, bobApiUrl],
   });
+  logger.debug(`Operation ID: ${operationId}`);
 };
 
 const deposit = async (fromWallet: 1 | 2) => {

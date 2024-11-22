@@ -8,6 +8,7 @@ import {
   WithdrawZodSchema,
 } from "../schemas/zod";
 import {
+  finalizeOpenHead,
   handleCloseHead,
   handleDeposit,
   handleOpenHead,
@@ -18,6 +19,7 @@ import {
 import { LucidEvolution } from "@lucid-evolution/lucid";
 import { JSONBig } from "./server";
 import { logger } from "../../logger";
+import { prisma } from "../../config";
 
 const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
   // User Routes
@@ -93,6 +95,23 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     }
   });
 
+  expressApp.get("/state", async (req, res) => {
+    try {
+      const procId = req.query.id as string;
+      const process = await prisma.process.findUniqueOrThrow({
+        where: { id: procId}
+      }).catch((error) => {
+        logger.error("DB Error while fetching status: " + error);
+        throw error;
+      });
+      res.status(200).json({ status: process.status });
+      logger.info(`200 - /state`);
+    } catch (e) {
+      res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+      logger.error(`400 - /state: ${e}`);
+    }
+  });
+
   expressApp.get(API_ROUTES.QUERY_FUNDS, async (req, res) => {
     try {
       const { address } = req.query as { address: string };
@@ -100,7 +119,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.QUERY_FUNDS}`);
     } catch (e) {
-      res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+      res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
       logger.error(`500 - ${API_ROUTES.QUERY_FUNDS}: ${e}`);
     }
   });
@@ -112,20 +131,21 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       const _res = await handleOpenHead(lucid, openHeadSchema);
       res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.OPEN_HEAD}`);
+      finalizeOpenHead(lucid, openHeadSchema, _res.operationId);
     } catch (e) {
       if (e instanceof Error) {
         res
           .status(500)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
         logger.error(`500 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
       } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
-        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
-        logger.error(`400 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
+        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}` });
+        logger.error(`400 - ${API_ROUTES.OPEN_HEAD}`);
       } else {
         res
           .status(520)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
-        logger.error(`520 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
+        logger.error(`520 - ${API_ROUTES.OPEN_HEAD}`);
       }
     }
   });

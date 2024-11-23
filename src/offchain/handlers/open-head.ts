@@ -20,7 +20,7 @@ import { mergeFunds } from "../tx-builders/merge-funds";
 import { logger } from "../../logger";
 import { commitFunds } from "../tx-builders/commit-funds";
 import { CommitFundsParams } from "../lib/params";
-import { Kind, Status } from "../../shared/prisma-schemas";
+import { DBStatus } from "../../shared/prisma-schemas";
 
 const MAX_UTXOS_PER_COMMIT = 10;
 
@@ -49,8 +49,7 @@ async function handleOpenHead(
     const newProcess = await prisma.process
       .create({
         data: {
-          kind: Kind.OPEN_HEAD,
-          status: Status.INITIALIZING,
+          status: DBStatus.INITIALIZING,
         },
       })
       .catch((error) => {
@@ -187,12 +186,11 @@ async function finalizeOpenHead(
       .upsert({
         where: { id: processId },
         update: {
-          status: Status.COMMITTING,
+          status: DBStatus.COMMITTING,
         },
         create: {
           id: processId,
-          kind: Kind.OPEN_HEAD,
-          status: Status.COMMITTING,
+          status: DBStatus.COMMITTING,
         },
       })
       .catch((error) => {
@@ -232,12 +230,11 @@ async function finalizeOpenHead(
       .upsert({
         where: { id: processId },
         update: {
-          status: Status.AWAITING,
+          status: DBStatus.AWAITING,
         },
         create: {
           id: processId,
-          kind: Kind.OPEN_HEAD,
-          status: Status.AWAITING,
+          status: DBStatus.AWAITING,
         },
       })
       .catch((error) => {
@@ -254,12 +251,11 @@ async function finalizeOpenHead(
       .upsert({
         where: { id: processId },
         update: {
-          status: Status.RUNNING,
+          status: DBStatus.RUNNING,
         },
         create: {
           id: processId,
-          kind: Kind.OPEN_HEAD,
-          status: Status.RUNNING,
+          status: DBStatus.RUNNING,
         },
       })
       .catch((error) => {
@@ -274,12 +270,11 @@ async function finalizeOpenHead(
       .upsert({
         where: { id: processId },
         update: {
-          status: Status.FAILED,
+          status: DBStatus.FAILED,
         },
         create: {
           id: processId,
-          kind: Kind.OPEN_HEAD,
-          status: Status.FAILED,
+          status: DBStatus.FAILED,
         },
       })
       .catch((error) => {

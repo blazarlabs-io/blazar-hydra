@@ -248,7 +248,8 @@ switch (trace) {
     await getSnapshot();
     break;
   case "close":
-    const closeRes = await postEp(ownServerUrl + API_ROUTES.CLOSE_HEAD, {
+    const id = process.env.npm_config_id;
+    const closeRes = await postEp(`${ownServerUrl}${API_ROUTES.CLOSE_HEAD}/?id=${id}`, {
       auth_token: "",
       peer_api_urls: [aliceApiUrl, bobApiUrl],
     });

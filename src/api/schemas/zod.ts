@@ -128,14 +128,13 @@ const WithdrawZodSchema = z.object({
 });
 
 const PayMerchantZodSchema = z.object({
-  user_address: addressSchema,
   merchant_address: addressSchema,
   funds_utxo_ref: z.object({
     hash: z
       .string()
       .length(64, "Transaction hash must be 64 characters long.")
       .regex(/^[0-9a-fA-F]/, "Transaction hash must be a hex string."),
-    index: z.number(),
+    index: z.bigint(),
   }),
   amount: z.bigint(),
   signature: z.string(),

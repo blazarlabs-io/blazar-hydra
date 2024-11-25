@@ -1,5 +1,6 @@
 import { z } from "zod";
 import dotenv from "dotenv";
+import { PrismaClient } from "@prisma/client";
 
 dotenv.config();
 const envSchema = z
@@ -33,4 +34,6 @@ const envSchema = z
 type EnvSchema = z.infer<typeof envSchema>;
 const env = envSchema.parse(process.env);
 
-export { env, EnvSchema };
+const prisma = new PrismaClient();
+
+export { env, EnvSchema, prisma };

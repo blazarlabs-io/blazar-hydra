@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@lucid-evolution/lucid": "^0.3.52",
+    "@prisma/client": "^5.22.0",
     "axios": "^1.7.7",
     "bip39": "^3.1.0",
     "blake2b": "^2.1.4",
@@ -41,6 +42,7 @@
     "nodemon": "^3.1.7",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
+    "prisma": "^5.22.0",
     "tsx": "^4.19.1",
     "ws": "^8.18.0",
     "zod": "^3.23.8"

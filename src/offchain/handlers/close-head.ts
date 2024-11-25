@@ -3,7 +3,7 @@ import { ManageHeadSchema } from "../../shared";
 import { logger } from "../../logger";
 import { HydraHandler } from "../lib/hydra";
 import _ from "lodash";
-import { env } from "../../config";
+import { env, prisma } from "../../config";
 import { FundsDatum, FundsDatumT } from "../lib/types";
 import { WithdrawParams } from "../lib/params";
 import { withdrawMerchant } from "../tx-builders/withdrawMerchant";
@@ -11,15 +11,28 @@ import { withdrawMerchant } from "../tx-builders/withdrawMerchant";
 const MAX_UTXOS_PER_DECOMMIT = 15;
 
 async function handleCloseHead(
-  lucid: LucidEvolution,
-  params: ManageHeadSchema
-): Promise<void> {
+  params: ManageHeadSchema,
+  processId: string
+): Promise<{ status: string }> {
   try {
     const { auth_token } = params;
-    const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
     if (!validateAdmin(auth_token)) {
       throw new Error("Unauthorized");
     }
+    const close = await prisma.process.update({
+      where: { id: processId },
+      data: { status: "DECOMMITING" },
+    });
+    return { status: close.status };
+  } catch (error) {
+    logger.error("Error handling close head");
+    throw error;
+  }
+}
+
+async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
+  try {
+    const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
     const { ADMIN_ADDRESS: adminAddress, ADMIN_NODE_WS_URL: wsUrl } = env;
     const localLucid = _.cloneDeep(lucid);
     localLucid.selectWallet.fromSeed(env.SEED);
@@ -36,7 +49,9 @@ async function handleCloseHead(
       return false;
     });
     if (merchantUtxos.length !== 0) {
-      const roundsOfDecommit = Math.ceil(merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT);
+      const roundsOfDecommit = Math.ceil(
+        merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT
+      );
       logger.info(roundsOfDecommit + " rounds of decommit");
       logger.info(merchantUtxos.length + " merchant utxos to withdraw");
       logger.info("Withdrawing merchant utxos...");
@@ -61,10 +76,7 @@ async function handleCloseHead(
           .withWallet()
           .complete()
           .then((tx) => tx.toCBOR());
-        await hydra.decommit(
-          `${env.ADMIN_NODE_API_URL}/decommit`,
-          signedTx
-        );
+        await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
         currentExpectedTag = "NotDecommitFinalized";
         while (currentExpectedTag !== "DecommitFinalized") {
           currentExpectedTag = await hydra.listen("DecommitFinalized");
@@ -75,6 +87,10 @@ async function handleCloseHead(
         logger.info("Decommit finalized.");
       }
     }
+    const closing = await prisma.process.update({
+      where: { id:  processId},
+      data: { status: "CLOSING" },
+    });
 
     // Step 2: Send close command
     while (currentExpectedTag !== "HeadIsClosed") {
@@ -94,8 +110,9 @@ async function handleCloseHead(
     }
     // Step 3: Fanout
     await hydra.fanout();
+    await prisma.process.delete({ where: { id: processId } });
     await hydra.stop();
-    return;
+    return { status: "CLOSED" };
   } catch (error) {
     logger.error("Error during close head");
     throw error;
@@ -106,4 +123,4 @@ function validateAdmin(auth_token: string): boolean {
   return true;
 }
 
-export { handleCloseHead };
+export { handleCloseHead, finalizeCloseHead };

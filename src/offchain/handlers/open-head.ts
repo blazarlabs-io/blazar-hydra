@@ -8,7 +8,7 @@ import {
 } from "@lucid-evolution/lucid";
 import { ManageHeadSchema } from "../../shared";
 import { HydraHandler } from "../lib/hydra";
-import { env } from "../../config";
+import { env, prisma } from "../../config";
 import {
   dataAddressToBech32,
   getValidator,
@@ -20,18 +20,17 @@ import { mergeFunds } from "../tx-builders/merge-funds";
 import { logger } from "../../logger";
 import { commitFunds } from "../tx-builders/commit-funds";
 import { CommitFundsParams } from "../lib/params";
+import { DBStatus } from "../../shared/prisma-schemas";
 
 const MAX_UTXOS_PER_COMMIT = 10;
 
 async function handleOpenHead(
   lucid: LucidEvolution,
   params: ManageHeadSchema
-): Promise<void> {
-  const { auth_token, peer_api_urls: peerUrls } = params;
+): Promise<{ operationId: string }> {
+  const { auth_token } = params;
   const {
-    ADMIN_ADDRESS: adminAddress,
     ADMIN_NODE_WS_URL: wsUrl,
-    VALIDATOR_REF: vRef,
   } = env;
   try {
     if (!validateAdmin(auth_token)) {
@@ -45,9 +44,36 @@ async function handleOpenHead(
     const hydra = new HydraHandler(localLucid, wsUrl);
     const initTag = await hydra.init();
     if (initTag !== "HeadIsInitializing") {
-      logger.error("Head already initialized");
+      logger.error(initTag);
     }
+    const newProcess = await prisma.process
+      .create({
+        data: {
+          status: DBStatus.INITIALIZING,
+        },
+      })
+      .catch((error) => {
+        logger.error("DB Error while opening head: " + error);
+        throw error;
+      });
+    await hydra.stop();
+    return { operationId: newProcess.id };
+  } catch (error) {
+    logger.error("Error while initializing head");
+    throw error;
+  }
+}
 
+async function finalizeOpenHead(
+  lucid: LucidEvolution,
+  params: ManageHeadSchema,
+  processId: string
+) {
+  const localLucid = _.cloneDeep(lucid);
+  const { peer_api_urls: peerUrls } = params;
+  const { ADMIN_ADDRESS: adminAddress, VALIDATOR_REF: vRef } = env;
+  try {
+    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     // Step 2: Lookup deposit UTxOs in L1 and merge them for each user
     const [validatorRef] = await localLucid.utxosByOutRef([
       { txHash: vRef, outputIndex: 0 },
@@ -85,49 +111,67 @@ async function handleOpenHead(
     }
     let mergeTxs: string[] = [];
     let fundsRefs: OutRef[] = [];
-    logger.info("Preparing merge transactions...");
-    for (const [_, deposits] of userToDepositsMap) {
-      if (deposits.length === 1) {
-        // User has only one funds utxo, no need for a merge transaction
-        const {txHash, outputIndex} = deposits[0];
-        fundsRefs.push({txHash, outputIndex});
-        continue;
-      }
-      const params = {
-        adminAddress,
-        userFundsUtxos: deposits,
-        adminUtxos: currentAdminUtxos,
-        validatorRef: validatorRef,
-      };
-      const { tx, newFundsUtxo, newAdminUtxos } = await mergeFunds(
-        localLucid,
-        params
-      );
-      const signedTx = await tx.sign
-        .withWallet()
-        .complete()
-        .then((tx) => tx.toCBOR());
-      fundsRefs.push(newFundsUtxo);
-      mergeTxs.push(signedTx);
-      currentAdminUtxos = newAdminUtxos;
-    }
-    if (mergeTxs.length > 0) {
-      logger.info("Submitting merge transactions...");
-      for (const tx of mergeTxs) {
-        const txid = await localLucid.wallet().submitTx(tx);
-        logger.info(
-          `Merge transaction submitted! tx id: https://preprod.cexplorer.io/tx/${txid}`
-        );
-      }
-      const lastSubmittedTxHash = localLucid
-        .fromTx(mergeTxs[mergeTxs.length - 1])
-        .toHash();
-      logger.info(
-        "Merge transactions submitted succesfully, last tx: " +
-          lastSubmittedTxHash
-      );
-      await waitForUtxosUpdate(localLucid, adminAddress, lastSubmittedTxHash);
-    }
+    // logger.info("Preparing merge transactions...");
+    // for (const [_, deposits] of userToDepositsMap) {
+    //   if (deposits.length === 1) {
+    //     // User has only one funds utxo, no need for a merge transaction
+    //     const { txHash, outputIndex } = deposits[0];
+    //     fundsRefs.push({ txHash, outputIndex });
+    //     continue;
+    //   }
+    //   const params = {
+    //     adminAddress,
+    //     userFundsUtxos: deposits,
+    //     adminUtxos: currentAdminUtxos,
+    //     validatorRef: validatorRef,
+    //   };
+    //   const { tx, newFundsUtxo, newAdminUtxos } = await mergeFunds(
+    //     localLucid,
+    //     params
+    //   );
+    //   const signedTx = await tx.sign
+    //     .withWallet()
+    //     .complete()
+    //     .then((tx) => tx.toCBOR());
+    //   fundsRefs.push(newFundsUtxo);
+    //   mergeTxs.push(signedTx);
+    //   currentAdminUtxos = newAdminUtxos;
+    // }
+    // if (mergeTxs.length > 0) {
+    //   const merge = await prisma.process
+    //     .upsert({
+    //       where: { id: processId },
+    //       update: {
+    //         status: Status.MERGING,
+    //       },
+    //       create: {
+    //         id: processId,
+    //         kind: Kind.OPEN_HEAD,
+    //         status: Status.MERGING,
+    //       },
+    //     })
+    //     .catch((error) => {
+    //       logger.error(
+    //         "DB Error while updating status to merging funds: " + error
+    //       );
+    //       throw error;
+    //     });
+    //   logger.info("Submitting merge transactions...");
+    //   for (const tx of mergeTxs) {
+    //     const txid = await localLucid.wallet().submitTx(tx);
+    //     logger.info(
+    //       `Merge transaction submitted! tx id: https://preprod.cexplorer.io/tx/${txid}`
+    //     );
+    //   }
+    //   const lastSubmittedTxHash = localLucid
+    //     .fromTx(mergeTxs[mergeTxs.length - 1])
+    //     .toHash();
+    //   logger.info(
+    //     "Merge transactions submitted succesfully, last tx: " +
+    //       lastSubmittedTxHash
+    //   );
+    //   await waitForUtxosUpdate(localLucid, adminAddress, lastSubmittedTxHash);
+    // }
 
     // Step 3: Commit the funds
     const adminUtxos = await localLucid
@@ -136,8 +180,25 @@ async function handleOpenHead(
         utxos.filter((utxo) => Object.entries(utxo.assets).length === 1)
       );
     const adminCollateral = adminUtxos[0];
-    const utxosToCommit = await localLucid.utxosByOutRef(fundsRefs);
+    const utxosToCommit = scriptUtxos.slice(0,2);//await localLucid.utxosByOutRef(fundsRefs);
     const utxosPerPeer = 1 + utxosToCommit.length / peerUrls.length;
+    const commit = await prisma.process
+      .upsert({
+        where: { id: processId },
+        update: {
+          status: DBStatus.COMMITTING,
+        },
+        create: {
+          id: processId,
+          status: DBStatus.COMMITTING,
+        },
+      })
+      .catch((error) => {
+        logger.error(
+          "DB Error while updating status to committing funds: " + error
+        );
+        throw error;
+      });
     for (let i = 0; i < peerUrls.length; i++) {
       const peerUrl = peerUrls[i];
       const thisPeerUtxos = utxosToCommit.slice(0, utxosPerPeer);
@@ -165,16 +226,65 @@ async function handleOpenHead(
       }
     }
     logger.info("All funds committed successfully");
+    const awaiting = await prisma.process
+      .upsert({
+        where: { id: processId },
+        update: {
+          status: DBStatus.AWAITING,
+        },
+        create: {
+          id: processId,
+          status: DBStatus.AWAITING,
+        },
+      })
+      .catch((error) => {
+        logger.error("DB Error while updating status to awaiting: " + error);
+        throw error;
+      });
 
     let openHeadTag = "";
     while (openHeadTag !== "HeadIsOpen") {
       logger.info("Head not opened yet");
       openHeadTag = await hydra.listen("HeadIsOpen");
     }
+    await prisma.process
+      .upsert({
+        where: { id: processId },
+        update: {
+          status: DBStatus.RUNNING,
+        },
+        create: {
+          id: processId,
+          status: DBStatus.RUNNING,
+        },
+      })
+      .catch((error) => {
+        logger.error("DB Error while updating status to completed: " + error);
+        throw error;
+      });
     await hydra.stop();
     return;
   } catch (error) {
-    logger.error("Error while open head");
+    logger.error("Error while opening head, aborting...");
+    await prisma.process
+      .upsert({
+        where: { id: processId },
+        update: {
+          status: DBStatus.FAILED,
+        },
+        create: {
+          id: processId,
+          status: DBStatus.FAILED,
+        },
+      })
+      .catch((error) => {
+        logger.error("DB Error while updating status to failed: " + error);
+        throw error;
+      });
+      const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
+      await hydra.abort();
+      await hydra.listen("HeadIsAborted");
+      await hydra.stop();
     throw error;
   }
 }
@@ -183,4 +293,4 @@ function validateAdmin(auth_token: string): boolean {
   return true;
 }
 
-export { handleOpenHead };
+export { handleOpenHead, finalizeOpenHead };

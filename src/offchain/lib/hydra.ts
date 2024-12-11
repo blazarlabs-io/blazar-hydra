@@ -55,16 +55,16 @@ class HydraHandler {
 
   private setupEventHandlers() {
     this.connection.onopen = () => {
-      logger.info("WebSocket connection opened.");
+      logger.debug("WebSocket connection opened.");
       this.isReady = true;
     };
 
     this.connection.onerror = (error) => {
-      logger.error("Error on Hydra websocket: ", error);
+      logger.error("Error on Hydra websocket");
     };
 
     this.connection.onclose = () => {
-      logger.info("WebSocket connection closed.");
+      logger.debug("WebSocket connection closed.");
       this.isReady = false;
     };
   }
@@ -78,13 +78,13 @@ class HydraHandler {
       this.connection.onmessage = (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
         if (data.tag === tag) {
-          logger.info(`Received ${tag}`);
+          logger.debug(`Received ${tag}`);
           clearTimeout(timeoutId);
           resolve(data);
         } else if (ERROR_TAGS.includes(data.tag)) {
           logger.error(`Received ${data.tag}`);
         } else {
-          logger.info(`Received ${data.tag} while waiting for ${tag}`);
+          logger.debug(`Received ${data.tag} while waiting for ${tag}`);
         }
       };
     });
@@ -99,7 +99,7 @@ class HydraHandler {
   public async listen(tag: string): Promise<string> {
     return new Promise((resolve, _) => {
       this.connection.onopen = () => {
-        logger.info(`Awaiting for ${tag} events...`);
+        logger.debug(`Awaiting for ${tag} events...`);
       };
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
@@ -107,11 +107,8 @@ class HydraHandler {
           logger.error(`Received: ${data.tag}`);
           resolve(data.tag);
         }
-        logger.info(`Received: ${data.tag}`);
+        logger.debug(`Received: ${data.tag}`);
         resolve(data.tag);
-      };
-      this.connection.onerror = (error) => {
-        logger.error("Error on Hydra websocket: ", error);
       };
     });
   }
@@ -133,7 +130,7 @@ class HydraHandler {
    */
   async init(): Promise<string> {
     await this.ensureConnectionReady();
-    logger.info("Sending init command...");
+    logger.debug("Sending init command...");
     this.connection.send(JSON.stringify({ tag: "Init" }));
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -142,7 +139,7 @@ class HydraHandler {
           case "Greetings":
             break;
           case "HeadIsInitializing":
-            logger.info("Received HeadIsInitializing");
+            logger.debug("Received HeadIsInitializing");
             resolve(data.tag);
             break;
           default:
@@ -160,7 +157,7 @@ class HydraHandler {
    */
   async abort(): Promise<void> {
     await this.ensureConnectionReady();
-    logger.info("Aborting head opening...");
+    logger.debug("Aborting head opening...");
     this.connection.send(JSON.stringify({ tag: "Abort" }));
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -169,7 +166,7 @@ class HydraHandler {
           case "Greetings":
             break;
           case "HeadIsAborted":
-            logger.info("Received HeadIsAborted");
+            logger.debug("Received HeadIsAborted");
             resolve(data.tag);
             break;
           default:
@@ -229,7 +226,7 @@ class HydraHandler {
    */
   async sendTx(tx: CBORHex): Promise<string> {
     await this.ensureConnectionReady();
-    logger.info("Sending transaction...");
+    logger.debug("Sending transaction...");
     this.connection.send(
       JSON.stringify({
         tag: "NewTx",
@@ -243,11 +240,11 @@ class HydraHandler {
           case "Greetings":
             break;
           case "TxValid":
-            logger.info("Received TxValid");
+            logger.debug("Received TxValid");
             resolve(data.tag);
             break;
           case "SnapshotConfirmed":
-            logger.info("Received SnapshotConfirmed");
+            logger.debug("Received SnapshotConfirmed");
             resolve(data.tag);
             break;
           default:
@@ -275,7 +272,7 @@ class HydraHandler {
       });
       return lucidUtxos;
     } catch (error) {
-      logger.info(error as unknown as string);
+      logger.debug(error as unknown as string);
       throw error;
     }
   }
@@ -307,7 +304,7 @@ class HydraHandler {
    */
   async close(): Promise<string> {
     await this.ensureConnectionReady();
-    logger.info("Closing head...");
+    logger.debug("Closing head...");
     this.connection.send(JSON.stringify({ tag: "Close" }));
     const data = await this.waitForMessage("HeadIsClosed", 30_000);
     return data.tag;
@@ -319,7 +316,7 @@ class HydraHandler {
    */
   async fanout(): Promise<void> {
     await this.ensureConnectionReady();
-    logger.info("Sending fanout command...");
+    logger.debug("Sending fanout command...");
     this.connection.send(JSON.stringify({ tag: "Fanout" }));
     await this.waitForMessage("HeadIsFinalized");
     await this.stop();

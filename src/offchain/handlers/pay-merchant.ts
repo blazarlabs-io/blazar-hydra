@@ -15,7 +15,6 @@ async function handlePay(
   try {
     const localLucid = _.cloneDeep(lucid);
     const {
-      user_address: userAddress,
       merchant_address: merchantAddress,
       funds_utxo_ref,
       amount: amountToPay,
@@ -28,7 +27,7 @@ async function handlePay(
     const utxosInL2 = await hydra.getSnapshot();
     const { hash: txHash, index: outputIndex } = funds_utxo_ref;
     userFundsUtxo = utxosInL2.find((utxo) => {
-      return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
+      return utxo.txHash === txHash && BigInt(utxo.outputIndex) === outputIndex;
     });
     const adminCollateral = utxosInL2.find(
       (utxo) => utxo.address === env.ADMIN_ADDRESS
@@ -52,7 +51,6 @@ async function handlePay(
 
     const payMerchantParams: PayMerchantParams = {
       adminCollateral,
-      userAddress,
       merchantAddress,
       amountToPay,
       userFundsUtxo,

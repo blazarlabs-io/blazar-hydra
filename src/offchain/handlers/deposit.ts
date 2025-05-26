@@ -14,7 +14,7 @@ import { TxBuiltResponse } from "../../api/schemas/response";
 
 async function handleDeposit(
   lucid: LucidEvolution,
-  params: DepositSchema
+  params: DepositSchema,
 ): Promise<TxBuiltResponse> {
   try {
     const {
@@ -43,8 +43,8 @@ async function handleDeposit(
       validatorRef,
       fundsUtxo,
     };
-    const {tx, newFundsUtxo} = await deposit(localLucid, depositParams);
-    return {cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo};
+    const { tx, newFundsUtxo } = await deposit(localLucid, depositParams);
+    return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
   } catch (e) {
     if (e instanceof Error) {
       logger.error("500 /deposit - " + e.message);

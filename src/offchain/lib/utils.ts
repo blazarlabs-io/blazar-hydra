@@ -30,10 +30,11 @@ function dataAddressToBech32(lucid: LucidEvolution, add: AddressT): string {
   } else {
     stakeKey = null;
   }
+  const network = getNetworkFromLucid(lucid);
   return credentialToAddress(
-    lucid.config().network,
+    network,
     { type: "Key", hash: paymentKey },
-    stakeKey ? { type: "Key", hash: stakeKey } : undefined
+    stakeKey ? { type: "Key", hash: stakeKey } : undefined,
   );
 }
 
@@ -65,7 +66,7 @@ function getPrivateKey(
     addressType?: "Base" | "Enterprise";
     accountIndex?: number;
     network?: Network;
-  } = { addressType: "Base", accountIndex: 0, network: "Mainnet" }
+  } = { addressType: "Base", accountIndex: 0, network: "Mainnet" },
 ): CML.PrivateKey {
   function harden(num: number): number {
     if (typeof num !== "number") throw new Error("Type number required here!");
@@ -77,7 +78,7 @@ function getPrivateKey(
     fromHex(entropy),
     options.password
       ? new TextEncoder().encode(options.password)
-      : new Uint8Array()
+      : new Uint8Array(),
   );
 
   const accountKey = rootKey
@@ -92,7 +93,7 @@ function getPrivateKey(
 async function waitForUtxosUpdate(
   lucid: LucidEvolution,
   address: string,
-  txId: string
+  txId: string,
 ): Promise<void> {
   let userUtxosUpdated = false;
   let scriptUtxoUpdated = false;
@@ -117,12 +118,12 @@ async function waitForUtxosUpdate(
 function getValidator(
   validatorRef: UTxO | undefined,
   adminKey?: string,
-  hydraKey?: string
+  hydraKey?: string,
 ): Script {
   if (!validatorRef) {
     if (!(adminKey || hydraKey)) {
       throw new Error(
-        "Must include validator reference or validator parameters"
+        "Must include validator reference or validator parameters",
       );
     } else {
       const hydraCred: CredentialT = { Script_cred: { Key: hydraKey! } };
@@ -135,9 +136,19 @@ function getValidator(
     return validatorRef.scriptRef;
   }
 }
+
+function getNetworkFromLucid(lucid: LucidEvolution): Network {
+  const network = lucid.config().network;
+  if (!network) {
+    throw new Error("Lucid network configuration is not set.");
+  }
+  return network;
+}
+
 export {
   dataAddressToBech32,
   bech32ToAddressType,
+  getNetworkFromLucid,
   getPrivateKey,
   getValidator,
   waitForUtxosUpdate,

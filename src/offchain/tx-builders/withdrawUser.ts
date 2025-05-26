@@ -16,12 +16,16 @@ import {
   Spend,
   WithdrawInfoT,
 } from "../lib/types";
-import { dataAddressToBech32, getValidator } from "../lib/utils";
+import {
+  dataAddressToBech32,
+  getNetworkFromLucid,
+  getValidator,
+} from "../lib/utils";
 import _ from "lodash";
 
 async function withdraw(
   lucid: LucidEvolution,
-  params: WithdrawParams
+  params: WithdrawParams,
 ): Promise<{ tx: TxSignBuilder }> {
   const tx = lucid.newTx();
   const {
@@ -36,7 +40,8 @@ async function withdraw(
 
   // Script UTxO related boilerplate
   const validator = getValidator(validatorRef, adminKey, hydraKey);
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const network = getNetworkFromLucid(lucid);
+  const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
     throw new Error("Invalid script address");
@@ -58,7 +63,7 @@ async function withdraw(
     const address = dataAddressToBech32(lucid, datum.addr);
     const totalFunds = fundsUtxo.assets["lovelace"];
     const validationToken = Object.keys(fundsUtxo.assets).find(
-      (asset) => fromUnit(asset).policyId === policyId
+      (asset) => fromUnit(asset).policyId === policyId,
     );
     if (!validationToken) {
       throw new Error("Validation token not found in funds UTxO");
@@ -90,10 +95,7 @@ async function withdraw(
     tx.attach.WithdrawalValidator(validator);
   }
 
-  const rewardAddress = validatorToRewardAddress(
-    lucid.config().network,
-    validator
-  );
+  const rewardAddress = validatorToRewardAddress(network, validator);
   const txSignBuilder = await tx
     .withdraw(rewardAddress, 0n, Combined.CombinedWithdraw)
     .attachMetadata(674, { msg: "HydraPay: Withdraw" })

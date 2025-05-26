@@ -9,7 +9,7 @@ import { TxBuiltResponse } from "../../api/schemas/response";
 
 async function handleWithdraw(
   lucid: LucidEvolution,
-  params: WithdrawSchema
+  params: WithdrawSchema,
 ): Promise<TxBuiltResponse> {
   try {
     // TODO here lucid needs instantiation with the correct network
@@ -51,14 +51,14 @@ async function handleWithdraw(
       case "merchant":
         if (network_layer === Layer.L1) {
           throw new Error("Merchant cannot withdraw from L1");
-        };
+        }
         withdrawParams = { ...withdrawParams, adminKey, hydraKey };
         break;
 
       case "user":
         if (network_layer === Layer.L2) {
           throw new Error("User cannot withdraw from L2");
-        };
+        }
         const walletUtxos = await localLucid
           .utxosAt(address)
           .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));

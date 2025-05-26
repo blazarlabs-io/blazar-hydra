@@ -8,22 +8,27 @@ import { QueryFundsResponse } from "../../api/schemas/response";
 import { HydraHandler } from "../lib/hydra";
 import _ from "lodash";
 import { env } from "../../config";
-import { dataAddressToBech32, getValidator } from "../lib/utils";
+import {
+  dataAddressToBech32,
+  getNetworkFromLucid,
+  getValidator,
+} from "../lib/utils";
 import { FundsDatum, FundsDatumT } from "../lib/types";
 import { logger } from "../../logger";
 
 async function handleQueryFunds(
   lucid: LucidEvolution,
-  address: string
+  address: string,
 ): Promise<QueryFundsResponse> {
   let fundsInL1: UTxO[] = [],
     fundsInL2: UTxO[] = [];
   const localLucid = _.cloneDeep(lucid);
+  const network = getNetworkFromLucid(localLucid);
   const [vRef] = await lucid.utxosByOutRef([
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);
   const validator = getValidator(vRef);
-  const validatorAddr = validatorToAddress(lucid.config().network, validator);
+  const validatorAddr = validatorToAddress(network, validator);
   const isOwnUtxo = (utxo: UTxO, addr: string) => {
     if (!utxo.datum) {
       return false;
@@ -36,7 +41,7 @@ async function handleQueryFunds(
       return dataAddressToBech32(localLucid, datum.addr) === addr;
     } catch (error) {
       logger.warning(
-        `Utxo at validator address with unknown datum: ${utxo.txHash}#${utxo.outputIndex}`
+        `Utxo at validator address with unknown datum: ${utxo.txHash}#${utxo.outputIndex}`,
       );
       return false;
     }

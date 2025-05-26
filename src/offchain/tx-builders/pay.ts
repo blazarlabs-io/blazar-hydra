@@ -14,12 +14,16 @@ import {
 import { PayMerchantParams } from "../lib/params";
 import { buildValidator } from "../validator/handle";
 import { FundsDatum, FundsDatumT, Mint, PayInfoT, Spend } from "../lib/types";
-import { bech32ToAddressType, dataAddressToBech32 } from "../lib/utils";
+import {
+  bech32ToAddressType,
+  dataAddressToBech32,
+  getNetworkFromLucid,
+} from "../lib/utils";
 import blake2b from "blake2b";
 
 async function payMerchant(
   lucid: LucidEvolution,
-  params: PayMerchantParams
+  params: PayMerchantParams,
 ): Promise<{ tx: TxSignBuilder; userUtxo: OutRef; merchantUtxo: OutRef }> {
   const {
     adminCollateral,
@@ -37,7 +41,8 @@ async function payMerchant(
   if (!validator) {
     throw new Error("Invalid validator");
   }
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const network = getNetworkFromLucid(lucid);
+  const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
     throw new Error("Invalid script address");
@@ -45,7 +50,7 @@ async function payMerchant(
 
   // Build inputs
   const allInputs = [userFundsUtxo].concat(
-    merchantFundsUtxo ? [merchantFundsUtxo] : []
+    merchantFundsUtxo ? [merchantFundsUtxo] : [],
   );
   const sortedInputs = allInputs.sort((a, b) => {
     const ref1 = { hash: a.txHash, index: a.outputIndex };
@@ -63,7 +68,7 @@ async function payMerchant(
   const outputs = CML.TransactionOutputList.new();
   // User
   const newUserValue = assetsToValue(
-    addAssets(userFundsUtxo.assets, { lovelace: -amountToPay })
+    addAssets(userFundsUtxo.assets, { lovelace: -amountToPay }),
   );
   if (!userFundsUtxo.datum) {
     throw new Error("User UTxO datum not found");
@@ -72,14 +77,14 @@ async function payMerchant(
     CML.Address.from_bech32(userFundsUtxo.address),
     newUserValue,
     CML.DatumOption.new_datum(
-      CML.PlutusData.from_cbor_hex(userFundsUtxo.datum!)
-    )
+      CML.PlutusData.from_cbor_hex(userFundsUtxo.datum!),
+    ),
   );
   // Merchant
   const serializedIndex = Data.to<bigint>(BigInt(userFundsUtxo.outputIndex));
   const newTokenName = Buffer.from(
     userFundsUtxo.txHash + serializedIndex,
-    "hex"
+    "hex",
   );
   const tokenNameHash = blake2b(32).update(newTokenName).digest("hex");
   const validationToken = toUnit(policyId, tokenNameHash);
@@ -95,12 +100,12 @@ async function payMerchant(
       locked_deposit: 0n,
       funds_type: "Merchant",
     },
-    FundsDatum
+    FundsDatum,
   );
   const merchantOutput = CML.TransactionOutput.new(
     CML.Address.from_bech32(scriptAddress),
     assetsToValue(newMerchValue),
-    CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(merchDatum))
+    CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(merchDatum)),
   );
   // Merchant output first
   outputs.add(merchantOutput);
@@ -166,10 +171,10 @@ async function payMerchant(
         Mint.Mint({
           transaction_id: userFundsUtxo.txHash,
           output_index: BigInt(userFundsUtxo.outputIndex),
-        })
+        }),
       ),
-      CML.ExUnits.new(3_000_000n, 3_000_000_000n)
-    )
+      CML.ExUnits.new(3_000_000n, 3_000_000_000n),
+    ),
   );
 
   // Build redeemers
@@ -184,13 +189,16 @@ async function payMerchant(
 
   // Calculate script data hash
   const costModels = lucid.config().costModels;
+  if (!costModels) {
+    throw new Error("Cost models not set in Lucid configuration");
+  }
   const language = CML.LanguageList.new();
   language.add(CML.Language.PlutusV3);
   const scriptDataHash = CML.calc_script_data_hash(
     redeemers,
     CML.PlutusDataList.new(),
     costModels,
-    language
+    language,
   );
   if (!scriptDataHash) {
     throw new Error(`Could not calculate script data hash`);

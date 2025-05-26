@@ -10,6 +10,6 @@ type QueryFundsResponse = {
 type TxBuiltResponse = {
   cborHex: string;
   fundsUtxoRef: OutRef | null;
-}
+};
 
-export {  TxBuiltResponse, QueryFundsResponse };
+export { TxBuiltResponse, QueryFundsResponse };

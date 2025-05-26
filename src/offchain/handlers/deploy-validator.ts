@@ -10,11 +10,13 @@ import {
 } from "@lucid-evolution/lucid";
 import { env } from "../../config";
 import { buildValidator } from "../validator/handle";
+import assert from "assert";
+import { getNetworkFromLucid } from "../lib/utils";
 
 async function deployScript(
   admin_key?: string,
   hydra_key?: string,
-  lucid_config?: LucidEvolution
+  lucid_config?: LucidEvolution,
 ): Promise<{ txDeployHash: string }> {
   if (!admin_key || !hydra_key) {
     console.log("Using validator parameters from environment file.");
@@ -27,16 +29,19 @@ async function deployScript(
     lucid_config ??
     ((await Lucid(
       new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
-      env.NETWORK as Network
+      env.NETWORK as Network,
     )) as LucidEvolution);
   lucid.selectWallet.fromSeed(env.SEED);
+  const network = getNetworkFromLucid(lucid);
 
   // TODO implement a proper script to hold the validator?
-  const validator = buildValidator(adminKey, { Script_cred: { Key: hydraKey } });
-  const rewardAddress = validatorToRewardAddress(lucid.config().network, validator);
+  const validator = buildValidator(adminKey, {
+    Script_cred: { Key: hydraKey },
+  });
+  const rewardAddress = validatorToRewardAddress(network, validator);
   const refScriptAddress = validatorToAddress(
-    lucid.config().network,
-    scriptFromNative({ type: "sig", keyHash: adminKey })
+    network,
+    scriptFromNative({ type: "sig", keyHash: adminKey }),
   );
   const txDeployHash = await lucid
     .newTx()
@@ -47,7 +52,7 @@ async function deployScript(
         value: Data.void(),
       },
       {},
-      validator
+      validator,
     )
     .register.Stake(rewardAddress)
     .complete()

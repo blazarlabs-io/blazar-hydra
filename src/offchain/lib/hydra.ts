@@ -11,7 +11,6 @@ import {
 import blake2b from "blake2b";
 import { logger } from "../../logger";
 
-
 const ERROR_TAGS = [
   "PeerHandshakeFailure",
   "TxInvalid",
@@ -19,8 +18,7 @@ const ERROR_TAGS = [
   "PostTxOnChainFailed",
   "CommandFailed",
   "DecommitInvalid",
-]
-
+];
 
 /**
  * Listen and send messages to a Hydra node.
@@ -188,13 +186,17 @@ class HydraHandler {
   async sendCommit(
     apiUrl: string,
     blueprint: CBORHex,
-    utxos: UTxO[]
+    utxos: UTxO[],
   ): Promise<string> {
     try {
-      const payloadUtxos = utxos.reduce((acc, utxo) => {
-        acc[`${utxo.txHash}#${utxo.outputIndex}`] = lucidUtxoToHydraUtxo(utxo);
-        return acc;
-      }, {} as Record<string, any>);
+      const payloadUtxos = utxos.reduce(
+        (acc, utxo) => {
+          acc[`${utxo.txHash}#${utxo.outputIndex}`] =
+            lucidUtxoToHydraUtxo(utxo);
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
 
       const payload = {
         blueprintTx: {
@@ -231,7 +233,7 @@ class HydraHandler {
       JSON.stringify({
         tag: "NewTx",
         transaction: { cborHex: tx, description: "", type: "Tx BabbageEra" },
-      })
+      }),
     );
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -359,8 +361,8 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
     inlineDatum = JSON.parse(
       CML.decode_plutus_datum_to_json_str(
         plutusData,
-        CML.CardanoNodePlutusDatumSchema.DetailedSchema
-      )
+        CML.CardanoNodePlutusDatumSchema.DetailedSchema,
+      ),
     );
     inlineDatumhash = blake2b(32)
       .update(Buffer.from(utxo.datum, "hex"))
@@ -439,7 +441,7 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
     body,
     witnessSet,
     true,
-    auxData
+    auxData,
   ).to_cbor_hex();
 
   return newTx;

@@ -10,7 +10,7 @@ import { FundsDatum, FundsDatumT } from "../lib/types";
 
 async function handlePay(
   lucid: LucidEvolution,
-  params: PayMerchantSchema
+  params: PayMerchantSchema,
 ): Promise<{ fundsUtxoRef: OutRef; merchUtxo: OutRef }> {
   try {
     const localLucid = _.cloneDeep(lucid);
@@ -30,7 +30,7 @@ async function handlePay(
       return utxo.txHash === txHash && BigInt(utxo.outputIndex) === outputIndex;
     });
     const adminCollateral = utxosInL2.find(
-      (utxo) => utxo.address === env.ADMIN_ADDRESS
+      (utxo) => utxo.address === env.ADMIN_ADDRESS,
     );
     if (!userFundsUtxo || !adminCollateral) {
       throw new Error(`User funds or collateral utxo not found`);
@@ -61,7 +61,7 @@ async function handlePay(
     };
     const { tx, userUtxo, merchantUtxo } = await payMerchant(
       localLucid,
-      payMerchantParams
+      payMerchantParams,
     );
 
     logger.info("Submitting payment to hydra head...");

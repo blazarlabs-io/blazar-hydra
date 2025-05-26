@@ -17,7 +17,7 @@ const startServer = async () => {
   const app = createServer();
   const lucid = await Lucid(
     new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
-    env.NETWORK as Network
+    env.NETWORK as Network,
   );
   setRoutes(lucid, app);
   console.log(figlet.textSync("Blazar Payments", { font: "Doom" }));

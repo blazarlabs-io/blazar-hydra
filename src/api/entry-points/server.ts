@@ -16,7 +16,7 @@ const createServer = () => {
       level: "debug", //env.LOGGER_LEVEL,
       prettyPrint: true, //env.PRETTY_PRINT,
     },
-    true
+    true,
   );
   const app: express.Application = express();
   const bigintMiddleware: RequestHandler = (req, res, next) => {

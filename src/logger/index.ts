@@ -12,12 +12,12 @@ class LoggerWrapper implements Logger {
 
   configureLogger(
     configuration: Partial<LoggerConfiguration>,
-    overrideIfExists = true
+    overrideIfExists = true,
   ): void {
     if (this.#underlyingLogger === null || overrideIfExists === true) {
       this.#underlyingLogger = new PinoLogger(
         configuration.level || "info",
-        configuration.prettyPrint || false
+        configuration.prettyPrint || false,
       );
     }
   }
@@ -29,14 +29,14 @@ class LoggerWrapper implements Logger {
   debug(message: string, metadata?: object): void {
     this.#getInitializeLogger().debug(
       message,
-      LoggerWrapper.#insertContextIntoMetadata(metadata)
+      LoggerWrapper.#insertContextIntoMetadata(metadata),
     );
   }
 
   error(message: string, metadata?: object): void {
     this.#getInitializeLogger().error(
       message,
-      LoggerWrapper.#insertContextIntoMetadata(metadata)
+      LoggerWrapper.#insertContextIntoMetadata(metadata),
     );
   }
 
@@ -44,14 +44,14 @@ class LoggerWrapper implements Logger {
     // If never initialized, the set default configuration
     this.#getInitializeLogger().info(
       message,
-      LoggerWrapper.#insertContextIntoMetadata(metadata)
+      LoggerWrapper.#insertContextIntoMetadata(metadata),
     );
   }
 
   warning(message: string, metadata?: object): void {
     this.#getInitializeLogger().warning(
       message,
-      LoggerWrapper.#insertContextIntoMetadata(metadata)
+      LoggerWrapper.#insertContextIntoMetadata(metadata),
     );
   }
 

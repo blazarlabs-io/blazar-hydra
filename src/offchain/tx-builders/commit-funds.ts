@@ -9,10 +9,11 @@ import {
 } from "@lucid-evolution/lucid";
 import { CommitFundsParams } from "../lib/params";
 import { Combined, Spend } from "../lib/types";
+import { getNetworkFromLucid } from "../lib/utils";
 
 async function commitFunds(
   lucid: LucidEvolution,
-  params: CommitFundsParams
+  params: CommitFundsParams,
 ): Promise<{ tx: TxSignBuilder }> {
   const { adminAddress, userFundUtxos, validatorRefUtxo, adminCollateral } =
     params;
@@ -21,11 +22,9 @@ async function commitFunds(
   if (!validator) {
     throw new Error(`Validator not found at UTxO: ${validatorRefUtxo}`);
   }
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
-  const rewardAddress = validatorToRewardAddress(
-    lucid.config().network,
-    validator
-  );
+  const network = getNetworkFromLucid(lucid);
+  const scriptAddress = validatorToAddress(network, validator);
+  const rewardAddress = validatorToRewardAddress(network, validator);
   let allInputs = userFundUtxos;
   if (adminCollateral) {
     allInputs.push(adminCollateral);
@@ -57,7 +56,7 @@ async function commitFunds(
 
   // Add withdrawal
   const rewAddress = CML.RewardAddress.from_address(
-    CML.Address.from_bech32(rewardAddress)
+    CML.Address.from_bech32(rewardAddress),
   );
   if (!rewAddress) {
     throw new Error(`Could not build reward address from script`);
@@ -89,8 +88,8 @@ async function commitFunds(
         CML.RedeemerTag.Reward,
         0n,
         CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
-        CML.ExUnits.new(0n, 0n)
-      )
+        CML.ExUnits.new(0n, 0n),
+      ),
     );
     const redeemers = CML.Redeemers.new_arr_legacy_redeemer(legacyRedeemers);
     txWitnessSet.set_redeemers(redeemers);

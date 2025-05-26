@@ -12,7 +12,7 @@ const envSchema = z
           Number.isFinite(Number.parseInt(val)) && Number.parseInt(val) > 0,
         {
           message: `Port must be a positive integer`,
-        }
+        },
       )
       .transform((val) => Number.parseInt(val)),
     PROVIDER_PROJECT_ID: z.string(),

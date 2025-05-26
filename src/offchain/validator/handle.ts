@@ -1,4 +1,10 @@
-import { applyDoubleCborEncoding, applyParamsToScript, Data, SpendingValidator, ValueGuard } from "@lucid-evolution/lucid";
+import {
+  applyDoubleCborEncoding,
+  applyParamsToScript,
+  Data,
+  SpendingValidator,
+  ValueGuard,
+} from "@lucid-evolution/lucid";
 import plutusBlueprint from "../../onchain/hydra-pay/plutus.json" assert { type: "json" };
 import { CredentialSchema, CredentialT } from "../lib/types";
 

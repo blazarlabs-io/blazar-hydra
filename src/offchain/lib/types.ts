@@ -16,7 +16,7 @@ const AddressSchema = Data.Object({
   stake_credential: Data.Nullable(
     Data.Object({
       inline: CredentialSchema,
-    })
+    }),
   ),
 });
 type AddressT = Data.Static<typeof AddressSchema>;
@@ -82,7 +82,7 @@ namespace Spend {
     Data.to<FundsRedeemerT>({ UserWithdraw: { info, sig } }, FundsRedeemer);
   export const MerchantWithdraw = Data.to<FundsRedeemerT>(
     "MerchantWithdraw",
-    FundsRedeemer
+    FundsRedeemer,
   );
 }
 
@@ -96,15 +96,15 @@ const CombinedAction = CombinedActionSchema as unknown as CombinedActionT;
 namespace Combined {
   export const CombinedCommit = Data.to<CombinedActionT>(
     "CombinedCommit",
-    CombinedAction
+    CombinedAction,
   );
   export const CombinedMerge = Data.to<CombinedActionT>(
     "CombinedMerge",
-    CombinedAction
+    CombinedAction,
   );
   export const CombinedWithdraw = Data.to<CombinedActionT>(
     "CombinedWithdraw",
-    CombinedAction
+    CombinedAction,
   );
 }
 

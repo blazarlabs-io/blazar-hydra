@@ -1,5 +1,5 @@
-import { pino, Logger as PinoLoggerImpl, DestinationStream } from 'pino';
-import { LOG_LEVELS, Logger } from './definition';
+import { pino, Logger as PinoLoggerImpl, DestinationStream } from "pino";
+import { LOG_LEVELS, Logger } from "./definition";
 
 export default class PinoLogger implements Logger {
   readonly #logger: PinoLoggerImpl;
@@ -13,7 +13,7 @@ export default class PinoLogger implements Logger {
       level,
       transport: prettyPrintEnabled
         ? {
-            target: 'pino-pretty',
+            target: "pino-pretty",
             options: {
               colorize: true,
               sync: true,

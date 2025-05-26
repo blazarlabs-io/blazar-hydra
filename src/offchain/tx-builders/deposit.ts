@@ -10,12 +10,12 @@ import {
 } from "@lucid-evolution/lucid";
 import { DepositParams } from "../lib/params";
 import { Spend, Mint, OutputRefT, FundsDatumT, FundsDatum } from "../lib/types";
-import { bech32ToAddressType } from "../lib/utils";
+import { bech32ToAddressType, getNetworkFromLucid } from "../lib/utils";
 import blake2b from "blake2b";
 
 async function deposit(
   lucid: LucidEvolution,
-  params: DepositParams
+  params: DepositParams,
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
   const tx = lucid.newTx();
   const {
@@ -26,13 +26,14 @@ async function deposit(
     validatorRef,
     fundsUtxo,
   } = params;
+  const network = getNetworkFromLucid(lucid);
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
   if (!validator) {
     throw new Error("Invalid validator reference");
   }
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
     throw new Error("Invalid script address");
@@ -44,7 +45,7 @@ async function deposit(
   let validationToken = "";
   if (fundsUtxo) {
     validationToken = Object.keys(fundsUtxo.assets).find(
-      (asset) => fromUnit(asset).policyId === policyId
+      (asset) => fromUnit(asset).policyId === policyId,
     ) as string;
     // Add the funds from the input UTxO, including the locked_deposit
     totalAmount += fundsUtxo.assets["lovelace"];
@@ -58,7 +59,7 @@ async function deposit(
     const serializedIndex = Data.to<bigint>(outRef.output_index);
     const newTokenName = Buffer.from(
       outRef.transaction_id + serializedIndex,
-      "hex"
+      "hex",
     );
     const tokenNameHash = blake2b(32).update(newTokenName).digest("hex");
     validationToken = toUnit(policyId, tokenNameHash);
@@ -71,7 +72,7 @@ async function deposit(
       locked_deposit: minLvc,
       funds_type: { User: { public_key: publicKey } },
     },
-    FundsDatum
+    FundsDatum,
   );
 
   const txSignBuilder = await tx
@@ -81,9 +82,9 @@ async function deposit(
     .pay.ToContract(
       scriptAddress,
       { kind: "inline", value: datum },
-      { ["lovelace"]: totalAmount, [validationToken]: 1n }
+      { ["lovelace"]: totalAmount, [validationToken]: 1n },
     )
-    .attachMetadata(674, {"msg": "HydraPay: Deposit"})
+    .attachMetadata(674, { msg: "HydraPay: Deposit" })
     .complete();
 
   const newFundsUtxo = {

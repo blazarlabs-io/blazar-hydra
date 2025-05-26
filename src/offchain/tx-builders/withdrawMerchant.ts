@@ -21,11 +21,15 @@ import {
   OutputRefT,
   Spend,
 } from "../lib/types";
-import { bech32ToAddressType, dataAddressToBech32 } from "../lib/utils";
+import {
+  bech32ToAddressType,
+  dataAddressToBech32,
+  getNetworkFromLucid,
+} from "../lib/utils";
 
 async function withdrawMerchant(
   lucid: LucidEvolution,
-  params: WithdrawParams
+  params: WithdrawParams,
 ): Promise<{ tx: TxSignBuilder }> {
   const { adminKey, hydraKey, fundsUtxos, walletUtxos } = params;
   if (!adminKey || !hydraKey) {
@@ -37,11 +41,9 @@ async function withdrawMerchant(
   if (!validator) {
     throw new Error("Invalid validator");
   }
-  const rewardAddress = validatorToRewardAddress(
-    lucid.config().network,
-    validator
-  );
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const network = getNetworkFromLucid(lucid);
+  const rewardAddress = validatorToRewardAddress(network, validator);
+  const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
     throw new Error("Invalid script address");
@@ -70,12 +72,12 @@ async function withdrawMerchant(
         transaction_id: utxo.txHash,
         output_index: BigInt(utxo.outputIndex),
       },
-      OutputRefSchema as unknown as OutputRefT
+      OutputRefSchema as unknown as OutputRefT,
     );
     const cmlOutput = CML.TransactionOutput.new(
       CML.Address.from_bech32(dataAddressToBech32(lucid, datum.addr)),
       CML.Value.new(outValue, CML.MultiAsset.new()),
-      CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(inpRef))
+      CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(inpRef)),
     );
     outputs.add(cmlOutput);
   });
@@ -89,7 +91,7 @@ async function withdrawMerchant(
   const policy = CML.ScriptHash.from_hex(policyId);
   sortedInputs.map((utxo) => {
     const validationToken = Object.entries(utxo.assets).find(
-      ([asset, _]) => fromUnit(asset).policyId === policyId
+      ([asset, _]) => fromUnit(asset).policyId === policyId,
     );
     if (!validationToken) {
       throw new Error("Invalid validation token");
@@ -136,8 +138,8 @@ async function withdrawMerchant(
       CML.RedeemerTag.Mint,
       0n,
       CML.PlutusData.from_cbor_hex(Mint.Burn),
-      CML.ExUnits.new(20_000_000n, 1000_000_000_000n)
-    )
+      CML.ExUnits.new(20_000_000n, 1000_000_000_000n),
+    ),
   );
 
   // Build redeemers
@@ -152,13 +154,16 @@ async function withdrawMerchant(
 
   // Calculate script data hash
   const costModels = lucid.config().costModels;
+  if (!costModels) {
+    throw new Error("Cost models for Plutus V3 are required");
+  }
   const language = CML.LanguageList.new();
   language.add(CML.Language.PlutusV3);
   const scriptDataHash = CML.calc_script_data_hash(
     redeemers,
     CML.PlutusDataList.new(),
     costModels,
-    language
+    language,
   );
   if (!scriptDataHash) {
     throw new Error(`Could not calculate script data hash`);

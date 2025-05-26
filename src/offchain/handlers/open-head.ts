@@ -11,10 +11,11 @@ import { HydraHandler } from "../lib/hydra";
 import { env, prisma } from "../../config";
 import {
   dataAddressToBech32,
+  getNetworkFromLucid,
   getValidator,
   waitForUtxosUpdate,
 } from "../lib/utils";
-import _ from "lodash";
+import _, { get } from "lodash";
 import { FundsDatum, FundsDatumT } from "../lib/types";
 import { mergeFunds } from "../tx-builders/merge-funds";
 import { logger } from "../../logger";
@@ -26,12 +27,10 @@ const MAX_UTXOS_PER_COMMIT = 10;
 
 async function handleOpenHead(
   lucid: LucidEvolution,
-  params: ManageHeadSchema
+  params: ManageHeadSchema,
 ): Promise<{ operationId: string }> {
   const { auth_token } = params;
-  const {
-    ADMIN_NODE_WS_URL: wsUrl,
-  } = env;
+  const { ADMIN_NODE_WS_URL: wsUrl } = env;
   try {
     if (!validateAdmin(auth_token)) {
       throw new Error("Unauthorized");
@@ -67,9 +66,10 @@ async function handleOpenHead(
 async function finalizeOpenHead(
   lucid: LucidEvolution,
   params: ManageHeadSchema,
-  processId: string
+  processId: string,
 ) {
   const localLucid = _.cloneDeep(lucid);
+  const network = getNetworkFromLucid(localLucid);
   const { peer_api_urls: peerUrls } = params;
   const { ADMIN_ADDRESS: adminAddress, VALIDATOR_REF: vRef } = env;
   try {
@@ -79,10 +79,7 @@ async function finalizeOpenHead(
       { txHash: vRef, outputIndex: 0 },
     ]);
     const validator = getValidator(validatorRef);
-    const scriptAddress = validatorToAddress(
-      localLucid.config().network,
-      validator
-    );
+    const scriptAddress = validatorToAddress(network, validator);
     const maxScriptUtxos = MAX_UTXOS_PER_COMMIT * peerUrls.length;
     const scriptUtxos = await localLucid
       .utxosAt(scriptAddress)
@@ -104,7 +101,7 @@ async function finalizeOpenHead(
       .then((utxos) =>
         selectUTxOs(utxos, {
           ["lovelace"]: BigInt(userToDepositsMap.size * 1_000_000 + 10_000_000),
-        })
+        }),
       );
     if (currentAdminUtxos.length === 0) {
       throw new Error("Insufficient admin funds");
@@ -177,10 +174,10 @@ async function finalizeOpenHead(
     const adminUtxos = await localLucid
       .utxosAt(adminAddress)
       .then((utxos) =>
-        utxos.filter((utxo) => Object.entries(utxo.assets).length === 1)
+        utxos.filter((utxo) => Object.entries(utxo.assets).length === 1),
       );
     const adminCollateral = adminUtxos[0];
-    const utxosToCommit = scriptUtxos.slice(0,2);//await localLucid.utxosByOutRef(fundsRefs);
+    const utxosToCommit = scriptUtxos.slice(0, 2); //await localLucid.utxosByOutRef(fundsRefs);
     const utxosPerPeer = 1 + utxosToCommit.length / peerUrls.length;
     const commit = await prisma.process
       .upsert({
@@ -195,7 +192,7 @@ async function finalizeOpenHead(
       })
       .catch((error) => {
         logger.error(
-          "DB Error while updating status to committing funds: " + error
+          "DB Error while updating status to committing funds: " + error,
         );
         throw error;
       });
@@ -216,7 +213,7 @@ async function finalizeOpenHead(
       const peerCommitTxId = await hydra.sendCommit(
         peerUrl,
         tx.toCBOR(),
-        thisPeerUtxos
+        thisPeerUtxos,
       );
       logger.info(`Commit transaction submitted! tx id: ${peerCommitTxId}`);
       let commitTag = "";
@@ -281,10 +278,10 @@ async function finalizeOpenHead(
         logger.error("DB Error while updating status to failed: " + error);
         throw error;
       });
-      const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
-      await hydra.abort();
-      await hydra.listen("HeadIsAborted");
-      await hydra.stop();
+    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
+    await hydra.abort();
+    await hydra.listen("HeadIsAborted");
+    await hydra.stop();
     throw error;
   }
 }

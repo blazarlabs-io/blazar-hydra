@@ -1,9 +1,9 @@
-import { IncomingMessage, ServerResponse } from 'http';
-import { randomUUID } from 'crypto';
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { IncomingMessage, ServerResponse } from "http";
+import { randomUUID } from "crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 // Constant
-export const REQUEST_ID_HEADER = 'x-request-id';
+export const REQUEST_ID_HEADER = "x-request-id";
 export function generateRequestId() {
   return randomUUID();
 }
@@ -16,7 +16,6 @@ function context<T = any>(): AsyncLocalStorage<T> {
   }
   return currentContext as AsyncLocalStorage<T>;
 }
-
 
 /**
  * This is an express middleware that:
@@ -51,4 +50,4 @@ export function addRequestId(
   context().run({ requestId }, next);
 }
 
-export { context, addRequestId as addRequestIdExpressMiddleware }
+export { context, addRequestId as addRequestIdExpressMiddleware };

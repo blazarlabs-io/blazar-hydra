@@ -41,7 +41,7 @@ const adminSeed = env.SEED;
 const privKey = getPrivateKey(adminSeed);
 const lucid = (await Lucid(
   new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
-  env.NETWORK as Network
+  env.NETWORK as Network,
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);
 const aliceWsUrl = "ws://127.0.0.1:4001";
@@ -78,13 +78,12 @@ const getEp = async (path: string): Promise<any> => {
   });
 };
 
-
 logger.configureLogger(
   {
     level: "debug", //env.LOGGER_LEVEL,
     prettyPrint: true, //env.PRETTY_PRINT,
   },
-  false
+  false,
 );
 
 const openHead = async () => {
@@ -134,7 +133,7 @@ const pay = async (
   amount: bigint,
   from: Address,
   to: Address,
-  withWallet: 1 | 2
+  withWallet: 1 | 2,
 ) => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   const utxos = await hydra.getSnapshot();
@@ -171,7 +170,7 @@ const pay = async (
     merchant_funds_utxo: undefined,
   };
   const res = await postEp(ownServerUrl + API_ROUTES.PAY, pSchema);
-  logger.info(res)
+  logger.info(res);
 };
 
 const fanout = async () => {
@@ -190,7 +189,7 @@ const withdraw = async (fanoutTxId: string) => {
   };
   const msg = Buffer.from(
     Data.to<WithdrawInfoT>(withdrawInfo, WithdrawInfo),
-    "hex"
+    "hex",
   );
   const hashedMsg = blake2b(32).update(msg).digest("hex");
   const sig = privKey.sign(Buffer.from(hashedMsg, "hex")).to_hex();
@@ -249,10 +248,13 @@ switch (trace) {
     break;
   case "close":
     const id = process.env.npm_config_id;
-    const closeRes = await postEp(`${ownServerUrl}${API_ROUTES.CLOSE_HEAD}/?id=${id}`, {
-      auth_token: "",
-      peer_api_urls: [aliceApiUrl, bobApiUrl],
-    });
+    const closeRes = await postEp(
+      `${ownServerUrl}${API_ROUTES.CLOSE_HEAD}/?id=${id}`,
+      {
+        auth_token: "",
+        peer_api_urls: [aliceApiUrl, bobApiUrl],
+      },
+    );
     break;
   case "pay":
     const amount = process.env.npm_config_amount;
@@ -263,11 +265,13 @@ switch (trace) {
     }
     if (!mAddr) {
       throw new Error(
-        "Missing merchant address. Provide with --merchant-address"
+        "Missing merchant address. Provide with --merchant-address",
       );
     }
     if (!user) {
-      throw new Error("User not specified. Provide with --from. Options: user1, user2");
+      throw new Error(
+        "User not specified. Provide with --from. Options: user1, user2",
+      );
     }
     const withWallet = user === "user1" ? 1 : 2;
     const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
@@ -312,7 +316,7 @@ switch (trace) {
           2000000n,
           "addr_test1qpkxq49y8vv5vwmacfs58h9dr6tzmdet8e4jvp5dkxxmaaqx69fzeuykylvmlcaav5eyp49stczujq0c2xxv83eukf5sc0ed6m",
           ref,
-          2
+          2,
         );
       });
     console.dir(magia, { depth: null });

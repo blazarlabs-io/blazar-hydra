@@ -99,12 +99,14 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
   expressApp.get("/state", async (req, res) => {
     try {
       const procId = req.query.id as string;
-      const process = await prisma.process.findUniqueOrThrow({
-        where: { id: procId}
-      }).catch((error) => {
-        logger.error("DB Error while fetching status: " + error);
-        throw error;
-      });
+      const process = await prisma.process
+        .findUniqueOrThrow({
+          where: { id: procId },
+        })
+        .catch((error) => {
+          logger.error("DB Error while fetching status: " + error);
+          throw error;
+        });
       res.status(200).json({ status: process.status });
       logger.info(`200 - /state`);
     } catch (e) {
@@ -135,17 +137,13 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       finalizeOpenHead(lucid, openHeadSchema, _res.operationId);
     } catch (e) {
       if (e instanceof Error) {
-        res
-          .status(500)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
+        res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
         logger.error(`500 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
       } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}` });
         logger.error(`400 - ${API_ROUTES.OPEN_HEAD}`);
       } else {
-        res
-          .status(520)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
+        res.status(520).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
         logger.error(`520 - ${API_ROUTES.OPEN_HEAD}`);
       }
     }
@@ -164,7 +162,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
         res
           .status(500)
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
-          logger.error(`500 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
+        logger.error(`500 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
       } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
         logger.error(`400 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);

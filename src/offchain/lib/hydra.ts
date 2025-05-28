@@ -10,6 +10,7 @@ import {
 } from "@lucid-evolution/lucid";
 import blake2b from "blake2b";
 import { logger } from "../../logger";
+import { HydraEvent } from "./hydra/schemas";
 
 const ERROR_TAGS = [
   "PeerHandshakeFailure",
@@ -133,10 +134,13 @@ class HydraHandler {
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
-        switch (data.tag) {
-          case "Greetings":
+        console.log("Received data: ", data);
+        switch ([data.headStatus, data.tag]) {
+          case [_]:
             break;
-          case "HeadIsInitializing":
+          case [, "Greetings"]:
+            break;
+          case [, "HeadIsInitializing"]:
             logger.debug("Received HeadIsInitializing");
             resolve(data.tag);
             break;
@@ -186,23 +190,19 @@ class HydraHandler {
   async sendCommit(
     apiUrl: string,
     blueprint: CBORHex,
-    utxos: UTxO[],
+    utxos: UTxO[]
   ): Promise<string> {
     try {
-      const payloadUtxos = utxos.reduce(
-        (acc, utxo) => {
-          acc[`${utxo.txHash}#${utxo.outputIndex}`] =
-            lucidUtxoToHydraUtxo(utxo);
-          return acc;
-        },
-        {} as Record<string, any>,
-      );
+      const payloadUtxos = utxos.reduce((acc, utxo) => {
+        acc[`${utxo.txHash}#${utxo.outputIndex}`] = lucidUtxoToHydraUtxo(utxo);
+        return acc;
+      }, {} as Record<string, any>);
 
       const payload = {
         blueprintTx: {
           cborHex: blueprint,
           description: "",
-          type: "Tx BabbageEra",
+          type: "Tx ConwayEra",
         },
         utxo: payloadUtxos,
       };
@@ -233,7 +233,7 @@ class HydraHandler {
       JSON.stringify({
         tag: "NewTx",
         transaction: { cborHex: tx, description: "", type: "Tx BabbageEra" },
-      }),
+      })
     );
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -361,8 +361,8 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
     inlineDatum = JSON.parse(
       CML.decode_plutus_datum_to_json_str(
         plutusData,
-        CML.CardanoNodePlutusDatumSchema.DetailedSchema,
-      ),
+        CML.CardanoNodePlutusDatumSchema.DetailedSchema
+      )
     );
     inlineDatumhash = blake2b(32)
       .update(Buffer.from(utxo.datum, "hex"))
@@ -441,7 +441,7 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
     body,
     witnessSet,
     true,
-    auxData,
+    auxData
   ).to_cbor_hex();
 
   return newTx;

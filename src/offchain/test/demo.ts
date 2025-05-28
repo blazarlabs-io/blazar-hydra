@@ -90,7 +90,7 @@ const openHead = async () => {
   lucid.selectWallet.fromSeed(adminSeed);
   const { operationId } = await postEp(ownServerUrl + API_ROUTES.OPEN_HEAD, {
     auth_token: "",
-    peer_api_urls: [aliceApiUrl, bobApiUrl],
+    peer_api_urls: [aliceApiUrl]//, bobApiUrl],
   });
   logger.debug(`Operation ID: ${operationId}`);
 };

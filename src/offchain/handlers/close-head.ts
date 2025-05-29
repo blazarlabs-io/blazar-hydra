@@ -6,7 +6,7 @@ import _ from "lodash";
 import { env, prisma } from "../../config";
 import { FundsDatum, FundsDatumT } from "../lib/types";
 import { WithdrawParams } from "../lib/params";
-import { withdrawMerchant } from "../tx-builders/withdrawMerchant";
+import { withdrawMerchant } from "../tx-builders/withdraw-merchant";
 import { DBOps } from "../../prisma/db-ops";
 import { DBStatus } from "../../shared/prisma-schemas";
 

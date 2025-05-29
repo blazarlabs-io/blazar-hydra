@@ -1,5 +1,5 @@
 import { Layer, WithdrawSchema } from "../../shared";
-import { withdraw } from "../tx-builders/withdrawUser";
+import { withdraw } from "../tx-builders/withdraw-user";
 import { CBORHex, LucidEvolution, selectUTxOs } from "@lucid-evolution/lucid";
 import { WithdrawParams } from "../lib/params";
 import _ from "lodash";

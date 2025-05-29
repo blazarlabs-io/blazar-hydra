@@ -89,7 +89,7 @@ async function mergeFunds(
   }
 
   // Complete tx
-  const txSignBuilder = await tx.complete({ setCollateral: 20_000_000n });
+  const txSignBuilder = await tx.complete();
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),
     outputIndex: 0,

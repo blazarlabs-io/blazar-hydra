@@ -2,6 +2,7 @@ import {
   CML,
   getAddressDetails,
   LucidEvolution,
+  sortUTxOs,
   TxSignBuilder,
   utxoToCore,
   validatorToAddress,
@@ -25,16 +26,13 @@ async function commitFunds(
   const network = getNetworkFromLucid(lucid);
   const scriptAddress = validatorToAddress(network, validator);
   const rewardAddress = validatorToRewardAddress(network, validator);
+  const adminKey = getAddressDetails(adminAddress).paymentCredential
+    ?.hash as string;
   let allInputs = userFundUtxos;
   if (adminCollateral) {
     allInputs.push(adminCollateral);
   }
-  const sortedInputs = allInputs.sort((a, b) => {
-    const ref1 = { hash: a.txHash, index: a.outputIndex };
-    const ref2 = { hash: b.txHash, index: b.outputIndex };
-    const hashComparison = ref1.hash.localeCompare(ref2.hash);
-    return hashComparison !== 0 ? hashComparison : ref1.index - ref2.index;
-  });
+  const sortedInputs = sortUTxOs(allInputs, "Canonical");
 
   // Build Initial txbody
   const inputs = CML.TransactionInputList.new();
@@ -47,8 +45,6 @@ async function commitFunds(
   const txBody = CML.TransactionBody.new(inputs, outputs, fee);
 
   // Add required signers
-  const adminKey = getAddressDetails(adminAddress).paymentCredential
-    ?.hash as string;
   const signer = CML.Ed25519KeyHash.from_hex(adminKey);
   const signers = CML.Ed25519KeyHashList.new();
   signers.add(signer);
@@ -69,29 +65,31 @@ async function commitFunds(
   const txWitnessSet = CML.TransactionWitnessSet.new();
 
   // Add spend redeemers
-  const legacyRedeemers = CML.LegacyRedeemerList.new();
+  const conwayRedeemers = CML.MapRedeemerKeyToRedeemerVal.new();
   sortedInputs.map((inp, idx) => {
     if (inp.address === scriptAddress) {
       const tag = CML.RedeemerTag.Spend;
       const index = BigInt(idx);
       const data = CML.PlutusData.from_cbor_hex(Spend.Commit);
       const units = CML.ExUnits.new(0n, 0n);
-      legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
+      conwayRedeemers.insert(
+        CML.RedeemerKey.new(tag, index),
+        CML.RedeemerVal.new(data, units),
+      );
     }
   });
 
   // Add redeemers and validator only if there were script utxos being committed
   if (userFundUtxos.length > 0) {
-    // Add withdraw redeemer
-    legacyRedeemers.add(
-      CML.LegacyRedeemer.new(
-        CML.RedeemerTag.Reward,
-        0n,
+    conwayRedeemers.insert(
+      CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
+      CML.RedeemerVal.new(
         CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
         CML.ExUnits.new(0n, 0n),
       ),
     );
-    const redeemers = CML.Redeemers.new_arr_legacy_redeemer(legacyRedeemers);
+    const redeemers =
+      CML.Redeemers.new_map_redeemer_key_to_redeemer_val(conwayRedeemers);
     txWitnessSet.set_redeemers(redeemers);
 
     // Add plutus script

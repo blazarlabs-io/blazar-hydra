@@ -5,6 +5,7 @@ import {
   fromUnit,
   getAddressDetails,
   LucidEvolution,
+  sortUTxOs,
   TxSignBuilder,
   utxoToCore,
   validatorToAddress,
@@ -50,12 +51,7 @@ async function withdrawMerchant(
   }
 
   // Build inputs
-  const sortedInputs = fundsUtxos.sort((a, b) => {
-    const ref1 = { hash: a.txHash, index: a.outputIndex };
-    const ref2 = { hash: b.txHash, index: b.outputIndex };
-    const hashComparison = ref1.hash.localeCompare(ref2.hash);
-    return hashComparison !== 0 ? hashComparison : ref1.index - ref2.index;
-  });
+  const sortedInputs = sortUTxOs(fundsUtxos, "Canonical");
   const inputs = CML.TransactionInputList.new();
   sortedInputs.map((utxo) => {
     const cmlInput = utxoToCore(utxo).input();

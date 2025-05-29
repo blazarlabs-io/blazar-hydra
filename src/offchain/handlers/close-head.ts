@@ -17,7 +17,7 @@ const MAX_UTXOS_PER_DECOMMIT = 15;
  */
 async function handleCloseHead(
   params: ManageHeadSchema,
-  processId: string
+  processId: string,
 ): Promise<{ status: string }> {
   try {
     const { auth_token } = params;
@@ -63,7 +63,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
       adminAddress,
       adminKey,
       hydraKey,
-      merchantUtxos
+      merchantUtxos,
     );
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
@@ -75,7 +75,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
           setTimeout(() => {
             logger.error("Close command not sent, retrying...");
             resolve("IncorrectTag");
-          }, 40_000)
+          }, 40_000),
         ),
         hydra.close(),
       ])) as string;
@@ -111,12 +111,12 @@ async function withdrawMerchantUtxos(
   adminAddress: string,
   adminKey: string,
   hydraKey: string,
-  merchantUtxos: UTxO[]
+  merchantUtxos: UTxO[],
 ) {
   let currentExpectedTag = "";
   if (merchantUtxos.length !== 0) {
     const roundsOfDecommit = Math.ceil(
-      merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT
+      merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT,
     );
     logger.info(roundsOfDecommit + " rounds of decommit");
     logger.info(merchantUtxos.length + " merchant utxos to withdraw");

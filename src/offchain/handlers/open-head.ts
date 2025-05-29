@@ -34,7 +34,7 @@ const MAX_UTXOS_PER_COMMIT = 10;
  */
 async function handleOpenHead(
   lucid: LucidEvolution,
-  params: ManageHeadSchema
+  params: ManageHeadSchema,
 ): Promise<{ operationId: string }> {
   const { auth_token } = params;
   const { ADMIN_NODE_WS_URL: wsUrl } = env;
@@ -51,7 +51,7 @@ async function handleOpenHead(
     let initTag = await hydra.init();
     initTag = await hydra.listen("HeadIsInitializing");
     if (initTag !== "HeadIsInitializing") {
-      logger.error(initTag);
+      logger.error(`Found tag: ${initTag}`);
     }
     const processId = await DBOps.newHead();
     await hydra.stop();
@@ -71,7 +71,7 @@ async function handleOpenHead(
 async function finalizeOpenHead(
   lucid: LucidEvolution,
   params: ManageHeadSchema,
-  processId: string
+  processId: string,
 ) {
   const localLucid = _.cloneDeep(lucid);
   const network = getNetworkFromLucid(localLucid);
@@ -97,14 +97,14 @@ async function finalizeOpenHead(
     // Step 3: Collect deposits and merge them for each user
     const usersDeposits: Map<string, UTxO[]> = collectUsersDeposits(
       localLucid,
-      scriptUtxos
+      scriptUtxos,
     );
     const utxosToCommit: UTxO[] = await mergeDeposits(
       processId,
       localLucid,
       adminAddress,
       validatorRef,
-      usersDeposits
+      usersDeposits,
     );
 
     // Step 4: Commit the funds to the hydra head
@@ -115,7 +115,7 @@ async function finalizeOpenHead(
       utxosToCommit,
       peerUrls,
       adminAddress,
-      validatorRef
+      validatorRef,
     );
 
     await DBOps.updateHeadStatus(processId, DBStatus.AWAITING);
@@ -130,6 +130,7 @@ async function finalizeOpenHead(
     return;
   } catch (error) {
     logger.error("Error while opening head, aborting...");
+    console.error(error);
     await DBOps.updateHeadStatus(processId, DBStatus.FAILED);
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     await hydra.abort();
@@ -148,7 +149,7 @@ function validateAdmin(auth_token: string): boolean {
  */
 function collectUsersDeposits(
   localLucid: LucidEvolution,
-  scriptUtxos: UTxO[]
+  scriptUtxos: UTxO[],
 ): Map<string, UTxO[]> {
   const userToDepositsMap = new Map<string, UTxO[]>();
   for (const utxo of scriptUtxos) {
@@ -177,14 +178,14 @@ async function mergeDeposits(
   localLucid: LucidEvolution,
   adminAddress: string,
   validatorRef: UTxO,
-  usersDeposits: Map<string, UTxO[]>
+  usersDeposits: Map<string, UTxO[]>,
 ): Promise<UTxO[]> {
   const mergeTxs: string[] = [];
   const fundsRefs: OutRef[] = [];
   let currentAdminUtxos = await localLucid.utxosAt(adminAddress).then((utxos) =>
     selectUTxOs(utxos, {
       ["lovelace"]: BigInt(usersDeposits.size * 1_000_000 + 10_000_000),
-    })
+    }),
   );
   if (currentAdminUtxos.length === 0) {
     throw new Error("Insufficient admin funds");
@@ -239,12 +240,12 @@ async function commitUtxos(
   utxosToCommit: UTxO[],
   peerUrls: string[],
   adminAddress: string,
-  validatorRef: UTxO
+  validatorRef: UTxO,
 ) {
   const adminCollateral = await lucid
     .utxosAt(adminAddress)
     .then((utxos) =>
-      utxos.filter((utxo) => Object.entries(utxo.assets).length === 1)
+      utxos.filter((utxo) => Object.entries(utxo.assets).length === 1),
     )
     .then((utxos) => utxos.pop());
   if (!adminCollateral) {
@@ -268,21 +269,10 @@ async function commitUtxos(
     }
     const { tx } = await commitFunds(lucid, params);
 
-    ///////////////////////////////////////////////////////////////////
-    ///// TODO change back for thisPeerUtxos when finished debugging //
-    const TEST_WALLET_UTXOS = await lucid
-      .utxosAt(adminAddress)
-      .then((utxos) =>
-        selectUTxOs(utxos, { ["lovelace"]: BigInt(100_000_000) })
-      )
-      .then((utxos) =>
-        utxos.filter((utxo) => Object.entries(utxo.assets).length === 1)
-      );
-    //////////////////////////////////////////////////////////////////
     const peerCommitTxId = await hydra.sendCommit(
       peerUrl,
       tx.toCBOR(),
-      TEST_WALLET_UTXOS //thisPeerUtxos
+      thisPeerUtxos,
     );
     logger.info(`Commit transaction submitted! tx id: ${peerCommitTxId}`);
     let commitTag = "";
@@ -304,19 +294,19 @@ async function commitUtxos(
 async function submitMergeTxs(
   lucid: LucidEvolution,
   walletAddress: Address,
-  mergeTxs: Transaction[]
+  mergeTxs: Transaction[],
 ) {
   for (const tx of mergeTxs) {
     const txid = await lucid.wallet().submitTx(tx);
     logger.info(
-      `Merge transaction submitted! tx id: https://preprod.cexplorer.io/tx/${txid}`
+      `Merge transaction submitted! tx id: https://preprod.cexplorer.io/tx/${txid}`,
     );
   }
   const lastSubmittedTxHash = lucid
     .fromTx(mergeTxs[mergeTxs.length - 1])
     .toHash();
   logger.info(
-    "Merge transactions submitted succesfully, last tx: " + lastSubmittedTxHash
+    "Merge transactions submitted succesfully, last tx: " + lastSubmittedTxHash,
   );
   await waitForUtxosUpdate(lucid, walletAddress, lastSubmittedTxHash);
 }

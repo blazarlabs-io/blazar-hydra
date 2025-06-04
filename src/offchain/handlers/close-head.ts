@@ -15,15 +15,8 @@ const MAX_UTXOS_PER_DECOMMIT = 15;
 /**
  * Starts the process of closing a Hydra head. It updates the head status to DECOMMITING in the database.
  */
-async function handleCloseHead(
-  params: ManageHeadSchema,
-  processId: string,
-): Promise<{ status: string }> {
+async function handleCloseHead(processId: string): Promise<{ status: string }> {
   try {
-    const { auth_token } = params;
-    if (!validateAdmin(auth_token)) {
-      throw new Error("Unauthorized");
-    }
     await DBOps.updateHeadStatus(processId, DBStatus.DECOMMITING);
     return { status: DBStatus.DECOMMITING };
   } catch (error) {
@@ -63,7 +56,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
       adminAddress,
       adminKey,
       hydraKey,
-      merchantUtxos,
+      merchantUtxos
     );
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
@@ -75,7 +68,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
           setTimeout(() => {
             logger.error("Close command not sent, retrying...");
             resolve("IncorrectTag");
-          }, 40_000),
+          }, 40_000)
         ),
         hydra.close(),
       ])) as string;
@@ -96,10 +89,6 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
   }
 }
 
-function validateAdmin(auth_token: string): boolean {
-  return true;
-}
-
 /**
  * Withdraws merchant UTXOs from the Hydra head.
  * It decommits the UTXOs in rounds, with a maximum of MAX_UTXOS_PER_DECOMMIT per round.
@@ -111,12 +100,12 @@ async function withdrawMerchantUtxos(
   adminAddress: string,
   adminKey: string,
   hydraKey: string,
-  merchantUtxos: UTxO[],
+  merchantUtxos: UTxO[]
 ) {
   let currentExpectedTag = "";
   if (merchantUtxos.length !== 0) {
     const roundsOfDecommit = Math.ceil(
-      merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT,
+      merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT
     );
     logger.info(roundsOfDecommit + " rounds of decommit");
     logger.info(merchantUtxos.length + " merchant utxos to withdraw");
@@ -132,7 +121,9 @@ async function withdrawMerchantUtxos(
       merchantUtxos.splice(0, MAX_UTXOS_PER_DECOMMIT);
       const withdrawParams: WithdrawParams = {
         kind: "merchant",
-        fundsUtxos: thisRoundUtxos,
+        withdraws: thisRoundUtxos.map((u) => {
+          return { fundUtxo: u };
+        }),
         adminKey,
         hydraKey,
         walletUtxos,

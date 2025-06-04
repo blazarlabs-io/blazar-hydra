@@ -9,18 +9,12 @@ import { TxBuiltResponse } from "../../api/schemas/response";
 
 async function handleWithdraw(
   lucid: LucidEvolution,
-  params: WithdrawSchema,
+  params: WithdrawSchema
 ): Promise<TxBuiltResponse> {
   try {
     // TODO here lucid needs instantiation with the correct network
     const localLucid = _.cloneDeep(lucid);
-    const {
-      address,
-      owner,
-      funds_utxos_ref: fundsUtxosRef,
-      signature,
-      network_layer,
-    } = params;
+    const { address, owner, funds_utxos, network_layer } = params;
     const {
       ADMIN_KEY: adminKey,
       HYDRA_KEY: hydraKey,
@@ -28,9 +22,9 @@ async function handleWithdraw(
     } = env;
 
     // Lookup funds and validator UTxOs
-    const fundsRefs = fundsUtxosRef.map(({ hash, index }) => ({
-      txHash: hash,
-      outputIndex: index,
+    const fundsRefs = funds_utxos.map(({ ref }) => ({
+      txHash: ref.hash,
+      outputIndex: ref.index,
     }));
     const fundsUtxos = await localLucid.utxosByOutRef(fundsRefs);
     if (fundsUtxos.length === 0) {
@@ -44,15 +38,21 @@ async function handleWithdraw(
     let withdrawParams: WithdrawParams = {
       address,
       kind: owner,
-      fundsUtxos,
-      signature,
+      withdraws: [],
     };
     switch (owner) {
       case "merchant":
         if (network_layer === Layer.L1) {
           throw new Error("Merchant cannot withdraw from L1");
         }
-        withdrawParams = { ...withdrawParams, adminKey, hydraKey };
+        withdrawParams = {
+          ...withdrawParams,
+          adminKey,
+          hydraKey,
+          withdraws: fundsUtxos.map((utxo) => {
+            return { fundUtxo: utxo };
+          }),
+        };
         break;
 
       case "user":
@@ -62,7 +62,24 @@ async function handleWithdraw(
         const walletUtxos = await localLucid
           .utxosAt(address)
           .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
-        withdrawParams = { ...withdrawParams, validatorRef, walletUtxos };
+        const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
+          const signature = funds_utxos.find(
+            (u) =>
+              u.ref.hash === utxo.txHash && u.ref.index === utxo.outputIndex
+          )?.signature;
+          if (!signature) {
+            throw new Error(
+              `User signature not found for UTxO ${utxo.txHash}#${utxo.outputIndex}`
+            );
+          }
+          return { fundUtxo: utxo, signature };
+        });
+        withdrawParams = {
+          ...withdrawParams,
+          validatorRef,
+          walletUtxos,
+          withdraws: zipFundsAndSignatures,
+        };
         break;
 
       default:

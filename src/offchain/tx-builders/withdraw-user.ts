@@ -26,18 +26,11 @@ import _ from "lodash";
 
 async function withdraw(
   lucid: LucidEvolution,
-  params: WithdrawParams,
+  params: WithdrawParams
 ): Promise<{ tx: TxSignBuilder }> {
   const tx = lucid.newTx();
-  const {
-    kind,
-    fundsUtxos,
-    signature,
-    adminKey,
-    hydraKey,
-    validatorRef,
-    walletUtxos,
-  } = params;
+  const { kind, withdraws, adminKey, hydraKey, validatorRef, walletUtxos } =
+    params;
 
   // Script UTxO related boilerplate
   const validator = getValidator(validatorRef, adminKey, hydraKey);
@@ -47,11 +40,18 @@ async function withdraw(
   if (!policyId) {
     throw new Error("Invalid script address");
   }
-  const sortedInputs = sortUTxOs(fundsUtxos, "Canonical");
+
+  const sortedInputs = withdraws.sort((a, b) => {
+    const aLex = `${a.fundUtxo.txHash}${a.fundUtxo.outputIndex}`;
+    const bLex = `${b.fundUtxo.txHash}${b.fundUtxo.outputIndex}`;
+    if (aLex < bLex) return -1;
+    return 1;
+  });
 
   for (let i = 0; i < sortedInputs.length; i++) {
     // Build transaction values and datums
-    const fundsUtxo = sortedInputs[i];
+    const fundsUtxo = sortedInputs[i].fundUtxo;
+    const sig = sortedInputs[i].signature;
     if (!fundsUtxo.datum) {
       throw new Error("Funds UTxO datum not found");
     }
@@ -59,7 +59,7 @@ async function withdraw(
     const address = dataAddressToBech32(lucid, datum.addr);
     const totalFunds = fundsUtxo.assets["lovelace"];
     const validationToken = Object.keys(fundsUtxo.assets).find(
-      (asset) => fromUnit(asset).policyId === policyId,
+      (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
       throw new Error("Validation token not found in funds UTxO");
@@ -73,7 +73,7 @@ async function withdraw(
     const redeemer =
       kind === "merchant"
         ? Spend.MerchantWithdraw
-        : Spend.UserWithdraw(withdrawInfo, signature!);
+        : Spend.UserWithdraw(withdrawInfo, sig!);
 
     tx.collectFrom([fundsUtxo], redeemer);
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
@@ -86,9 +86,6 @@ async function withdraw(
   }
   if (kind === "user") {
     tx.readFrom([validatorRef!]);
-  } else {
-    // Transaction is submitted only in L2, so we include the validator in the transaction
-    tx.attach.WithdrawalValidator(validator);
   }
 
   const rewardAddress = validatorToRewardAddress(network, validator);

@@ -23,7 +23,6 @@ import {
   Spend,
 } from "../lib/types";
 import {
-  bech32ToAddressType,
   dataAddressToBech32,
   getNetworkFromLucid,
 } from "../lib/utils";
@@ -32,7 +31,7 @@ async function withdrawMerchant(
   lucid: LucidEvolution,
   params: WithdrawParams,
 ): Promise<{ tx: TxSignBuilder }> {
-  const { adminKey, hydraKey, fundsUtxos, walletUtxos } = params;
+  const { adminKey, hydraKey, withdraws, walletUtxos } = params;
   if (!adminKey || !hydraKey) {
     throw new Error("Must provide validator keys to build withdraw tx on L2");
   }
@@ -51,6 +50,7 @@ async function withdrawMerchant(
   }
 
   // Build inputs
+  const fundsUtxos = withdraws.map((w) => w.fundUtxo);
   const sortedInputs = sortUTxOs(fundsUtxos, "Canonical");
   const inputs = CML.TransactionInputList.new();
   sortedInputs.map((utxo) => {

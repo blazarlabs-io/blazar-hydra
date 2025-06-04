@@ -1,9 +1,9 @@
 import {
+  CBORHex,
   CML,
   getAddressDetails,
   LucidEvolution,
   sortUTxOs,
-  TxSignBuilder,
   utxoToCore,
   validatorToAddress,
   validatorToRewardAddress,
@@ -12,13 +12,19 @@ import { CommitFundsParams } from "../lib/params";
 import { Combined, Spend } from "../lib/types";
 import { getNetworkFromLucid } from "../lib/utils";
 
+/**
+ * Builds a transaction to commit funds to a Hydra head. If there are no user funds to commit,
+ * it returns undefined for the transaction, indicating the commit will be done without a blueprint tx.
+ * @param lucid - The LucidEvolution instance to use for building the transaction.
+ * @param params - The parameters for committing funds, including admin address, user fund UTxOs,
+ * @returns An object containing the transaction in CBORHex format or undefined if no user funds are provided.
+ */
 async function commitFunds(
   lucid: LucidEvolution,
-  params: CommitFundsParams,
-): Promise<{ tx: TxSignBuilder }> {
+  params: CommitFundsParams
+): Promise<{ tx: CBORHex | undefined }> {
   const { adminAddress, userFundUtxos, validatorRefUtxo, adminCollateral } =
     params;
-
   const validator = validatorRefUtxo.scriptRef;
   if (!validator) {
     throw new Error(`Validator not found at UTxO: ${validatorRefUtxo}`);
@@ -28,6 +34,12 @@ async function commitFunds(
   const rewardAddress = validatorToRewardAddress(network, validator);
   const adminKey = getAddressDetails(adminAddress).paymentCredential
     ?.hash as string;
+
+  if (userFundUtxos.length === 0) {
+    // Commit with an empty blueprint tx
+    return { tx: undefined };
+  }
+
   let allInputs = userFundUtxos;
   if (adminCollateral) {
     allInputs.push(adminCollateral);
@@ -52,7 +64,7 @@ async function commitFunds(
 
   // Add withdrawal
   const rewAddress = CML.RewardAddress.from_address(
-    CML.Address.from_bech32(rewardAddress),
+    CML.Address.from_bech32(rewardAddress)
   );
   if (!rewAddress) {
     throw new Error(`Could not build reward address from script`);
@@ -74,7 +86,7 @@ async function commitFunds(
       const units = CML.ExUnits.new(0n, 0n);
       conwayRedeemers.insert(
         CML.RedeemerKey.new(tag, index),
-        CML.RedeemerVal.new(data, units),
+        CML.RedeemerVal.new(data, units)
       );
     }
   });
@@ -85,8 +97,8 @@ async function commitFunds(
       CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
       CML.RedeemerVal.new(
         CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
-        CML.ExUnits.new(0n, 0n),
-      ),
+        CML.ExUnits.new(0n, 0n)
+      )
     );
     const redeemers =
       CML.Redeemers.new_map_redeemer_key_to_redeemer_val(conwayRedeemers);
@@ -99,10 +111,9 @@ async function commitFunds(
     txWitnessSet.set_plutus_v3_scripts(scripts);
   }
 
-  const cmlTx = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();
-  const tx = lucid.fromTx(cmlTx);
+  const cbor = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();
 
-  return { tx };
+  return { tx: cbor };
 }
 
 export { commitFunds };

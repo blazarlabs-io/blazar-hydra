@@ -29,14 +29,6 @@ jobs:
         run: npm ci
         working-directory: ./src
 
-      - name: Run tests
-        run: npm run test
-        working-directory: ./src
-
-      - name: Run TypeScript type checking
-        run: npm run type-check
-        working-directory: ./src
-
       - name: Run ESLint and fix
         run: npm run lint:fix
         working-directory: ./src

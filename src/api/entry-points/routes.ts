@@ -131,7 +131,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
   expressApp.post(API_ROUTES.OPEN_HEAD, async (req, res) => {
     try {
       const openHeadSchema = ManageHeadZodSchema.parse(req.body);
-      const _res = await handleOpenHead(lucid, openHeadSchema);
+      const _res = await handleOpenHead(lucid);
       res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.OPEN_HEAD}`);
       finalizeOpenHead(lucid, openHeadSchema, _res.operationId);
@@ -152,8 +152,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
   expressApp.post(API_ROUTES.CLOSE_HEAD, async (req, res) => {
     try {
       const procId = req.query.id as string;
-      const closeHeadSchema = ManageHeadZodSchema.parse(req.body);
-      const _res = await handleCloseHead(closeHeadSchema, procId);
+      const _res = await handleCloseHead(procId);
       res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.CLOSE_HEAD}`);
       finalizeCloseHead(lucid, procId);

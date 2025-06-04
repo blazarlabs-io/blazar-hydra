@@ -50,7 +50,7 @@ function deduceBlockfrostUrlAndNetwork(projectId: string): {
 }
 
 export const { network } = deduceBlockfrostUrlAndNetwork(
-  env.PROVIDER_PROJECT_ID,
+  env.PROVIDER_PROJECT_ID
 );
 
 export const validateAddressType = (address: string) => {
@@ -118,16 +118,19 @@ const DepositZodSchema = z.object({
 const WithdrawZodSchema = z.object({
   address: addressSchema,
   owner: z.enum(["user", "merchant"]),
-  funds_utxos_ref: z.array(
+  funds_utxos: z.array(
     z.object({
-      hash: z
-        .string()
-        .length(64, "Transaction hash must be 64 characters long.")
-        .regex(/^[0-9a-fA-F]/, "Transaction hash must be a hex string."),
-      index: z.number(),
-    }),
+      // Signature must be present for user withdrawals
+      signature: z.string().optional(),
+      ref: z.object({
+        hash: z
+          .string()
+          .length(64, "Transaction hash must be 64 characters long.")
+          .regex(/^[0-9a-fA-F]/, "Transaction hash must be a hex string."),
+        index: z.number(),
+      }),
+    })
   ),
-  signature: z.string(),
   network_layer: z.enum(["L1", "L2"]),
 });
 
@@ -154,7 +157,6 @@ const PayMerchantZodSchema = z.object({
 });
 
 const ManageHeadZodSchema = z.object({
-  auth_token: z.string(),
   peer_api_urls: z.array(z.string()),
 });
 

@@ -7,40 +7,41 @@ import {
   Network,
   Script,
   UTxO,
-} from "@lucid-evolution/lucid";
-import { AddressT, CredentialT } from "./types";
-import { mnemonicToEntropy } from "bip39";
-import { logger } from "../../logger";
-import { buildValidator } from "../validator/handle";
+} from '@lucid-evolution/lucid';
+import { AddressT, CredentialT } from './types';
+import { mnemonicToEntropy } from 'bip39';
+import { logger } from '../../logger';
+import { buildValidator } from '../validator/handle';
 
 function dataAddressToBech32(lucid: LucidEvolution, add: AddressT): string {
   const paymentCred = add.payment_credential;
   const stakeCred = add.stake_credential;
   let paymentKey;
   let stakeKey;
-  if ("Verification_key_cred" in paymentCred) {
+  if ('Verification_key_cred' in paymentCred) {
     paymentKey = paymentCred.Verification_key_cred.Key;
   } else {
     paymentKey = paymentCred.Script_cred.Key;
   }
   if (stakeCred) {
-    if ("inline" in stakeCred && "Verification_key_cred" in stakeCred.inline) {
+    if ('inline' in stakeCred && 'Verification_key_cred' in stakeCred.inline) {
       stakeKey = stakeCred.inline.Verification_key_cred.Key;
     }
   } else {
     stakeKey = null;
   }
+  const network = getNetworkFromLucid(lucid);
   return credentialToAddress(
-    lucid.config().network,
-    { type: "Key", hash: paymentKey },
-    stakeKey ? { type: "Key", hash: stakeKey } : undefined
+    network,
+    { type: 'Key', hash: paymentKey },
+    stakeKey ? { type: 'Key', hash: stakeKey } : undefined
   );
 }
 
 function bech32ToAddressType(lucid: LucidEvolution, add: string): AddressT {
   const addressDetails = getAddressDetails(add);
   if (!addressDetails.paymentCredential) {
-    throw new Error("Invalid address");
+    throw new Error('Invalid address');
   }
   return {
     payment_credential: {
@@ -62,13 +63,13 @@ function getPrivateKey(
   seed: string,
   options: {
     password?: string;
-    addressType?: "Base" | "Enterprise";
+    addressType?: 'Base' | 'Enterprise';
     accountIndex?: number;
     network?: Network;
-  } = { addressType: "Base", accountIndex: 0, network: "Mainnet" }
+  } = { addressType: 'Base', accountIndex: 0, network: 'Mainnet' }
 ): CML.PrivateKey {
   function harden(num: number): number {
-    if (typeof num !== "number") throw new Error("Type number required here!");
+    if (typeof num !== 'number') throw new Error('Type number required here!');
     return 0x80000000 + num;
   }
 
@@ -97,7 +98,7 @@ async function waitForUtxosUpdate(
   let userUtxosUpdated = false;
   let scriptUtxoUpdated = false;
   while (!scriptUtxoUpdated || !userUtxosUpdated) {
-    logger.info("Waiting for utxos update...");
+    logger.info('Waiting for utxos update...');
     await new Promise((r) => setTimeout(r, 10000));
     try {
       const utxos = await lucid.utxosAt(address);
@@ -106,8 +107,9 @@ async function waitForUtxosUpdate(
       ]);
       userUtxosUpdated = utxos.some((utxo) => utxo.txHash === txId);
       scriptUtxoUpdated = scriptUtxos.length !== 0;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      logger.info("Failed to fetch utxos from blockfrost, retrying...");
+      logger.info('Failed to fetch utxos from blockfrost, retrying...');
     }
   }
   // wait for 20 more seconds because sometimes it is insufficient
@@ -122,7 +124,7 @@ function getValidator(
   if (!validatorRef) {
     if (!(adminKey || hydraKey)) {
       throw new Error(
-        "Must include validator reference or validator parameters"
+        'Must include validator reference or validator parameters'
       );
     } else {
       const hydraCred: CredentialT = { Script_cred: { Key: hydraKey! } };
@@ -130,14 +132,24 @@ function getValidator(
     }
   } else {
     if (!validatorRef.scriptRef) {
-      throw new Error("Validator script not found in UTxO");
+      throw new Error('Validator script not found in UTxO');
     }
     return validatorRef.scriptRef;
   }
 }
+
+function getNetworkFromLucid(lucid: LucidEvolution): Network {
+  const network = lucid.config().network;
+  if (!network) {
+    throw new Error('Lucid network configuration is not set.');
+  }
+  return network;
+}
+
 export {
   dataAddressToBech32,
   bech32ToAddressType,
+  getNetworkFromLucid,
   getPrivateKey,
   getValidator,
   waitForUtxosUpdate,

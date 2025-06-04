@@ -1,4 +1,4 @@
-import { OutRef } from "@lucid-evolution/lucid";
+import { OutRef } from '@lucid-evolution/lucid';
 
 type QueryFundsResponse = {
   fundsInL1: OutRef[];
@@ -10,6 +10,6 @@ type QueryFundsResponse = {
 type TxBuiltResponse = {
   cborHex: string;
   fundsUtxoRef: OutRef | null;
-}
+};
 
-export {  TxBuiltResponse, QueryFundsResponse };
+export { TxBuiltResponse, QueryFundsResponse };

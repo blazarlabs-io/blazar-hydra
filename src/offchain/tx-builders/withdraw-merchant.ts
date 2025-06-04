@@ -1,59 +1,50 @@
 import {
-  assetsToValue,
   CML,
   Data,
   fromUnit,
   getAddressDetails,
   LucidEvolution,
+  sortUTxOs,
   TxSignBuilder,
   utxoToCore,
   validatorToAddress,
-  validatorToRewardAddress,
-} from "@lucid-evolution/lucid";
-import { WithdrawParams } from "../lib/params";
-import { buildValidator } from "../validator/handle";
+} from '@lucid-evolution/lucid';
+import { WithdrawParams } from '../lib/params';
+import { buildValidator } from '../validator/handle';
 import {
-  Combined,
   FundsDatum,
   FundsDatumT,
   Mint,
   OutputRefSchema,
   OutputRefT,
   Spend,
-} from "../lib/types";
-import { bech32ToAddressType, dataAddressToBech32 } from "../lib/utils";
+} from '../lib/types';
+import { dataAddressToBech32, getNetworkFromLucid } from '../lib/utils';
 
 async function withdrawMerchant(
   lucid: LucidEvolution,
   params: WithdrawParams
 ): Promise<{ tx: TxSignBuilder }> {
-  const { adminKey, hydraKey, fundsUtxos, walletUtxos } = params;
+  const { adminKey, hydraKey, withdraws, walletUtxos } = params;
   if (!adminKey || !hydraKey) {
-    throw new Error("Must provide validator keys to build withdraw tx on L2");
+    throw new Error('Must provide validator keys to build withdraw tx on L2');
   }
   const validator = buildValidator(adminKey, {
     Script_cred: { Key: hydraKey },
   });
   if (!validator) {
-    throw new Error("Invalid validator");
+    throw new Error('Invalid validator');
   }
-  const rewardAddress = validatorToRewardAddress(
-    lucid.config().network,
-    validator
-  );
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const network = getNetworkFromLucid(lucid);
+  const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
-    throw new Error("Invalid script address");
+    throw new Error('Invalid script address');
   }
 
   // Build inputs
-  const sortedInputs = fundsUtxos.sort((a, b) => {
-    const ref1 = { hash: a.txHash, index: a.outputIndex };
-    const ref2 = { hash: b.txHash, index: b.outputIndex };
-    const hashComparison = ref1.hash.localeCompare(ref2.hash);
-    return hashComparison !== 0 ? hashComparison : ref1.index - ref2.index;
-  });
+  const fundsUtxos = withdraws.map((w) => w.fundUtxo);
+  const sortedInputs = sortUTxOs(fundsUtxos, 'Canonical');
   const inputs = CML.TransactionInputList.new();
   sortedInputs.map((utxo) => {
     const cmlInput = utxoToCore(utxo).input();
@@ -63,7 +54,7 @@ async function withdrawMerchant(
   // Build outputs
   const outputs = CML.TransactionOutputList.new();
   sortedInputs.map((utxo) => {
-    const outValue = utxo.assets["lovelace"];
+    const outValue = utxo.assets['lovelace'];
     const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
     const inpRef = Data.to<OutputRefT>(
       {
@@ -89,10 +80,10 @@ async function withdrawMerchant(
   const policy = CML.ScriptHash.from_hex(policyId);
   sortedInputs.map((utxo) => {
     const validationToken = Object.entries(utxo.assets).find(
-      ([asset, _]) => fromUnit(asset).policyId === policyId
+      ([asset]) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
-      throw new Error("Invalid validation token");
+      throw new Error('Invalid validation token');
     }
     const assetName = fromUnit(validationToken[0]).assetName!;
     const name = CML.AssetName.from_hex(assetName);
@@ -102,7 +93,7 @@ async function withdrawMerchant(
 
   // Add collateral
   if (!walletUtxos) {
-    throw new Error("Must provide collateral utxo to build withdraw tx on L2");
+    throw new Error('Must provide collateral utxo to build withdraw tx on L2');
   }
   const adminCollateral = walletUtxos[0];
   const collateral = CML.TransactionInputList.new();
@@ -124,9 +115,8 @@ async function withdrawMerchant(
   sortedInputs.map((_, idx) => {
     const tag = CML.RedeemerTag.Spend;
     const index = BigInt(idx);
-    let data, units;
-    data = CML.PlutusData.from_cbor_hex(Spend.MerchantWithdraw);
-    units = CML.ExUnits.new(20_000_000n, 1000_000_000_000n);
+    const data = CML.PlutusData.from_cbor_hex(Spend.MerchantWithdraw);
+    const units = CML.ExUnits.new(20_000_000n, 1000_000_000_000n);
     legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
   });
 
@@ -152,6 +142,9 @@ async function withdrawMerchant(
 
   // Calculate script data hash
   const costModels = lucid.config().costModels;
+  if (!costModels) {
+    throw new Error('Cost models for Plutus V3 are required');
+  }
   const language = CML.LanguageList.new();
   language.add(CML.Language.PlutusV3);
   const scriptDataHash = CML.calc_script_data_hash(

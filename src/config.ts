@@ -1,6 +1,6 @@
-import { z } from "zod";
-import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import { z } from 'zod';
+import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
 
 dotenv.config();
 const envSchema = z

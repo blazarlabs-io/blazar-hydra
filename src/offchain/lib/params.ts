@@ -1,4 +1,4 @@
-import { UTxO } from "@lucid-evolution/lucid";
+import { UTxO } from '@lucid-evolution/lucid';
 
 /**
  * Tx Builders params
@@ -13,11 +13,14 @@ type DepositParams = {
   fundsUtxo?: UTxO;
 };
 
-type WithdrawParams = {
-  kind: "user" | "merchant";
-  fundsUtxos: UTxO[];
-  address?: string;
+type Withdraw = {
+  fundUtxo: UTxO;
   signature?: string;
+};
+type WithdrawParams = {
+  kind: 'user' | 'merchant';
+  withdraws: Withdraw[];
+  address?: string;
   adminKey?: string;
   hydraKey?: string;
   validatorRef?: UTxO;

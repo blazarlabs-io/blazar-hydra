@@ -1,12 +1,12 @@
-import { Logger, LoggerConfiguration } from "./definition";
-import PinoLogger from "./pino.logger";
+import { Logger, LoggerConfiguration } from './definition';
+import PinoLogger from './pino.logger';
 
 class LoggerWrapper implements Logger {
   #underlyingLogger: Logger | null = null;
 
   #getInitializeLogger(): Logger {
     this.configureLogger({}, false);
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
     return this.#underlyingLogger!;
   }
 
@@ -16,7 +16,7 @@ class LoggerWrapper implements Logger {
   ): void {
     if (this.#underlyingLogger === null || overrideIfExists === true) {
       this.#underlyingLogger = new PinoLogger(
-        configuration.level || "info",
+        configuration.level || 'info',
         configuration.prettyPrint || false
       );
     }

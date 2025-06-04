@@ -1,11 +1,11 @@
-import { Layer, WithdrawSchema } from "../../shared";
-import { withdraw } from "../tx-builders/withdrawUser";
-import { CBORHex, LucidEvolution, selectUTxOs } from "@lucid-evolution/lucid";
-import { WithdrawParams } from "../lib/params";
-import _ from "lodash";
-import { env } from "../../config";
-import { logger } from "../../logger";
-import { TxBuiltResponse } from "../../api/schemas/response";
+import { Layer, WithdrawSchema } from '../../shared';
+import { withdraw } from '../tx-builders/withdraw-user';
+import { LucidEvolution, selectUTxOs } from '@lucid-evolution/lucid';
+import { WithdrawParams } from '../lib/params';
+import _ from 'lodash';
+import { env } from '../../config';
+import { logger } from '../../logger';
+import { TxBuiltResponse } from '../../api/schemas/response';
 
 async function handleWithdraw(
   lucid: LucidEvolution,
@@ -14,13 +14,7 @@ async function handleWithdraw(
   try {
     // TODO here lucid needs instantiation with the correct network
     const localLucid = _.cloneDeep(lucid);
-    const {
-      address,
-      owner,
-      funds_utxos_ref: fundsUtxosRef,
-      signature,
-      network_layer,
-    } = params;
+    const { address, owner, funds_utxos, network_layer } = params;
     const {
       ADMIN_KEY: adminKey,
       HYDRA_KEY: hydraKey,
@@ -28,9 +22,9 @@ async function handleWithdraw(
     } = env;
 
     // Lookup funds and validator UTxOs
-    const fundsRefs = fundsUtxosRef.map(({ hash, index }) => ({
-      txHash: hash,
-      outputIndex: index,
+    const fundsRefs = funds_utxos.map(({ ref }) => ({
+      txHash: ref.hash,
+      outputIndex: ref.index,
     }));
     const fundsUtxos = await localLucid.utxosByOutRef(fundsRefs);
     if (fundsUtxos.length === 0) {
@@ -44,29 +38,52 @@ async function handleWithdraw(
     let withdrawParams: WithdrawParams = {
       address,
       kind: owner,
-      fundsUtxos,
-      signature,
+      withdraws: [],
     };
     switch (owner) {
-      case "merchant":
+      case 'merchant':
         if (network_layer === Layer.L1) {
-          throw new Error("Merchant cannot withdraw from L1");
+          throw new Error('Merchant cannot withdraw from L1');
+        }
+        withdrawParams = {
+          ...withdrawParams,
+          adminKey,
+          hydraKey,
+          withdraws: fundsUtxos.map((utxo) => {
+            return { fundUtxo: utxo };
+          }),
         };
-        withdrawParams = { ...withdrawParams, adminKey, hydraKey };
         break;
 
-      case "user":
+      case 'user':
         if (network_layer === Layer.L2) {
-          throw new Error("User cannot withdraw from L2");
-        };
+          throw new Error('User cannot withdraw from L2');
+        }
         const walletUtxos = await localLucid
           .utxosAt(address)
           .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
-        withdrawParams = { ...withdrawParams, validatorRef, walletUtxos };
+        const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
+          const signature = funds_utxos.find(
+            (u) =>
+              u.ref.hash === utxo.txHash && u.ref.index === utxo.outputIndex
+          )?.signature;
+          if (!signature) {
+            throw new Error(
+              `User signature not found for UTxO ${utxo.txHash}#${utxo.outputIndex}`
+            );
+          }
+          return { fundUtxo: utxo, signature };
+        });
+        withdrawParams = {
+          ...withdrawParams,
+          validatorRef,
+          walletUtxos,
+          withdraws: zipFundsAndSignatures,
+        };
         break;
 
       default:
-        throw new Error("Unsupported owner and network layer combination");
+        throw new Error('Unsupported owner and network layer combination');
     }
 
     // Build and return the transaction
@@ -74,11 +91,11 @@ async function handleWithdraw(
     return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
   } catch (e) {
     if (e instanceof Error) {
-      logger.error("500 /withdraw - " + e.message);
-    } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
-      logger.error("400 /withdraw - " + e);
+      logger.error('500 /withdraw - ' + e.message);
+    } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+      logger.error('400 /withdraw - ' + e);
     } else {
-      logger.error("520 /withdraw - Unknown error type");
+      logger.error('520 /withdraw - Unknown error type');
       logger.error(JSON.stringify(e));
     }
     throw e;

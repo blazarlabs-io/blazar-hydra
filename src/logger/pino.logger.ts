@@ -7,7 +7,7 @@ export default class PinoLogger implements Logger {
   constructor(
     private level: LOG_LEVELS,
     private prettyPrintEnabled: boolean,
-    private destStream?: DestinationStream | string,
+    private destStream?: DestinationStream | string
   ) {
     this.#logger = pino({
       level,

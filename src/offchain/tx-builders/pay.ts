@@ -10,12 +10,13 @@ import {
   utxoToCore,
   validatorToAddress,
   assetsToValue,
-} from "@lucid-evolution/lucid";
-import { PayMerchantParams } from "../lib/params";
-import { buildValidator } from "../validator/handle";
-import { FundsDatum, FundsDatumT, Mint, PayInfoT, Spend } from "../lib/types";
-import { bech32ToAddressType, dataAddressToBech32 } from "../lib/utils";
-import blake2b from "blake2b";
+  sortUTxOs,
+} from '@lucid-evolution/lucid';
+import { PayMerchantParams } from '../lib/params';
+import { buildValidator } from '../validator/handle';
+import { FundsDatum, FundsDatumT, Mint, PayInfoT, Spend } from '../lib/types';
+import { bech32ToAddressType, getNetworkFromLucid } from '../lib/utils';
+import blake2b from 'blake2b';
 
 async function payMerchant(
   lucid: LucidEvolution,
@@ -35,24 +36,21 @@ async function payMerchant(
     Script_cred: { Key: hydraKey },
   });
   if (!validator) {
-    throw new Error("Invalid validator");
+    throw new Error('Invalid validator');
   }
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
+  const network = getNetworkFromLucid(lucid);
+  const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
-    throw new Error("Invalid script address");
+    throw new Error('Invalid script address');
   }
 
   // Build inputs
-  const allInputs = [userFundsUtxo].concat(
-    merchantFundsUtxo ? [merchantFundsUtxo] : []
-  );
-  const sortedInputs = allInputs.sort((a, b) => {
-    const ref1 = { hash: a.txHash, index: a.outputIndex };
-    const ref2 = { hash: b.txHash, index: b.outputIndex };
-    const hashComparison = ref1.hash.localeCompare(ref2.hash);
-    return hashComparison !== 0 ? hashComparison : ref1.index - ref2.index;
-  });
+  const allInputs = [userFundsUtxo];
+  if (merchantFundsUtxo) {
+    allInputs.push(merchantFundsUtxo);
+  }
+  const sortedInputs = sortUTxOs(allInputs, 'Canonical');
   const inputs = CML.TransactionInputList.new();
   sortedInputs.map((utxo) => {
     const cmlInput = utxoToCore(utxo).input();
@@ -66,7 +64,7 @@ async function payMerchant(
     addAssets(userFundsUtxo.assets, { lovelace: -amountToPay })
   );
   if (!userFundsUtxo.datum) {
-    throw new Error("User UTxO datum not found");
+    throw new Error('User UTxO datum not found');
   }
   const userOutput = CML.TransactionOutput.new(
     CML.Address.from_bech32(userFundsUtxo.address),
@@ -79,21 +77,21 @@ async function payMerchant(
   const serializedIndex = Data.to<bigint>(BigInt(userFundsUtxo.outputIndex));
   const newTokenName = Buffer.from(
     userFundsUtxo.txHash + serializedIndex,
-    "hex"
+    'hex'
   );
-  const tokenNameHash = blake2b(32).update(newTokenName).digest("hex");
+  const tokenNameHash = blake2b(32).update(newTokenName).digest('hex');
   const validationToken = toUnit(policyId, tokenNameHash);
   const newMerchValue = {
     [validationToken]: 1n,
-    ["lovelace"]:
+    ['lovelace']:
       amountToPay +
-      (merchantFundsUtxo ? merchantFundsUtxo.assets["lovelace"] : 0n),
+      (merchantFundsUtxo ? merchantFundsUtxo.assets['lovelace'] : 0n),
   };
   const merchDatum = Data.to<FundsDatumT>(
     {
       addr: bech32ToAddressType(lucid, merchantAddress),
       locked_deposit: 0n,
-      funds_type: "Merchant",
+      funds_type: 'Merchant',
     },
     FundsDatum
   );
@@ -139,7 +137,7 @@ async function payMerchant(
     const index = BigInt(idx);
     const inpDatum = Data.from<FundsDatumT>(inp.datum!, FundsDatum);
     let data, units;
-    if (inpDatum.funds_type === "Merchant") {
+    if (inpDatum.funds_type === 'Merchant') {
       data = CML.PlutusData.from_cbor_hex(Spend.AddFunds);
       units = CML.ExUnits.new(0n, 0n);
     } else {
@@ -184,6 +182,9 @@ async function payMerchant(
 
   // Calculate script data hash
   const costModels = lucid.config().costModels;
+  if (!costModels) {
+    throw new Error('Cost models not set in Lucid configuration');
+  }
   const language = CML.LanguageList.new();
   language.add(CML.Language.PlutusV3);
   const scriptDataHash = CML.calc_script_data_hash(

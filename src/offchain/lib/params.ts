@@ -13,11 +13,15 @@ type DepositParams = {
   fundsUtxo?: UTxO;
 };
 
+
+type Withdraw = {
+  fundUtxo: UTxO;
+  signature?: string;
+}
 type WithdrawParams = {
   kind: "user" | "merchant";
-  fundsUtxos: UTxO[];
+  withdraws: Withdraw[];
   address?: string;
-  signature?: string;
   adminKey?: string;
   hydraKey?: string;
   validatorRef?: UTxO;

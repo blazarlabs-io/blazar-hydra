@@ -189,27 +189,31 @@ class HydraHandler {
    */
   async sendCommit(
     apiUrl: string,
-    blueprint: CBORHex,
     utxos: UTxO[],
+    blueprint?: CBORHex
   ): Promise<string> {
     try {
-      const payloadUtxos = utxos.reduce(
-        (acc, utxo) => {
+      const formatUtxos = (utxos: UTxO[]) =>
+        utxos.reduce((acc, utxo) => {
           acc[`${utxo.txHash}#${utxo.outputIndex}`] =
             lucidUtxoToHydraUtxo(utxo);
           return acc;
-        },
-        {} as Record<string, any>,
-      );
+        }, {} as Record<string, any>);
 
-      const payload = {
-        blueprintTx: {
-          cborHex: blueprint,
-          description: "",
-          type: "Tx ConwayEra",
-        },
-        utxo: payloadUtxos,
-      };
+      let payload: { blueprintTx?: any; utxo?: any } = {};
+
+      if (utxos.length > 0) {
+        if (blueprint) {
+          payload["blueprintTx"] = {
+            cborHex: blueprint,
+            description: "",
+            type: "Tx ConwayEra",
+          };
+          payload["utxo"] = formatUtxos(utxos);
+        } else {
+          payload = formatUtxos(utxos);
+        }
+      }
       const response = await axios.post(apiUrl, payload);
       const txWitnessed = response.data.cborHex;
       const signedTx = await this.lucid
@@ -237,7 +241,7 @@ class HydraHandler {
       JSON.stringify({
         tag: "NewTx",
         transaction: { cborHex: tx, description: "", type: "Tx BabbageEra" },
-      }),
+      })
     );
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
@@ -365,8 +369,8 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
     inlineDatum = JSON.parse(
       CML.decode_plutus_datum_to_json_str(
         plutusData,
-        CML.CardanoNodePlutusDatumSchema.DetailedSchema,
-      ),
+        CML.CardanoNodePlutusDatumSchema.DetailedSchema
+      )
     );
     inlineDatumhash = blake2b(32)
       .update(Buffer.from(utxo.datum, "hex"))
@@ -445,7 +449,7 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
     body,
     witnessSet,
     true,
-    auxData,
+    auxData
   ).to_cbor_hex();
 
   return newTx;

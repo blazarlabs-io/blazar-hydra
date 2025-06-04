@@ -3,22 +3,22 @@ import {
   LucidEvolution,
   UTxO,
   validatorToAddress,
-} from "@lucid-evolution/lucid";
-import { QueryFundsResponse } from "../../api/schemas/response";
-import { HydraHandler } from "../lib/hydra";
-import _ from "lodash";
-import { env } from "../../config";
+} from '@lucid-evolution/lucid';
+import { QueryFundsResponse } from '../../api/schemas/response';
+import { HydraHandler } from '../lib/hydra';
+import _ from 'lodash';
+import { env } from '../../config';
 import {
   dataAddressToBech32,
   getNetworkFromLucid,
   getValidator,
-} from "../lib/utils";
-import { FundsDatum, FundsDatumT } from "../lib/types";
-import { logger } from "../../logger";
+} from '../lib/utils';
+import { FundsDatum, FundsDatumT } from '../lib/types';
+import { logger } from '../../logger';
 
 async function handleQueryFunds(
   lucid: LucidEvolution,
-  address: string,
+  address: string
 ): Promise<QueryFundsResponse> {
   let fundsInL1: UTxO[] = [],
     fundsInL2: UTxO[] = [];
@@ -39,9 +39,10 @@ async function handleQueryFunds(
     try {
       const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
       return dataAddressToBech32(localLucid, datum.addr) === addr;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       logger.warning(
-        `Utxo at validator address with unknown datum: ${utxo.txHash}#${utxo.outputIndex}`,
+        `Utxo at validator address with unknown datum: ${utxo.txHash}#${utxo.outputIndex}`
       );
       return false;
     }
@@ -60,15 +61,16 @@ async function handleQueryFunds(
       .getSnapshot()
       .then((utxos) => utxos.filter((utxo) => isOwnUtxo(utxo, address)));
     await hydra.stop();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
-    if (JSON.stringify(error).includes("ECONNREFUSED")) {
+    if (JSON.stringify(error).includes('ECONNREFUSED')) {
       logger.error(`Not connected to websocket`);
     } else {
       logger.error(`Error querying funds in L2: ${error}`);
     }
   }
   const getTotalLvc = (acc: bigint, utxo: UTxO) =>
-    acc + utxo.assets["lovelace"];
+    acc + utxo.assets['lovelace'];
   const totalInL1 = fundsInL1.reduce(getTotalLvc, 0n);
   const totalInL2 = fundsInL2.reduce(getTotalLvc, 0n);
   const funds: QueryFundsResponse = {

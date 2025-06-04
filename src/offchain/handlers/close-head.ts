@@ -1,14 +1,13 @@
-import { Data, LucidEvolution, UTxO } from "@lucid-evolution/lucid";
-import { ManageHeadSchema } from "../../shared";
-import { logger } from "../../logger";
-import { HydraHandler } from "../lib/hydra";
-import _ from "lodash";
-import { env, prisma } from "../../config";
-import { FundsDatum, FundsDatumT } from "../lib/types";
-import { WithdrawParams } from "../lib/params";
-import { withdrawMerchant } from "../tx-builders/withdraw-merchant";
-import { DBOps } from "../../prisma/db-ops";
-import { DBStatus } from "../../shared/prisma-schemas";
+import { Data, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
+import { logger } from '../../logger';
+import { HydraHandler } from '../lib/hydra';
+import _ from 'lodash';
+import { env, prisma } from '../../config';
+import { FundsDatum, FundsDatumT } from '../lib/types';
+import { WithdrawParams } from '../lib/params';
+import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
+import { DBOps } from '../../prisma/db-ops';
+import { DBStatus } from '../../shared/prisma-schemas';
 
 const MAX_UTXOS_PER_DECOMMIT = 15;
 
@@ -20,7 +19,7 @@ async function handleCloseHead(processId: string): Promise<{ status: string }> {
     await DBOps.updateHeadStatus(processId, DBStatus.DECOMMITING);
     return { status: DBStatus.DECOMMITING };
   } catch (error) {
-    logger.error("Error handling close head");
+    logger.error('Error handling close head');
     throw error;
   }
 }
@@ -46,7 +45,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     const merchantUtxos = fundUtxos.filter((utxo) => {
       if (utxo.address !== adminAddress) {
         const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
-        return datum.funds_type === "Merchant";
+        return datum.funds_type === 'Merchant';
       }
       return false;
     });
@@ -61,21 +60,21 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
     // Step 2: Send close command
-    let currentExpectedTag = "";
-    while (currentExpectedTag !== "HeadIsClosed") {
+    let currentExpectedTag = '';
+    while (currentExpectedTag !== 'HeadIsClosed') {
       currentExpectedTag = (await Promise.race([
-        new Promise((resolve, _) =>
+        new Promise((resolve) =>
           setTimeout(() => {
-            logger.error("Close command not sent, retrying...");
-            resolve("IncorrectTag");
+            logger.error('Close command not sent, retrying...');
+            resolve('IncorrectTag');
           }, 40_000)
         ),
         hydra.close(),
       ])) as string;
     }
-    logger.info("Waiting for fanout tag...");
-    while (currentExpectedTag !== "ReadyToFanout") {
-      currentExpectedTag = await hydra.listen("ReadyToFanout");
+    logger.info('Waiting for fanout tag...');
+    while (currentExpectedTag !== 'ReadyToFanout') {
+      currentExpectedTag = await hydra.listen('ReadyToFanout');
     }
 
     // Step 3: Fanout
@@ -84,7 +83,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     await hydra.stop();
     return { status: DBStatus.CLOSED };
   } catch (error) {
-    logger.error("Error during close head");
+    logger.error('Error during close head');
     throw error;
   }
 }
@@ -102,14 +101,14 @@ async function withdrawMerchantUtxos(
   hydraKey: string,
   merchantUtxos: UTxO[]
 ) {
-  let currentExpectedTag = "";
+  let currentExpectedTag = '';
   if (merchantUtxos.length !== 0) {
     const roundsOfDecommit = Math.ceil(
       merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT
     );
-    logger.info(roundsOfDecommit + " rounds of decommit");
-    logger.info(merchantUtxos.length + " merchant utxos to withdraw");
-    logger.info("Withdrawing merchant utxos...");
+    logger.info(roundsOfDecommit + ' rounds of decommit');
+    logger.info(merchantUtxos.length + ' merchant utxos to withdraw');
+    logger.info('Withdrawing merchant utxos...');
     const utxosInL2 = await hydra.getSnapshot();
     const walletUtxos = utxosInL2.filter((utxo) => {
       return utxo.address === adminAddress;
@@ -120,7 +119,7 @@ async function withdrawMerchantUtxos(
       thisRoundUtxos = merchantUtxos.slice(0, MAX_UTXOS_PER_DECOMMIT);
       merchantUtxos.splice(0, MAX_UTXOS_PER_DECOMMIT);
       const withdrawParams: WithdrawParams = {
-        kind: "merchant",
+        kind: 'merchant',
         withdraws: thisRoundUtxos.map((u) => {
           return { fundUtxo: u };
         }),
@@ -134,14 +133,14 @@ async function withdrawMerchantUtxos(
         .complete()
         .then((tx) => tx.toCBOR());
       await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
-      currentExpectedTag = "NotDecommitFinalized";
-      while (currentExpectedTag !== "DecommitFinalized") {
-        currentExpectedTag = await hydra.listen("DecommitFinalized");
-        if (currentExpectedTag === "DecommitInvalid") {
-          throw new Error("Decommit rejected by Hydra node");
+      currentExpectedTag = 'NotDecommitFinalized';
+      while (currentExpectedTag !== 'DecommitFinalized') {
+        currentExpectedTag = await hydra.listen('DecommitFinalized');
+        if (currentExpectedTag === 'DecommitInvalid') {
+          throw new Error('Decommit rejected by Hydra node');
         }
       }
-      logger.info("Decommit finalized.");
+      logger.info('Decommit finalized.');
     }
   }
 }

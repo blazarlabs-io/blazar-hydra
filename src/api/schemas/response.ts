@@ -1,4 +1,4 @@
-import { OutRef } from "@lucid-evolution/lucid";
+import { OutRef } from '@lucid-evolution/lucid';
 
 type QueryFundsResponse = {
   fundsInL1: OutRef[];

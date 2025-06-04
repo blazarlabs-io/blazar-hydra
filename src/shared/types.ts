@@ -1,11 +1,11 @@
-import { z } from "zod";
+import { z } from 'zod';
 import {
   Layer,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
-} from "../api/schemas/zod";
+} from '../api/schemas/zod';
 
 type DepositSchema = z.infer<typeof DepositZodSchema>;
 type ManageHeadSchema = z.infer<typeof ManageHeadZodSchema>;

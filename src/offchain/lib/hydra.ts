@@ -1,5 +1,5 @@
-import Websocket from "ws";
-import axios from "axios";
+import Websocket from 'ws';
+import axios from 'axios';
 import {
   Assets,
   CBORHex,
@@ -7,18 +7,17 @@ import {
   fromUnit,
   LucidEvolution,
   UTxO,
-} from "@lucid-evolution/lucid";
-import blake2b from "blake2b";
-import { logger } from "../../logger";
-import { HydraEvent } from "./hydra/schemas";
+} from '@lucid-evolution/lucid';
+import blake2b from 'blake2b';
+import { logger } from '../../logger';
 
 const ERROR_TAGS = [
-  "PeerHandshakeFailure",
-  "TxInvalid",
-  "InvalidInput",
-  "PostTxOnChainFailed",
-  "CommandFailed",
-  "DecommitInvalid",
+  'PeerHandshakeFailure',
+  'TxInvalid',
+  'InvalidInput',
+  'PostTxOnChainFailed',
+  'CommandFailed',
+  'DecommitInvalid',
 ];
 
 /**
@@ -37,12 +36,12 @@ class HydraHandler {
    * Initializes the HydraHandler class and sets up the WebSocket connection.
    */
   constructor(lucid: LucidEvolution, url: string) {
-    let wsURL = new URL(url);
-    wsURL.protocol = wsURL.protocol.replace("http", "ws");
+    const wsURL = new URL(url);
+    wsURL.protocol = wsURL.protocol.replace('http', 'ws');
 
     this.lucid = lucid;
     this.url = wsURL;
-    this.connection = new Websocket(wsURL + "?history=no");
+    this.connection = new Websocket(wsURL + '?history=no');
     this.setupEventHandlers();
   }
 
@@ -54,22 +53,23 @@ class HydraHandler {
 
   private setupEventHandlers() {
     this.connection.onopen = () => {
-      logger.debug("WebSocket connection opened.");
+      logger.debug('WebSocket connection opened.');
       this.isReady = true;
     };
 
-    this.connection.onerror = (error) => {
-      logger.error("Error on Hydra websocket");
+    this.connection.onerror = () => {
+      logger.error('Error on Hydra websocket');
     };
 
     this.connection.onclose = () => {
-      logger.debug("WebSocket connection closed.");
+      logger.debug('WebSocket connection closed.');
       this.isReady = false;
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private waitForMessage(tag: string, timeout = 10000): Promise<any> {
-    return new Promise((resolve, _) => {
+    return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
         resolve(`Timeout waiting for tag: ${tag}`);
       }, timeout);
@@ -96,7 +96,7 @@ class HydraHandler {
    * @returns  the tag when it is received from the Hydra node.
    */
   public async listen(tag: string): Promise<string> {
-    return new Promise((resolve, _) => {
+    return new Promise((resolve) => {
       this.connection.onopen = () => {
         logger.debug(`Awaiting for ${tag} events...`);
       };
@@ -129,23 +129,23 @@ class HydraHandler {
    */
   async init(): Promise<string> {
     await this.ensureConnectionReady();
-    logger.debug("Sending init command...");
-    this.connection.send(JSON.stringify({ tag: "Init" }));
+    logger.debug('Sending init command...');
+    this.connection.send(JSON.stringify({ tag: 'Init' }));
     return new Promise((resolve, _) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
-        console.log("Received data: ", data);
+        console.log('Received data: ', data);
         switch ([data.headStatus, data.tag]) {
           case [_]:
             break;
-          case [, "Greetings"]:
+          case [, 'Greetings']:
             break;
-          case [, "HeadIsInitializing"]:
-            logger.debug("Received HeadIsInitializing");
+          case [, 'HeadIsInitializing']:
+            logger.debug('Received HeadIsInitializing');
             resolve(data.tag);
             break;
           default:
-            logger.error("Unexpected message recibed upon Init: ", data.tag);
+            logger.error('Unexpected message recibed upon Init: ', data.tag);
             resolve(data.tag);
             break;
         }
@@ -159,20 +159,20 @@ class HydraHandler {
    */
   async abort(): Promise<void> {
     await this.ensureConnectionReady();
-    logger.debug("Aborting head opening...");
-    this.connection.send(JSON.stringify({ tag: "Abort" }));
-    return new Promise((resolve, _) => {
+    logger.debug('Aborting head opening...');
+    this.connection.send(JSON.stringify({ tag: 'Abort' }));
+    return new Promise((resolve) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
         switch (data.tag) {
-          case "Greetings":
+          case 'Greetings':
             break;
-          case "HeadIsAborted":
-            logger.debug("Received HeadIsAborted");
+          case 'HeadIsAborted':
+            logger.debug('Received HeadIsAborted');
             resolve(data.tag);
             break;
           default:
-            logger.error("Unexpected message recibed upon Abort: ", data.tag);
+            logger.error('Unexpected message recibed upon Abort: ', data.tag);
             resolve(data.tag);
             break;
         }
@@ -194,22 +194,26 @@ class HydraHandler {
   ): Promise<string> {
     try {
       const formatUtxos = (utxos: UTxO[]) =>
-        utxos.reduce((acc, utxo) => {
-          acc[`${utxo.txHash}#${utxo.outputIndex}`] =
-            lucidUtxoToHydraUtxo(utxo);
-          return acc;
-        }, {} as Record<string, any>);
+        utxos.reduce(
+          (acc, utxo) => {
+            acc[`${utxo.txHash}#${utxo.outputIndex}`] =
+              lucidUtxoToHydraUtxo(utxo);
+            return acc;
+          },
+          {} as Record<string, any> //eslint-disable-line
+        );
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payload: { blueprintTx?: any; utxo?: any } = {};
 
       if (utxos.length > 0) {
         if (blueprint) {
-          payload["blueprintTx"] = {
+          payload['blueprintTx'] = {
             cborHex: blueprint,
-            description: "",
-            type: "Tx ConwayEra",
+            description: '',
+            type: 'Tx ConwayEra',
           };
-          payload["utxo"] = formatUtxos(utxos);
+          payload['utxo'] = formatUtxos(utxos);
         } else {
           payload = formatUtxos(utxos);
         }
@@ -236,29 +240,29 @@ class HydraHandler {
    */
   async sendTx(tx: CBORHex): Promise<string> {
     await this.ensureConnectionReady();
-    logger.debug("Sending transaction...");
+    logger.debug('Sending transaction...');
     this.connection.send(
       JSON.stringify({
-        tag: "NewTx",
-        transaction: { cborHex: tx, description: "", type: "Tx BabbageEra" },
+        tag: 'NewTx',
+        transaction: { cborHex: tx, description: '', type: 'Tx BabbageEra' },
       })
     );
-    return new Promise((resolve, _) => {
+    return new Promise((resolve) => {
       this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
         const data = JSON.parse(msg.data.toString());
         switch (data.tag) {
-          case "Greetings":
+          case 'Greetings':
             break;
-          case "TxValid":
-            logger.debug("Received TxValid");
+          case 'TxValid':
+            logger.debug('Received TxValid');
             resolve(data.tag);
             break;
-          case "SnapshotConfirmed":
-            logger.debug("Received SnapshotConfirmed");
+          case 'SnapshotConfirmed':
+            logger.debug('Received SnapshotConfirmed');
             resolve(data.tag);
             break;
           default:
-            logger.error("Unexpected message recibed upon SendTx: ", data.tag);
+            logger.error('Unexpected message recibed upon SendTx: ', data.tag);
             resolve(data.tag);
             break;
         }
@@ -271,12 +275,13 @@ class HydraHandler {
    * @returns  an array of UTxOs from the snapshot.
    */
   async getSnapshot(): Promise<UTxO[]> {
-    const apiURL = `${this.url.origin.replace("ws", "http")}/snapshot/utxo`;
+    const apiURL = `${this.url.origin.replace('ws', 'http')}/snapshot/utxo`;
     try {
       const response = await axios.get(apiURL);
       const hydraUtxos = Object.entries(response.data);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const lucidUtxos = hydraUtxos.map((utxo: any) => {
-        const [hash, idx] = utxo[0].split("#");
+        const [hash, idx] = utxo[0].split('#');
         const output = utxo[1];
         return hydraUtxoToLucidUtxo(hash, idx, output);
       });
@@ -297,8 +302,8 @@ class HydraHandler {
     try {
       const payload = {
         cborHex: tx,
-        description: "",
-        type: "Tx BabbageEra",
+        description: '',
+        type: 'Tx BabbageEra',
       };
       const response = await axios.post(apiUrl, payload);
       return response.data;
@@ -314,9 +319,9 @@ class HydraHandler {
    */
   async close(): Promise<string> {
     await this.ensureConnectionReady();
-    logger.debug("Closing head...");
-    this.connection.send(JSON.stringify({ tag: "Close" }));
-    const data = await this.waitForMessage("HeadIsClosed", 30_000);
+    logger.debug('Closing head...');
+    this.connection.send(JSON.stringify({ tag: 'Close' }));
+    const data = await this.waitForMessage('HeadIsClosed', 30_000);
     return data.tag;
   }
 
@@ -326,9 +331,9 @@ class HydraHandler {
    */
   async fanout(): Promise<void> {
     await this.ensureConnectionReady();
-    logger.debug("Sending fanout command...");
-    this.connection.send(JSON.stringify({ tag: "Fanout" }));
-    await this.waitForMessage("HeadIsFinalized");
+    logger.debug('Sending fanout command...');
+    this.connection.send(JSON.stringify({ tag: 'Fanout' }));
+    await this.waitForMessage('HeadIsFinalized');
     await this.stop();
   }
 }
@@ -336,6 +341,7 @@ class HydraHandler {
 type HydraUtxo = {
   address: string;
   datum: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inlineDatum: any;
   inlineDatumhash: string | null;
   referenceScript: {
@@ -348,14 +354,14 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
   const address = utxo.address;
   const value: Record<string, number | Record<string, number>> = {};
   // Probably needs fix for datums which are not inlined
-  let datum = null;
+  const datum = null;
   let inlineDatum = null;
   let inlineDatumhash = null;
   let referenceScript = null;
 
   for (const [unit, amount] of Object.entries(utxo.assets)) {
-    if (unit === "lovelace") {
-      value["lovelace"] = Number(amount);
+    if (unit === 'lovelace') {
+      value['lovelace'] = Number(amount);
     } else {
       const fromU = fromUnit(unit);
       const currentValue =
@@ -373,14 +379,14 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
       )
     );
     inlineDatumhash = blake2b(32)
-      .update(Buffer.from(utxo.datum, "hex"))
-      .digest("hex");
+      .update(Buffer.from(utxo.datum, 'hex'))
+      .digest('hex');
   }
   if (utxo.scriptRef) {
     referenceScript = {
       script: {
         cborHex: utxo.scriptRef.script,
-        description: "",
+        description: '',
         type: utxo.scriptRef.type,
       },
       scriptLanguage: `PlutusScriptLanguage ${utxo.scriptRef.type}`,
@@ -396,13 +402,15 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydraUtxoToLucidUtxo(hash: string, idx: number, output: any): UTxO {
   const datumBytes = output.inlineDatum ? output.inlineDatumRaw : null;
   const assets: Assets = {};
   for (const [policy, value] of Object.entries(output.value)) {
-    if (policy === "lovelace") {
+    if (policy === 'lovelace') {
       assets[policy] = BigInt(value as number);
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const namesAndAmounts: [string, number][] = Object.entries(value as any);
       for (const [assetName, amount] of namesAndAmounts) {
         const unit = `${policy}${assetName}`;
@@ -432,7 +440,7 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
 
   const redeemersList = witnessSet.redeemers()?.as_arr_legacy_redeemer();
   if (!redeemersList) {
-    throw new Error("Could not find redeemers list");
+    throw new Error('Could not find redeemers list');
   }
   const redeemersMap = CML.MapRedeemerKeyToRedeemerVal.new(); //CML.Redeemers.map_redeemer_key_to_redeemer_val();
   for (let i = 0; i < redeemersList.len(); i++) {

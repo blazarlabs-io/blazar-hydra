@@ -5,23 +5,18 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      '**/node_modules/**',
-      '**/dist/**',
-      'dist/**',
-      './dist/**',
-      '**/plutus.ts',
-    ],
+    ignores: ['**/node_modules/**', '**/build/**', 'build/**', './build/**'],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,
   {
     rules: {
-      'no-unused-vars': 'error',
       'prefer-const': 'error',
-      'no-console': 'off',
+      'no-sparse-arrays': 'off',
       'no-empty-pattern': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
+      'no-case-declarations': 'off',
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': 'error',
       '@typescript-eslint/no-namespace': 'off',
     },
   }

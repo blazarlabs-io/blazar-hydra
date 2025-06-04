@@ -1,6 +1,6 @@
-import { prisma } from "../config";
-import { logger } from "../logger";
-import { DBStatus } from "../shared/prisma-schemas";
+import { prisma } from '../config';
+import { logger } from '../logger';
+import { DBStatus } from '../shared/prisma-schemas';
 
 export namespace DBOps {
   export const newHead = async () => {
@@ -11,7 +11,7 @@ export namespace DBOps {
         },
       })
       .catch((error) => {
-        logger.error("DB Error while opening head: " + error);
+        logger.error('DB Error while opening head: ' + error);
         throw error;
       });
     return newProcess.id;

@@ -7,10 +7,10 @@ import {
   utxoToCore,
   validatorToAddress,
   validatorToRewardAddress,
-} from "@lucid-evolution/lucid";
-import { CommitFundsParams } from "../lib/params";
-import { Combined, Spend } from "../lib/types";
-import { getNetworkFromLucid } from "../lib/utils";
+} from '@lucid-evolution/lucid';
+import { CommitFundsParams } from '../lib/params';
+import { Combined, Spend } from '../lib/types';
+import { getNetworkFromLucid } from '../lib/utils';
 
 /**
  * Builds a transaction to commit funds to a Hydra head. If there are no user funds to commit,
@@ -40,11 +40,11 @@ async function commitFunds(
     return { tx: undefined };
   }
 
-  let allInputs = userFundUtxos;
+  const allInputs = userFundUtxos;
   if (adminCollateral) {
     allInputs.push(adminCollateral);
   }
-  const sortedInputs = sortUTxOs(allInputs, "Canonical");
+  const sortedInputs = sortUTxOs(allInputs, 'Canonical');
 
   // Build Initial txbody
   const inputs = CML.TransactionInputList.new();

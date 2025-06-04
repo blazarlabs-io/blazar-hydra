@@ -1,12 +1,11 @@
-import e from "express";
-import { API_ROUTES } from "../schemas/routes";
-import { ERRORS } from "../schemas/errors";
+import e from 'express';
+import { API_ROUTES } from '../schemas/routes';
 import {
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
-} from "../schemas/zod";
+} from '../schemas/zod';
 import {
   finalizeCloseHead,
   finalizeOpenHead,
@@ -16,11 +15,19 @@ import {
   handlePay,
   handleQueryFunds,
   handleWithdraw,
-} from "../../offchain";
-import { LucidEvolution } from "@lucid-evolution/lucid";
-import { JSONBig } from "./server";
-import { logger } from "../../logger";
-import { prisma } from "../../config";
+} from '../../offchain';
+import { LucidEvolution } from '@lucid-evolution/lucid';
+import { JSONBig } from './server';
+import { logger } from '../../logger';
+import { prisma } from '../../config';
+
+enum ERRORS {
+  ADDRESS_NOT_FOUND = "The provided address couldn't be found on the protocol",
+  BAD_REQUEST = 'Bad Request',
+  FORBIDDEN = 'Forbidden',
+  INTERNAL_SERVER_ERROR = 'Internal Server Error',
+  UTXO_NOT_FOUND = 'Funds UTxO not found',
+}
 
 const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
   // User Routes
@@ -36,7 +43,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
           .status(500)
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
         logger.error(`500 - ${API_ROUTES.DEPOSIT}: ${e}`);
-      } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
         logger.error(`400 - ${API_ROUTES.DEPOSIT}: ${e}`);
       } else {
@@ -60,7 +67,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
           .status(500)
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
         logger.error(`500 - ${API_ROUTES.WITHDRAW}: ${e}`);
-      } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
         logger.error(`400 - ${API_ROUTES.WITHDRAW}: ${e}`);
       } else {
@@ -84,7 +91,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
           .status(500)
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
         logger.error(`500 - ${API_ROUTES.PAY}: ${e}`);
-      } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
         logger.error(`400 - ${API_ROUTES.PAY}: ${e}`);
       } else {
@@ -96,7 +103,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     }
   });
 
-  expressApp.get("/state", async (req, res) => {
+  expressApp.get('/state', async (req, res) => {
     try {
       const procId = req.query.id as string;
       const process = await prisma.process
@@ -104,7 +111,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
           where: { id: procId },
         })
         .catch((error) => {
-          logger.error("DB Error while fetching status: " + error);
+          logger.error('DB Error while fetching status: ' + error);
           throw error;
         });
       res.status(200).json({ status: process.status });
@@ -139,7 +146,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       if (e instanceof Error) {
         logger.error(`500 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
         res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
-      } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
         logger.error(`400 - ${API_ROUTES.OPEN_HEAD}`);
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}` });
       } else {
@@ -162,7 +169,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
           .status(500)
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
         logger.error(`500 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
-      } else if (typeof e === "string" && e.includes("InputsExhaustedError")) {
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
         res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
         logger.error(`400 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
       } else {

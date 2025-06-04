@@ -3,12 +3,11 @@ import {
   fromUnit,
   getAddressDetails,
   LucidEvolution,
-  sortUTxOs,
   TxSignBuilder,
   validatorToAddress,
   validatorToRewardAddress,
-} from "@lucid-evolution/lucid";
-import { WithdrawParams } from "../lib/params";
+} from '@lucid-evolution/lucid';
+import { WithdrawParams } from '../lib/params';
 import {
   Combined,
   FundsDatum,
@@ -16,13 +15,12 @@ import {
   Mint,
   Spend,
   WithdrawInfoT,
-} from "../lib/types";
+} from '../lib/types';
 import {
   dataAddressToBech32,
   getNetworkFromLucid,
   getValidator,
-} from "../lib/utils";
-import _ from "lodash";
+} from '../lib/utils';
 
 async function withdraw(
   lucid: LucidEvolution,
@@ -38,7 +36,7 @@ async function withdraw(
   const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
-    throw new Error("Invalid script address");
+    throw new Error('Invalid script address');
   }
 
   const sortedInputs = withdraws.sort((a, b) => {
@@ -53,16 +51,16 @@ async function withdraw(
     const fundsUtxo = sortedInputs[i].fundUtxo;
     const sig = sortedInputs[i].signature;
     if (!fundsUtxo.datum) {
-      throw new Error("Funds UTxO datum not found");
+      throw new Error('Funds UTxO datum not found');
     }
     const datum = Data.from<FundsDatumT>(fundsUtxo.datum, FundsDatum);
     const address = dataAddressToBech32(lucid, datum.addr);
-    const totalFunds = fundsUtxo.assets["lovelace"];
+    const totalFunds = fundsUtxo.assets['lovelace'];
     const validationToken = Object.keys(fundsUtxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
-      throw new Error("Validation token not found in funds UTxO");
+      throw new Error('Validation token not found in funds UTxO');
     }
     const withdrawInfo: WithdrawInfoT = {
       ref: {
@@ -71,27 +69,27 @@ async function withdraw(
       },
     };
     const redeemer =
-      kind === "merchant"
+      kind === 'merchant'
         ? Spend.MerchantWithdraw
         : Spend.UserWithdraw(withdrawInfo, sig!);
 
     tx.collectFrom([fundsUtxo], redeemer);
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
-    tx.pay.ToAddress(address, { ["lovelace"]: totalFunds });
+    tx.pay.ToAddress(address, { ['lovelace']: totalFunds });
   }
 
   // Complete transaction
   if (walletUtxos) {
     tx.collectFrom(walletUtxos);
   }
-  if (kind === "user") {
+  if (kind === 'user') {
     tx.readFrom([validatorRef!]);
   }
 
   const rewardAddress = validatorToRewardAddress(network, validator);
   const txSignBuilder = await tx
     .withdraw(rewardAddress, 0n, Combined.CombinedWithdraw)
-    .attachMetadata(674, { msg: "HydraPay: Withdraw" })
+    .attachMetadata(674, { msg: 'HydraPay: Withdraw' })
     .complete();
 
   return { tx: txSignBuilder };

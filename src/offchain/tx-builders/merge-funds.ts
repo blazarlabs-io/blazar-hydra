@@ -9,14 +9,14 @@ import {
   UTxO,
   validatorToAddress,
   validatorToRewardAddress,
-} from "@lucid-evolution/lucid";
-import { MergeFundsParams } from "../lib/params";
-import { Combined, Mint, Spend } from "../lib/types";
-import { getNetworkFromLucid } from "../lib/utils";
+} from '@lucid-evolution/lucid';
+import { MergeFundsParams } from '../lib/params';
+import { Combined, Mint, Spend } from '../lib/types';
+import { getNetworkFromLucid } from '../lib/utils';
 
 async function mergeFunds(
   lucid: LucidEvolution,
-  params: MergeFundsParams,
+  params: MergeFundsParams
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef; newAdminUtxos: UTxO[] }> {
   const { userFundsUtxos, adminUtxos, validatorRef } = params;
   lucid.overrideUTxOs(adminUtxos);
@@ -25,28 +25,28 @@ async function mergeFunds(
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
   if (!validator) {
-    throw new Error("Invalid validator reference");
+    throw new Error('Invalid validator reference');
   }
   const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
   if (!policyId) {
-    throw new Error("Invalid script address");
+    throw new Error('Invalid script address');
   }
 
   // Build transaction values and datum
   const userFunds = userFundsUtxos.reduce(
-    (acc, utxo) => acc + utxo.assets["lovelace"],
-    0n,
+    (acc, utxo) => acc + utxo.assets['lovelace'],
+    0n
   );
   const validationToken = Object.keys(userFundsUtxos[0].assets).find(
-    (asset) => fromUnit(asset).policyId === policyId,
+    (asset) => fromUnit(asset).policyId === policyId
   );
   if (!validationToken) {
     throw new Error(
       `Couldn't find validation token in ${JSON.stringify({
         hash: userFundsUtxos[0].txHash,
         index: userFundsUtxos[0].outputIndex,
-      })}`,
+      })}`
     );
   }
   const newFundsValue = {
@@ -54,7 +54,7 @@ async function mergeFunds(
     [validationToken]: 1n,
   };
   if (!userFundsUtxos[0].datum) {
-    throw new Error("Invalid user funds UTxO");
+    throw new Error('Invalid user funds UTxO');
   }
 
   // Start transaction building
@@ -66,8 +66,8 @@ async function mergeFunds(
     .collectFrom(userFundsUtxos, Spend.Merge)
     .pay.ToContract(
       scriptAddress,
-      { kind: "inline", value: userFundsUtxos[0].datum },
-      newFundsValue,
+      { kind: 'inline', value: userFundsUtxos[0].datum },
+      newFundsValue
     )
     .withdraw(rewardAddress, 0n, Combined.CombinedMerge);
 
@@ -75,14 +75,14 @@ async function mergeFunds(
   for (let i = 1; i < userFundsUtxos.length; i++) {
     const utxo = userFundsUtxos[i];
     const validationToken = Object.keys(utxo.assets).find(
-      (asset) => fromUnit(asset).policyId === policyId,
+      (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
       throw new Error(
         `Couldn't find validation token in ${JSON.stringify({
           hash: userFundsUtxos[0].txHash,
           index: userFundsUtxos[0].outputIndex,
-        })}`,
+        })}`
       );
     }
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
@@ -104,11 +104,11 @@ async function mergeFunds(
   for (let i = 0; i < txOutputs.len(); i++) {
     const output = txOutputs.get(i);
     if (output.address().to_bech32() === adminAddress) {
-      let input = CML.TransactionInput.new(
+      const input = CML.TransactionInput.new(
         CML.TransactionHash.from_hex(txSignBuilder.toHash()),
-        BigInt(i),
+        BigInt(i)
       );
-      let utxo = CML.TransactionUnspentOutput.new(input, output);
+      const utxo = CML.TransactionUnspentOutput.new(input, output);
       newAdminUtxos.push(coreToUtxo(utxo));
     }
   }

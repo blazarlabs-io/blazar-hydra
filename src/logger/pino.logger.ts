@@ -1,5 +1,5 @@
-import { pino, Logger as PinoLoggerImpl, DestinationStream } from "pino";
-import { LOG_LEVELS, Logger } from "./definition";
+import { pino, Logger as PinoLoggerImpl, DestinationStream } from 'pino';
+import { LOG_LEVELS, Logger } from './definition';
 
 export default class PinoLogger implements Logger {
   readonly #logger: PinoLoggerImpl;
@@ -7,13 +7,13 @@ export default class PinoLogger implements Logger {
   constructor(
     private level: LOG_LEVELS,
     private prettyPrintEnabled: boolean,
-    private destStream?: DestinationStream | string,
+    private destStream?: DestinationStream | string
   ) {
     this.#logger = pino({
       level,
       transport: prettyPrintEnabled
         ? {
-            target: "pino-pretty",
+            target: 'pino-pretty',
             options: {
               colorize: true,
               sync: true,

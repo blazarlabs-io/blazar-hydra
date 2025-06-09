@@ -45,7 +45,9 @@ async function handleOpenHead(
     const hydra = new HydraHandler(localLucid, wsUrl);
     let initTag = await hydra.init();
     if (initTag !== 'HeadIsInitializing') {
-      logger.error(`Found tag: ${initTag}. Expected: HeadIsInitializing. Retrying...`);
+      logger.error(
+        `Found tag: ${initTag}. Expected: HeadIsInitializing. Retrying...`
+      );
       initTag = await hydra.listen('HeadIsInitializing');
     }
     const processId = await DBOps.newHead();

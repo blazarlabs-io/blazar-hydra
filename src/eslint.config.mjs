@@ -15,6 +15,7 @@ export default tseslint.config(
       'no-sparse-arrays': 'off',
       'no-empty-pattern': 'off',
       'no-case-declarations': 'off',
+      'no-async-promise-executor': 'off',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': 'error',
       '@typescript-eslint/no-namespace': 'off',

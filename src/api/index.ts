@@ -6,13 +6,6 @@ import { setRoutes } from './entry-points/routes';
 import { Blockfrost, Lucid, Network } from '@lucid-evolution/lucid';
 
 const startServer = async () => {
-  logger.configureLogger(
-    {
-      level: 'debug', //env.LOGGER_LEVEL,
-      prettyPrint: true, //env.PRETTY_PRINT,
-    },
-    false
-  );
   const PORT = env.PORT;
   const app = createServer();
   const lucid = await Lucid(

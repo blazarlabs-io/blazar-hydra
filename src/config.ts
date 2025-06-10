@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
-import { logger } from './logger';
 
 dotenv.config();
 const envSchema = z
@@ -21,36 +20,16 @@ const envSchema = z
     NETWORK: z.string(),
     VALIDATOR_REF: z.string(),
     ADMIN_KEY: z.string(),
-    HYDRA_KEY: z.string(),
+    HYDRA_INITIAL_KEY: z.string(),
+    HYDRA_DEPOSIT_KEY: z.string(),
     SEED: z.string(),
     ADMIN_NODE_WS_URL: z.string(),
     ADMIN_NODE_API_URL: z.string(),
-    ADMIN_ADDRESS: z.string(),
-    USER_ADDRESS: z.string(),
-    USER_SEED: z.string(),
-    USER_ADDRESS_2: z.string(),
-    USER_SEED_2: z.string(),
-    LOGGER_LEVEL: z
-      .string()
-      .refine(
-        (val) => ['error', 'warn', 'info', 'debug'].includes(val.toLowerCase()),
-        "Invalid logger level: must be one of 'error', 'warn', 'info', or 'debug'"
-      )
-      .default('info')
-      .transform((val) => val.toLowerCase()),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;
 const env = envSchema.parse(process.env);
 
 const prisma = new PrismaClient();
-
-logger.configureLogger(
-  {
-    level: env.LOGGER_LEVEL as 'error' | 'warn' | 'info' | 'debug',
-    prettyPrint: true,
-  },
-  false
-);
 
 export { env, EnvSchema, prisma };

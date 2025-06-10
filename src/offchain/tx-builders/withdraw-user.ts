@@ -27,11 +27,17 @@ async function withdraw(
   params: WithdrawParams
 ): Promise<{ tx: TxSignBuilder }> {
   const tx = lucid.newTx();
-  const { kind, withdraws, adminKey, hydraKey, validatorRef, walletUtxos } =
-    params;
+  const {
+    kind,
+    withdraws,
+    adminKey,
+    hydraInitialKey,
+    validatorRef,
+    walletUtxos,
+  } = params;
 
   // Script UTxO related boilerplate
-  const validator = getValidator(validatorRef, adminKey, hydraKey);
+  const validator = getValidator(validatorRef, adminKey, hydraInitialKey);
   const network = getNetworkFromLucid(lucid);
   const scriptAddress = validatorToAddress(network, validator);
   const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;

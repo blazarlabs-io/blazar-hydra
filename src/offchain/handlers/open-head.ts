@@ -77,7 +77,7 @@ async function finalizeOpenHead(
   const localLucid = _.cloneDeep(lucid);
   const network = getNetworkFromLucid(localLucid);
   const { peer_api_urls: peerUrls } = params;
-  const { ADMIN_ADDRESS: adminAddress, VALIDATOR_REF: vRef } = env;
+  const { VALIDATOR_REF: vRef } = env;
   try {
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
 
@@ -93,6 +93,7 @@ async function finalizeOpenHead(
       .then((utxos) => utxos.slice(0, maxScriptUtxos));
 
     // Step 3: Collect deposits and merge them for each user
+    const adminAddress = await localLucid.wallet().address();
     const usersDeposits: Map<string, UTxO[]> = collectUsersDeposits(
       localLucid,
       scriptUtxos

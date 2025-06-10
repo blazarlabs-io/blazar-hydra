@@ -25,12 +25,12 @@ async function withdrawMerchant(
   lucid: LucidEvolution,
   params: WithdrawParams
 ): Promise<{ tx: TxSignBuilder }> {
-  const { adminKey, hydraKey, withdraws, walletUtxos } = params;
-  if (!adminKey || !hydraKey) {
+  const { adminKey, hydraInitialKey, withdraws, walletUtxos } = params;
+  if (!adminKey || !hydraInitialKey) {
     throw new Error('Must provide validator keys to build withdraw tx on L2');
   }
   const validator = buildValidator(adminKey, {
-    Script_cred: { Key: hydraKey },
+    Script_cred: { Key: hydraInitialKey },
   });
   if (!validator) {
     throw new Error('Invalid validator');

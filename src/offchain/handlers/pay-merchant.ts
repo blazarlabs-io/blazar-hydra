@@ -21,16 +21,17 @@ async function handlePay(
       signature,
       merchant_funds_utxo,
     } = params;
-    const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
-    let merchantFundsUtxo: UTxO | undefined;
+    const { ADMIN_KEY: adminKey, HYDRA_INITIAL_KEY: hydraKey } = env;
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
+    let merchantFundsUtxo: UTxO | undefined;
     const utxosInL2 = await hydra.getSnapshot();
     const { hash: txHash, index: outputIndex } = funds_utxo_ref;
     const userFundsUtxo: UTxO | undefined = utxosInL2.find((utxo) => {
       return utxo.txHash === txHash && BigInt(utxo.outputIndex) === outputIndex;
     });
+    const adminAddress = await localLucid.wallet().address();
     const adminCollateral = utxosInL2.find(
-      (utxo) => utxo.address === env.ADMIN_ADDRESS
+      (utxo) => utxo.address === adminAddress
     );
     if (!userFundsUtxo || !adminCollateral) {
       throw new Error(`User funds or collateral utxo not found`);

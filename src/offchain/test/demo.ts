@@ -33,6 +33,8 @@ import {
 import axios from 'axios';
 import JSONbig from 'json-bigint';
 import { API_ROUTES } from '../../api/schemas/routes';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
@@ -83,7 +85,9 @@ const openHead = async () => {
 };
 
 const deposit = async (fromWallet: 1 | 2) => {
-  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
+  const thisSeed = (
+    fromWallet === 1 ? process.env.USER_SEED : process.env.USER_SEED_2
+  ) as string;
   lucid.selectWallet.fromSeed(thisSeed);
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed);
@@ -124,8 +128,9 @@ const pay = async (
 ) => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   const utxos = await hydra.getSnapshot();
+  const adminAddress = await lucid.wallet().address();
   const [fRef] = utxos.filter((utxo) => {
-    if (utxo.address === env.ADMIN_ADDRESS) {
+    if (utxo.address === adminAddress) {
       return false;
     }
     const dat = utxo.datum;
@@ -144,7 +149,9 @@ const pay = async (
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
-  const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
+  const signatureSeed = (
+    withWallet === 1 ? process.env.USER_SEED : process.env.USER_SEED_2
+  ) as string;
   const userPrivKey = getPrivateKey(signatureSeed);
   const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), 'hex');
   const sig = userPrivKey.sign(msg).to_hex();
@@ -287,7 +294,9 @@ switch (trace) {
       );
     }
     const withWallet = user === 'user1' ? 1 : 2;
-    const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
+    const userAddr = (
+      withWallet === 1 ? process.env.USER_ADDRESS : process.env.USER_ADDRESS_2
+    ) as string;
     await pay(BigInt(amount), userAddr, mAddr, withWallet);
     break;
   case 'fanout':
@@ -299,20 +308,25 @@ switch (trace) {
       throw new Error('Missing from. Provide one with --from');
     }
     const wallet = from === 'user1' ? 1 : 2;
-    const addr = wallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
-    const seed = wallet === 1 ? env.USER_SEED : env.USER_SEED_2;
+    const addr = (
+      wallet === 1 ? process.env.USER_ADDRESS : process.env.USER_ADDRESS_2
+    ) as string;
+    const seed = (
+      wallet === 1 ? process.env.USER_SEED : process.env.USER_SEED_2
+    ) as string;
     await withdraw(addr, seed);
     break;
   case 'paymany':
     const hydra = new HydraHandler(lucid, aliceWsUrl);
     const utxos = await hydra.getSnapshot();
+    const adminAddress = await lucid.wallet().address();
     utxos
       .filter((utxo) => {
         const dat = utxo.datum;
         if (!dat) {
           return false;
         }
-        if (utxo.address == env.ADMIN_ADDRESS) {
+        if (utxo.address == adminAddress) {
           return false;
         }
         const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type;
@@ -322,7 +336,12 @@ switch (trace) {
         return utxo.txHash + '#' + utxo.outputIndex;
       })
       .forEach(async () => {
-        await pay(2000000n, env.USER_ADDRESS_2, env.USER_ADDRESS, 2);
+        await pay(
+          2000000n,
+          process.env.USER_ADDRESS_2!,
+          process.env.USER_ADDRESS!,
+          2
+        );
         await hydra.listen('TxValid');
       });
     console.dir('Many payments done', { depth: null });

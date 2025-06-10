@@ -14,15 +14,15 @@ import { getNetworkFromLucid } from '../lib/utils';
 
 async function deployScript(
   admin_key?: string,
-  hydra_key?: string,
+  hydra_initial_key?: string,
   lucid_config?: LucidEvolution
 ): Promise<{ txDeployHash: string }> {
-  if (!admin_key || !hydra_key) {
+  if (!admin_key || !hydra_initial_key) {
     console.log('Using validator parameters from environment file.');
   }
 
   const adminKey = admin_key ?? env.ADMIN_KEY;
-  const hydraKey = hydra_key ?? env.HYDRA_KEY;
+  const hydraInitialKey = hydra_initial_key ?? env.HYDRA_INITIAL_KEY;
 
   const lucid =
     lucid_config ??
@@ -35,7 +35,7 @@ async function deployScript(
 
   // TODO implement a proper script to hold the validator?
   const validator = buildValidator(adminKey, {
-    Script_cred: { Key: hydraKey },
+    Script_cred: { Key: hydraInitialKey },
   });
   const rewardAddress = validatorToRewardAddress(network, validator);
   const refScriptAddress = validatorToAddress(
@@ -66,9 +66,9 @@ export { deployScript };
 
 // Arguments passed when run as npm script from /src
 const admin_key = process.env.npm_config_admin_key;
-const hydra_key = process.env.npm_config_hydra_key;
+const hydra_initial_key = process.env.npm_config_hydra_initial_key;
 
-if (admin_key && hydra_key) {
-  const { txDeployHash } = await deployScript(admin_key, hydra_key);
+if (admin_key && hydra_initial_key) {
+  const { txDeployHash } = await deployScript(admin_key, hydra_initial_key);
   console.log(`Deployed script with tx hash: ${txDeployHash}`);
 }

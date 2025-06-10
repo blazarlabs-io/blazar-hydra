@@ -22,7 +22,7 @@ type WithdrawParams = {
   withdraws: Withdraw[];
   address?: string;
   adminKey?: string;
-  hydraKey?: string;
+  hydraInitialKey?: string;
   validatorRef?: UTxO;
   walletUtxos?: UTxO[];
 };

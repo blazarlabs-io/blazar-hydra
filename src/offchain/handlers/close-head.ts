@@ -34,10 +34,11 @@ async function handleCloseHead(processId: string): Promise<{ status: string }> {
  */
 async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
   try {
-    const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
-    const { ADMIN_ADDRESS: adminAddress, ADMIN_NODE_WS_URL: wsUrl } = env;
+    const { ADMIN_KEY: adminKey, HYDRA_INITIAL_KEY: hydraInitialKey } = env;
+    const { ADMIN_NODE_WS_URL: wsUrl } = env;
     const localLucid = _.cloneDeep(lucid);
     localLucid.selectWallet.fromSeed(env.SEED);
+    const adminAddress = await localLucid.wallet().address();
     const hydra = new HydraHandler(localLucid, wsUrl);
 
     // Step 1: Withdraw Merchant utxos
@@ -54,7 +55,7 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
       localLucid,
       adminAddress,
       adminKey,
-      hydraKey,
+      hydraInitialKey,
       merchantUtxos
     );
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
@@ -102,7 +103,7 @@ async function withdrawMerchantUtxos(
   lucid: LucidEvolution,
   adminAddress: string,
   adminKey: string,
-  hydraKey: string,
+  hydraInitialKey: string,
   merchantUtxos: UTxO[]
 ) {
   let currentExpectedTag = '';
@@ -128,7 +129,7 @@ async function withdrawMerchantUtxos(
           return { fundUtxo: u };
         }),
         adminKey,
-        hydraKey,
+        hydraInitialKey,
         walletUtxos,
       };
       const { tx } = await withdrawMerchant(lucid, withdrawParams);

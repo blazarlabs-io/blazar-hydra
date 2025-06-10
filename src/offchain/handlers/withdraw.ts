@@ -17,7 +17,7 @@ async function handleWithdraw(
     const { address, owner, funds_utxos, network_layer } = params;
     const {
       ADMIN_KEY: adminKey,
-      HYDRA_KEY: hydraKey,
+      HYDRA_INITIAL_KEY: hydraInitialKey,
       VALIDATOR_REF: vRef,
     } = env;
 
@@ -48,7 +48,7 @@ async function handleWithdraw(
         withdrawParams = {
           ...withdrawParams,
           adminKey,
-          hydraKey,
+          hydraInitialKey,
           withdraws: fundsUtxos.map((utxo) => {
             return { fundUtxo: utxo };
           }),

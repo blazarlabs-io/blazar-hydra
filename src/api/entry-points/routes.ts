@@ -3,6 +3,7 @@ import { API_ROUTES } from '../schemas/routes';
 import {
   DepositZodSchema,
   ManageHeadZodSchema,
+  PartialCommitZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
 } from '../schemas/zod';
@@ -20,6 +21,7 @@ import { LucidEvolution } from '@lucid-evolution/lucid';
 import { JSONBig } from './server';
 import { logger } from '../../logger';
 import { prisma } from '../../config';
+import { handlePartialCommit } from '../../offchain/handlers/partial-commit';
 
 enum ERRORS {
   ADDRESS_NOT_FOUND = "The provided address couldn't be found on the protocol",
@@ -30,7 +32,111 @@ enum ERRORS {
 }
 
 const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
-  // User Routes
+  /**
+   * Admin Routes
+   * Paths:
+   * - POST /open-head
+   * - POST /close-head
+   * - POST /partial-commit
+   * - GET /state
+   */
+  expressApp.post(API_ROUTES.OPEN_HEAD, async (req, res) => {
+    try {
+      const openHeadSchema = ManageHeadZodSchema.parse(req.body);
+      const _res = await handleOpenHead(lucid);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
+      logger.info(`200 - ${API_ROUTES.OPEN_HEAD}`);
+      finalizeOpenHead(lucid, openHeadSchema, _res.operationId);
+    } catch (e) {
+      if (e instanceof Error) {
+        logger.error(`500 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
+        res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+        logger.error(`400 - ${API_ROUTES.OPEN_HEAD}`);
+        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}` });
+      } else {
+        logger.error(`520 - ${API_ROUTES.OPEN_HEAD}`);
+        res.status(520).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
+      }
+    }
+  });
+
+  expressApp.post(API_ROUTES.CLOSE_HEAD, async (req, res) => {
+    try {
+      const procId = req.query.id as string;
+      const _res = await handleCloseHead(procId);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
+      logger.info(`200 - ${API_ROUTES.CLOSE_HEAD}`);
+      finalizeCloseHead(lucid, procId);
+    } catch (e) {
+      if (e instanceof Error) {
+        res
+          .status(500)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        logger.error(`500 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
+        logger.error(`400 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
+      } else {
+        res
+          .status(520)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        logger.error(`520 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
+      }
+    }
+  });
+
+  expressApp.post(API_ROUTES.PARTIAL_COMMIT, async (req, res) => {
+    try {
+      const partialCommitSchema = PartialCommitZodSchema.parse(req.body);
+      const _res = await handlePartialCommit(lucid, partialCommitSchema);
+      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
+      logger.info(`200 - ${API_ROUTES.PARTIAL_COMMIT}`);
+    } catch (e) {
+      if (e instanceof Error) {
+        res
+          .status(500)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        logger.error(`500 - ${API_ROUTES.PARTIAL_COMMIT}: ${e}`);
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
+        logger.error(`400 - ${API_ROUTES.PARTIAL_COMMIT}: ${e}`);
+      } else {
+        res
+          .status(520)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        logger.error(`520 - ${API_ROUTES.PARTIAL_COMMIT}: ${e}`);
+      }
+    }
+  });
+
+  expressApp.get('/state', async (req, res) => {
+    try {
+      const procId = req.query.id as string;
+      const process = await prisma.process
+        .findUniqueOrThrow({
+          where: { id: procId },
+        })
+        .catch((error) => {
+          logger.error('DB Error while fetching status: ' + error);
+          throw error;
+        });
+      res.status(200).json({ status: process.status });
+      logger.info(`200 - /state`);
+    } catch (e) {
+      res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+      logger.error(`400 - /state: ${e}`);
+    }
+  });
+
+  /**
+   * User Routes
+   * Paths:
+   * - POST /deposit
+   * - POST /withdraw
+   * - POST /pay
+   * - GET /query-funds
+   */
   expressApp.post(API_ROUTES.DEPOSIT, async (req, res) => {
     try {
       const depositSchema = DepositZodSchema.parse(req.body);
@@ -103,25 +209,6 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     }
   });
 
-  expressApp.get('/state', async (req, res) => {
-    try {
-      const procId = req.query.id as string;
-      const process = await prisma.process
-        .findUniqueOrThrow({
-          where: { id: procId },
-        })
-        .catch((error) => {
-          logger.error('DB Error while fetching status: ' + error);
-          throw error;
-        });
-      res.status(200).json({ status: process.status });
-      logger.info(`200 - /state`);
-    } catch (e) {
-      res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
-      logger.error(`400 - /state: ${e}`);
-    }
-  });
-
   expressApp.get(API_ROUTES.QUERY_FUNDS, async (req, res) => {
     try {
       const { address } = req.query as { address: string };
@@ -131,53 +218,6 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
     } catch (e) {
       res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
       logger.error(`500 - ${API_ROUTES.QUERY_FUNDS}: ${e}`);
-    }
-  });
-
-  // Admin Routes
-  expressApp.post(API_ROUTES.OPEN_HEAD, async (req, res) => {
-    try {
-      const openHeadSchema = ManageHeadZodSchema.parse(req.body);
-      const _res = await handleOpenHead(lucid);
-      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
-      logger.info(`200 - ${API_ROUTES.OPEN_HEAD}`);
-      finalizeOpenHead(lucid, openHeadSchema, _res.operationId);
-    } catch (e) {
-      if (e instanceof Error) {
-        logger.error(`500 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
-        res.status(500).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
-      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
-        logger.error(`400 - ${API_ROUTES.OPEN_HEAD}`);
-        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}` });
-      } else {
-        logger.error(`520 - ${API_ROUTES.OPEN_HEAD}`);
-        res.status(520).json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}` });
-      }
-    }
-  });
-
-  expressApp.post(API_ROUTES.CLOSE_HEAD, async (req, res) => {
-    try {
-      const procId = req.query.id as string;
-      const _res = await handleCloseHead(procId);
-      res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
-      logger.info(`200 - ${API_ROUTES.CLOSE_HEAD}`);
-      finalizeCloseHead(lucid, procId);
-    } catch (e) {
-      if (e instanceof Error) {
-        res
-          .status(500)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
-        logger.error(`500 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
-      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
-        res.status(400).json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
-        logger.error(`400 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
-      } else {
-        res
-          .status(520)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
-        logger.error(`520 - ${API_ROUTES.CLOSE_HEAD}: ${e}`);
-      }
     }
   });
 };

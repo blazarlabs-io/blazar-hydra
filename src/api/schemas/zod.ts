@@ -159,10 +159,13 @@ const ManageHeadZodSchema = z.object({
   peer_api_urls: z.array(z.string()),
 });
 
+const PartialCommitZodSchema = z.object({});
+
 export {
   Layer,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,
+  PartialCommitZodSchema,
   WithdrawZodSchema,
 };

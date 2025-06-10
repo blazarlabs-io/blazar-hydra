@@ -17,6 +17,7 @@ pub type FundsDatum {
 pub type FundsRedeemer {
   AddFunds
   Commit
+  PartialCommit
   Merge
   Pay { info: PayInfo, sig: Signature }
   UserWithdraw { info: WithdrawInfo, sig: Signature }
@@ -37,6 +38,7 @@ pub type CombinedFundsActions {
   CombinedCommit
   CombinedMerge
   CombinedWithdraw
+  CombinedPartialCommit
 }
 
 pub type MintRedeemer {

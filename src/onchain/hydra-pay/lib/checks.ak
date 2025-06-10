@@ -6,7 +6,7 @@ use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash, blake2b_224,
   verify_ed25519_signature,
 }
-use cardano/address.{Address, Credential, Script, from_script, VerificationKey}
+use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
   lovelace_of, match, quantity_of, tokens, without_lovelace,
@@ -17,8 +17,9 @@ use cardano/transaction.{
 }
 use config.{add_funds_min_lovelace}
 use types.{
-  AddFunds, CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
-  HydraCommit, Merchant, PayInfo, User, WithdrawInfo,
+  AddFunds, CombinedCommit, CombinedMerge, CombinedPartialCommit,
+  CombinedWithdraw, FundsDatum, HydraCommit, Merchant, PayInfo, User,
+  WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -547,4 +548,24 @@ fn recursive_withdraw_checks(
     }
     _ -> False?
   }
+}
+
+pub fn validate_partial_commit(
+  datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
+) {
+  expect User { public_key: _public_key } = datum.funds_type
+
+  check_withdraw_is_present(own_input, CombinedPartialCommit, tx)
+}
+
+pub fn validate_combined_partial_commit(
+  _own_hash: ScriptHash,
+  admin_key: VerificationKeyHash,
+  _hydra_script: Credential,
+  tx: Transaction,
+) {
+  // Must be authorized by the admin
+  list.any(tx.extra_signatories, fn(sig) { sig == admin_key })?
 }

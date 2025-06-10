@@ -44,15 +44,21 @@ async function handleOpenHead(
     logger.info('Initializing head...');
     const hydra = new HydraHandler(localLucid, wsUrl);
     let initTag = await hydra.init();
-    initTag = await hydra.listen('HeadIsInitializing');
     if (initTag !== 'HeadIsInitializing') {
-      logger.error(`Found tag: ${initTag}`);
+      logger.error(
+        `Found tag: ${initTag}. Expected: HeadIsInitializing. Retrying...`
+      );
+      initTag = await hydra.listen('HeadIsInitializing');
     }
     const processId = await DBOps.newHead();
     await hydra.stop();
     return { operationId: processId };
   } catch (error) {
     logger.error('Error while initializing head');
+    const hydra = new HydraHandler(lucid, env.ADMIN_NODE_WS_URL);
+    await hydra.abort();
+    await hydra.listen('HeadIsAborted');
+    await hydra.stop();
     throw error;
   }
 }
@@ -122,7 +128,6 @@ async function finalizeOpenHead(
     return;
   } catch (error) {
     logger.error('Error while opening head, aborting...');
-    console.error(error);
     await DBOps.updateHeadStatus(processId, DBStatus.FAILED);
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     await hydra.abort();

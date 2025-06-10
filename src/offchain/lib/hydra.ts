@@ -10,6 +10,7 @@ import {
 } from '@lucid-evolution/lucid';
 import blake2b from 'blake2b';
 import { logger } from '../../logger';
+import { env } from '../../config';
 
 const ERROR_TAGS = [
   'PeerHandshakeFailure',
@@ -131,26 +132,7 @@ class HydraHandler {
     await this.ensureConnectionReady();
     logger.debug('Sending init command...');
     this.connection.send(JSON.stringify({ tag: 'Init' }));
-    return new Promise((resolve, _) => {
-      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
-        const data = JSON.parse(msg.data.toString());
-        console.log('Received data: ', data);
-        switch ([data.headStatus, data.tag]) {
-          case [_]:
-            break;
-          case [, 'Greetings']:
-            break;
-          case [, 'HeadIsInitializing']:
-            logger.debug('Received HeadIsInitializing');
-            resolve(data.tag);
-            break;
-          default:
-            logger.error('Unexpected message recibed upon Init: ', data.tag);
-            resolve(data.tag);
-            break;
-        }
-      };
-    });
+    return this.listen('HeadIsInitializing');
   }
 
   /**
@@ -161,22 +143,9 @@ class HydraHandler {
     await this.ensureConnectionReady();
     logger.debug('Aborting head opening...');
     this.connection.send(JSON.stringify({ tag: 'Abort' }));
-    return new Promise((resolve) => {
-      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
-        const data = JSON.parse(msg.data.toString());
-        switch (data.tag) {
-          case 'Greetings':
-            break;
-          case 'HeadIsAborted':
-            logger.debug('Received HeadIsAborted');
-            resolve(data.tag);
-            break;
-          default:
-            logger.error('Unexpected message recibed upon Abort: ', data.tag);
-            resolve(data.tag);
-            break;
-        }
-      };
+    return new Promise(async (resolve) => {
+      const tag = await this.listen('HeadIsAborted');
+      resolve(tag);
     }).then(() => this.stop());
   }
 
@@ -208,16 +177,25 @@ class HydraHandler {
 
       if (utxos.length > 0) {
         if (blueprint) {
+          // We are commiting fund utxos, we include the blueprint transaction and the validator reference
+          // in the commited utxos
           payload['blueprintTx'] = {
             cborHex: blueprint,
             description: '',
             type: 'Tx ConwayEra',
           };
+
+          const [referenceScriptUtxo] = await this.lucid.utxosByOutRef([
+            { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+          ]);
+          utxos.push(referenceScriptUtxo);
           payload['utxo'] = formatUtxos(utxos);
         } else {
+          // We just commit the utxos without a blueprint transaction
           payload = formatUtxos(utxos);
         }
       }
+
       const response = await axios.post(apiUrl, payload);
       const txWitnessed = response.data.cborHex;
       const signedTx = await this.lucid
@@ -247,27 +225,7 @@ class HydraHandler {
         transaction: { cborHex: tx, description: '', type: 'Tx BabbageEra' },
       })
     );
-    return new Promise((resolve) => {
-      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
-        const data = JSON.parse(msg.data.toString());
-        switch (data.tag) {
-          case 'Greetings':
-            break;
-          case 'TxValid':
-            logger.debug('Received TxValid');
-            resolve(data.tag);
-            break;
-          case 'SnapshotConfirmed':
-            logger.debug('Received SnapshotConfirmed');
-            resolve(data.tag);
-            break;
-          default:
-            logger.error('Unexpected message recibed upon SendTx: ', data.tag);
-            resolve(data.tag);
-            break;
-        }
-      };
-    });
+    return this.listen('TxValid');
   }
 
   /**
@@ -329,12 +287,11 @@ class HydraHandler {
    * Sends a "Fanout" message to the Hydra node to finalize the current head.
    * @returns  the tag "HeadIsFinalized" once the head is finalized.
    */
-  async fanout(): Promise<void> {
+  async fanout(): Promise<string> {
     await this.ensureConnectionReady();
     logger.debug('Sending fanout command...');
     this.connection.send(JSON.stringify({ tag: 'Fanout' }));
-    await this.waitForMessage('HeadIsFinalized');
-    await this.stop();
+    return this.listen('HeadIsFinalized');
   }
 }
 
@@ -383,13 +340,23 @@ function lucidUtxoToHydraUtxo(utxo: UTxO): HydraUtxo {
       .digest('hex');
   }
   if (utxo.scriptRef) {
+    let refinedScriptType;
+    /**
+     * Lucid ScriptType = Native | PlutusV1 | PlutusV2 | PlutusV3
+     * Hydra ScriptType = PlutusScriptV3 | ...
+     */
+    if (utxo.scriptRef.type.includes('Plutus')) {
+      refinedScriptType = utxo.scriptRef.type.replace('Plutus', 'PlutusScript');
+    } else {
+      refinedScriptType = utxo.scriptRef.type;
+    }
     referenceScript = {
       script: {
         cborHex: utxo.scriptRef.script,
         description: '',
-        type: utxo.scriptRef.type,
+        type: refinedScriptType,
       },
-      scriptLanguage: `PlutusScriptLanguage ${utxo.scriptRef.type}`,
+      scriptLanguage: `PlutusScriptLanguage ${refinedScriptType}`,
     };
   }
   return {

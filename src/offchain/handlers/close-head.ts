@@ -78,7 +78,11 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     }
 
     // Step 3: Fanout
-    await hydra.fanout();
+    currentExpectedTag = await hydra.fanout();
+    while (currentExpectedTag !== 'HeadIsFinalized') {
+      currentExpectedTag = await hydra.listen('HeadIsFinalized');
+    }
+    logger.info(`Head ${processId} is finalized.`);
     await prisma.process.delete({ where: { id: processId } });
     await hydra.stop();
     return { status: DBStatus.CLOSED };

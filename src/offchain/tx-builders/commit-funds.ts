@@ -76,23 +76,25 @@ async function commitFunds(
   // Create witness set
   const txWitnessSet = CML.TransactionWitnessSet.new();
 
-  // Add spend redeemers
-  const conwayRedeemers = CML.MapRedeemerKeyToRedeemerVal.new();
-  sortedInputs.map((inp, idx) => {
-    if (inp.address === scriptAddress) {
-      const tag = CML.RedeemerTag.Spend;
-      const index = BigInt(idx);
-      const data = CML.PlutusData.from_cbor_hex(Spend.Commit);
-      const units = CML.ExUnits.new(0n, 0n);
-      conwayRedeemers.insert(
-        CML.RedeemerKey.new(tag, index),
-        CML.RedeemerVal.new(data, units)
-      );
-    }
-  });
-
   // Add redeemers and validator only if there were script utxos being committed
   if (userFundUtxos.length > 0) {
+    const conwayRedeemers = CML.MapRedeemerKeyToRedeemerVal.new();
+
+    // Add spend redeemers
+    sortedInputs.map((inp, idx) => {
+      if (inp.address === scriptAddress) {
+        const tag = CML.RedeemerTag.Spend;
+        const index = BigInt(idx);
+        const data = CML.PlutusData.from_cbor_hex(Spend.Commit);
+        const units = CML.ExUnits.new(0n, 0n);
+        conwayRedeemers.insert(
+          CML.RedeemerKey.new(tag, index),
+          CML.RedeemerVal.new(data, units)
+        );
+      }
+    });
+
+    // Add withdraw redeemer
     conwayRedeemers.insert(
       CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
       CML.RedeemerVal.new(
@@ -100,15 +102,17 @@ async function commitFunds(
         CML.ExUnits.new(0n, 0n)
       )
     );
+
+    // Add the validator as reference script
+    const referenceInputs = CML.TransactionInputList.new();
+    const validatorInput = utxoToCore(validatorRefUtxo).input();
+    referenceInputs.add(validatorInput);
+    txBody.set_reference_inputs(referenceInputs);
+
+    // Add the redeemers to the witness set
     const redeemers =
       CML.Redeemers.new_map_redeemer_key_to_redeemer_val(conwayRedeemers);
     txWitnessSet.set_redeemers(redeemers);
-
-    // Add plutus script
-    const scripts = CML.PlutusV3ScriptList.new();
-    const script = CML.PlutusV3Script.from_cbor_hex(validator.script);
-    scripts.add(script);
-    txWitnessSet.set_plutus_v3_scripts(scripts);
   }
 
   const cbor = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();

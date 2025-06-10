@@ -159,7 +159,9 @@ const ManageHeadZodSchema = z.object({
   peer_api_urls: z.array(z.string()),
 });
 
-const PartialCommitZodSchema = z.object({});
+const PartialCommitZodSchema = z.object({
+  peer_api_urls: z.array(z.string()),
+});
 
 export {
   Layer,

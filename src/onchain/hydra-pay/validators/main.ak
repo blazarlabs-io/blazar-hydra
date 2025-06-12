@@ -1,5 +1,5 @@
 use aiken/collection/list
-use aiken/crypto.{VerificationKeyHash}
+use aiken/crypto.{ScriptHash, VerificationKeyHash}
 use cardano/address.{Credential, Script}
 use cardano/assets.{PolicyId}
 use cardano/certificate.{Certificate}
@@ -17,7 +17,11 @@ use types.{
   MerchantWithdraw, Merge, Mint, MintRedeemer, PartialCommit, Pay, UserWithdraw,
 }
 
-validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
+validator main(
+  admin_key: VerificationKeyHash,
+  hydra_commit_hash: Credential,
+  hydra_deposit_hash: ScriptHash,
+) {
   spend(
     o_datum: Option<FundsDatum>,
     redeemer: FundsRedeemer,
@@ -52,11 +56,16 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
 
     when redeemer is {
       CombinedCommit ->
-        validate_combined_commit(own_hash, admin_key, hydra_script, tx)
+        validate_combined_commit(own_hash, admin_key, hydra_commit_hash, tx)
       CombinedMerge -> validate_combined_merge(own_hash, tx)
       CombinedWithdraw -> validate_combined_withdraw(own_hash, tx)
       CombinedPartialCommit ->
-        validate_combined_partial_commit(own_hash, admin_key, hydra_script, tx)
+        validate_combined_partial_commit(
+          own_hash,
+          admin_key,
+          hydra_deposit_hash,
+          tx,
+        )
     }
   }
 

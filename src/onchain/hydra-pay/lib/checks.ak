@@ -18,8 +18,8 @@ use cardano/transaction.{
 use config.{add_funds_min_lovelace}
 use types.{
   AddFunds, CombinedCommit, CombinedMerge, CombinedPartialCommit,
-  CombinedWithdraw, FundsDatum, HydraCommit, Merchant, PayInfo, User,
-  WithdrawInfo,
+  CombinedWithdraw, FundsDatum, HydraCommit, Merchant, MockHydraCommit,
+  MockHydraDepositDatum, PayInfo, User, WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -404,7 +404,7 @@ pub fn validate_burning(own_policy: PolicyId, tx: Transaction) {
 pub fn validate_combined_commit(
   own_hash: ScriptHash,
   admin_key: VerificationKeyHash,
-  hydra_script: Credential,
+  hydra_commit_hash: Credential,
   tx: Transaction,
 ) {
   let Transaction { inputs, redeemers, extra_signatories, mint, .. } = tx
@@ -412,7 +412,7 @@ pub fn validate_combined_commit(
   expect [hydra_input] =
     list.filter(
       inputs,
-      fn(i) { i.output.address.payment_credential == hydra_script },
+      fn(i) { i.output.address.payment_credential == hydra_commit_hash },
     )
 
   let own_utxo_refs =
@@ -561,11 +561,41 @@ pub fn validate_partial_commit(
 }
 
 pub fn validate_combined_partial_commit(
-  _own_hash: ScriptHash,
+  own_hash: ScriptHash,
   admin_key: VerificationKeyHash,
-  _hydra_script: Credential,
+  hydra_deposit_hash: ScriptHash,
   tx: Transaction,
 ) {
-  // Must be authorized by the admin
-  list.any(tx.extra_signatories, fn(sig) { sig == admin_key })?
+  let Transaction { inputs, outputs, extra_signatories, .. } = tx
+
+  let own_commits =
+    list.filter_map(
+      inputs,
+      fn(Input { output_reference, output: i_output }) {
+        if i_output.address.payment_credential == Script(own_hash) {
+          Some(
+            MockHydraCommit {
+              input: output_reference,
+              pre_serialized_output: serialise(i_output),
+            },
+          )
+        } else {
+          None
+        }
+      },
+    )
+
+  expect [hydra_deposit_utxo] = find_script_outputs(outputs, hydra_deposit_hash)
+
+  let Output { datum: o_datum, .. } = hydra_deposit_utxo
+
+  expect InlineDatum(o_datum_data) = o_datum
+  expect MockHydraDepositDatum { commits: dat_commits, .. } = o_datum_data
+
+  and {
+    // All own inputs must be commited
+    dat_commits == own_commits,
+    // Must be authorized by the admin. To avoid being deposited into any other head
+    list.any(extra_signatories, fn(sig) { sig == admin_key })?,
+  }
 }

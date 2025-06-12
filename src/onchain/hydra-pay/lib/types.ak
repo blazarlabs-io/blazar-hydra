@@ -1,5 +1,6 @@
 use aiken/crypto.{Signature, VerificationKey}
 use cardano/address.{Address}
+use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference}
 
 pub type FundsType {
@@ -49,4 +50,15 @@ pub type MintRedeemer {
 pub type MockHydraRedeemer {
   HydraDummy
   HydraCommit { utxos_refs: List<OutputReference> }
+}
+
+pub type MockHydraCommit {
+  input: OutputReference,
+  pre_serialized_output: ByteArray,
+}
+
+pub type MockHydraDepositDatum {
+  head_id: PolicyId,
+  deadline: Int,
+  commits: List<MockHydraCommit>,
 }

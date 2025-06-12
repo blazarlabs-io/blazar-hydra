@@ -19,7 +19,7 @@ use types.{
 
 validator main(
   admin_key: VerificationKeyHash,
-  hydra_commit_hash: Credential,
+  hydra_commit_hash: ScriptHash,
   hydra_deposit_hash: ScriptHash,
 ) {
   spend(

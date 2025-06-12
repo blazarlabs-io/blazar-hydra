@@ -6,7 +6,7 @@ use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash, blake2b_224,
   verify_ed25519_signature,
 }
-use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
+use cardano/address.{Address, Script, VerificationKey, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
   lovelace_of, match, quantity_of, tokens, without_lovelace,
@@ -404,7 +404,7 @@ pub fn validate_burning(own_policy: PolicyId, tx: Transaction) {
 pub fn validate_combined_commit(
   own_hash: ScriptHash,
   admin_key: VerificationKeyHash,
-  hydra_commit_hash: Credential,
+  hydra_commit_hash: ScriptHash,
   tx: Transaction,
 ) {
   let Transaction { inputs, redeemers, extra_signatories, mint, .. } = tx
@@ -412,7 +412,7 @@ pub fn validate_combined_commit(
   expect [hydra_input] =
     list.filter(
       inputs,
-      fn(i) { i.output.address.payment_credential == hydra_commit_hash },
+      fn(i) { i.output.address.payment_credential == Script(hydra_commit_hash) },
     )
 
   let own_utxo_refs =

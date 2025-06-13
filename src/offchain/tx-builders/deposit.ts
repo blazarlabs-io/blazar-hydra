@@ -29,10 +29,9 @@ async function deposit(
     validatorRef,
     fundsUtxo,
   } = params;
-  const network = getNetworkFromLucid(lucid);
-
   lucid.selectWallet.fromAddress(userAddress, walletUtxos);
   const tx = lucid.newTx();
+  const network = getNetworkFromLucid(lucid);
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
@@ -91,7 +90,6 @@ async function deposit(
 
   const txSignBuilder = await tx
     .readFrom([validatorRef])
-    .collectFrom(walletUtxos)
     .addSigner(userAddress)
     .pay.ToContract(
       scriptAddress,

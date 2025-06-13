@@ -109,7 +109,7 @@ const DepositZodSchema = z.object({
         .string()
         .length(64, 'Transaction hash must be 64 characters long.')
         .regex(/^[0-9a-fA-F]/, 'Transaction hash must be a hex string.'),
-      index: z.number(),
+      index: z.bigint(),
     })
     .optional(),
 });
@@ -126,7 +126,7 @@ const WithdrawZodSchema = z.object({
           .string()
           .length(64, 'Transaction hash must be 64 characters long.')
           .regex(/^[0-9a-fA-F]/, 'Transaction hash must be a hex string.'),
-        index: z.number(),
+        index: z.bigint(),
       }),
     })
   ),

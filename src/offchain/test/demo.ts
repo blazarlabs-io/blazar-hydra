@@ -22,7 +22,6 @@ import {
 } from '../lib/utils';
 import { HydraHandler } from '../lib/hydra';
 import { Layer, PayMerchantSchema, WithdrawSchema } from '../../shared';
-import { handleWithdraw } from '../handlers/withdraw';
 import {
   FundsDatum,
   FundsDatumT,
@@ -37,6 +36,8 @@ import JSONbig from 'json-bigint';
 import { API_ROUTES } from '../../api/schemas/routes';
 import { JSONBig } from '../../api/entry-points/server';
 import { logger } from '../../shared/logger';
+import { DBOps } from '../../prisma/db-ops';
+import { TxBuiltResponse } from '../../api/schemas/response';
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
@@ -220,7 +221,7 @@ const withdraw = async (address: Address, seed: string) => {
     const msg = Buffer.from(Data.to<WithdrawInfoT>(w, WithdrawInfo), 'hex');
     const sig = getPrivateKey(seed).sign(msg).to_hex();
     return {
-      ref: { hash: w.ref.transaction_id, index: Number(w.ref.output_index) },
+      ref: { hash: w.ref.transaction_id, index: w.ref.output_index },
       signature: sig,
     };
   });
@@ -232,7 +233,10 @@ const withdraw = async (address: Address, seed: string) => {
     network_layer: Layer.L1,
   };
   lucid.selectWallet.fromSeed(seed);
-  const withdrawTx = await handleWithdraw(lucid, wSchema);
+  const withdrawTx: TxBuiltResponse = await postEp(
+    ownServerUrl + API_ROUTES.WITHDRAW,
+    wSchema
+  );
   // Sign user
   const signedTx = await lucid
     .fromTx(withdrawTx.cborHex)
@@ -363,6 +367,10 @@ switch (trace) {
       });
     console.dir('Many payments done', { depth: null });
     await hydra.stop();
+    break;
+  case 'clean-db':
+    await DBOps.cleanDB();
+    console.log('Database cleaned');
     break;
   default:
     logger.debug('Invalid or missing trace option');

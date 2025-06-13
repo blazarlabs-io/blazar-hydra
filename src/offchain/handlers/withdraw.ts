@@ -17,7 +17,7 @@ async function handleWithdraw(
   // Lookup funds and validator UTxOs
   const fundsRefs = funds_utxos.map(({ ref }) => ({
     txHash: ref.hash,
-    outputIndex: ref.index,
+    outputIndex: Number(ref.index),
   }));
   const fundsUtxos = await localLucid.utxosByOutRef(fundsRefs);
   if (fundsUtxos.length === 0) {
@@ -57,7 +57,9 @@ async function handleWithdraw(
         .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
       const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
         const signature = funds_utxos.find(
-          (u) => u.ref.hash === utxo.txHash && u.ref.index === utxo.outputIndex
+          (u) =>
+            u.ref.hash === utxo.txHash &&
+            Number(u.ref.index) === utxo.outputIndex
         )?.signature;
         if (!signature) {
           throw new Error(

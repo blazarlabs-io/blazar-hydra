@@ -29,4 +29,11 @@ export namespace DBOps {
         throw error;
       });
   };
+
+  export const cleanDB = async () => {
+    await prisma.process.deleteMany().catch((error) => {
+      logger.error('DB Error while cleaning up: ' + error);
+      throw error;
+    });
+  };
 }

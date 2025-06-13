@@ -75,6 +75,7 @@ async function finalizeOpenHead(
   processId: string
 ) {
   const localLucid = _.cloneDeep(lucid);
+  localLucid.selectWallet.fromSeed(env.SEED);
   const network = getNetworkFromLucid(localLucid);
   const { peer_api_urls: peerUrls } = params;
   const { ADMIN_ADDRESS: adminAddress, VALIDATOR_REF: vRef } = env;
@@ -128,6 +129,7 @@ async function finalizeOpenHead(
     return;
   } catch (error) {
     logger.error('Error while opening head, aborting...');
+    console.error(error);
     await DBOps.updateHeadStatus(processId, DBStatus.FAILED);
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     await hydra.abort();

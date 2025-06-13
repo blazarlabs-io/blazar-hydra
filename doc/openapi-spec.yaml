@@ -149,15 +149,15 @@ paths:
         500:
           description: Internal server error.
 
-  /close-head:
+  /close-head/{processId}:
     post:
       summary: Performs the necessary steps to close the Hydra head.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ManageHeadSchema'
+      parameters:
+        - in: path
+          name: processId
+          schema:
+            type: string
+          required: true
       responses:
         200:
           description: Hydra head closed successfully.
@@ -218,8 +218,11 @@ components:
     ManageHeadSchema:
       type: object
       properties:
-        authToken:
-          type: string
+        peer_api_urls:
+          type: array
+          items:
+            type: string
+          
 
     QueryFundsResponse:
       type: object

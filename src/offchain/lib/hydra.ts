@@ -41,6 +41,7 @@ class HydraHandler {
     wsURL.protocol = wsURL.protocol.replace('http', 'ws');
 
     this.lucid = lucid;
+    this.lucid.selectWallet.fromSeed(env.SEED);
     this.url = wsURL;
     this.connection = new Websocket(wsURL + '?history=no');
     this.setupEventHandlers();

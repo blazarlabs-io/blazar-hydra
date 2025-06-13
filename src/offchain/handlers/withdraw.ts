@@ -12,9 +12,9 @@ async function handleWithdraw(
   params: WithdrawSchema
 ): Promise<TxBuiltResponse> {
   try {
-    // TODO here lucid needs instantiation with the correct network
     const localLucid = _.cloneDeep(lucid);
     const { address, owner, funds_utxos, network_layer } = params;
+    localLucid.selectWallet.fromAddress(address, []);
     const {
       ADMIN_KEY: adminKey,
       HYDRA_KEY: hydraKey,
@@ -24,7 +24,7 @@ async function handleWithdraw(
     // Lookup funds and validator UTxOs
     const fundsRefs = funds_utxos.map(({ ref }) => ({
       txHash: ref.hash,
-      outputIndex: ref.index,
+      outputIndex: Number(ref.index),
     }));
     const fundsUtxos = await localLucid.utxosByOutRef(fundsRefs);
     if (fundsUtxos.length === 0) {
@@ -65,7 +65,8 @@ async function handleWithdraw(
         const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
           const signature = funds_utxos.find(
             (u) =>
-              u.ref.hash === utxo.txHash && u.ref.index === utxo.outputIndex
+              u.ref.hash === utxo.txHash &&
+              u.ref.index === BigInt(utxo.outputIndex)
           )?.signature;
           if (!signature) {
             throw new Error(

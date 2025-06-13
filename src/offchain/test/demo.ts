@@ -33,6 +33,8 @@ import {
 import axios from 'axios';
 import JSONbig from 'json-bigint';
 import { API_ROUTES } from '../../api/schemas/routes';
+import { TxBuiltResponse } from '../../api/schemas/response';
+import { DBOps } from '../../prisma/db-ops';
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
@@ -91,11 +93,15 @@ const deposit = async (fromWallet: 1 | 2) => {
   const funds: OutRef[] = [];
   for (let i = 0; i < 2; i++) {
     console.log(`Creating a funds utxo with 10 ADA`);
-    const depTx = await handleDeposit(lucid, {
+    const depositParams = {
       user_address: address,
       public_key: publicKey,
       amount: 40_000_000n,
-    });
+    };
+    const depTx: TxBuiltResponse = await postEp(
+      ownServerUrl + API_ROUTES.DEPOSIT,
+      depositParams
+    );
     const signedTx = await lucid
       .fromTx(depTx.cborHex)
       .sign.withWallet()
@@ -203,7 +209,7 @@ const withdraw = async (address: Address, seed: string) => {
     const msg = Buffer.from(Data.to<WithdrawInfoT>(w, WithdrawInfo), 'hex');
     const sig = getPrivateKey(seed).sign(msg).to_hex();
     return {
-      ref: { hash: w.ref.transaction_id, index: Number(w.ref.output_index) },
+      ref: { hash: w.ref.transaction_id, index: w.ref.output_index },
       signature: sig,
     };
   });
@@ -215,8 +221,10 @@ const withdraw = async (address: Address, seed: string) => {
     network_layer: Layer.L1,
   };
   lucid.selectWallet.fromSeed(seed);
-  const withdrawTx = await handleWithdraw(lucid, wSchema);
-  console.log(withdrawTx);
+  const withdrawTx: TxBuiltResponse = await postEp(
+    ownServerUrl + API_ROUTES.WITHDRAW,
+    wSchema
+  );
   // Sign user
   const signedTx = await lucid
     .fromTx(withdrawTx.cborHex)
@@ -327,6 +335,10 @@ switch (trace) {
       });
     console.dir('Many payments done', { depth: null });
     await hydra.stop();
+    break;
+  case 'clean-db':
+    await DBOps.cleanDB();
+    console.log('Database cleaned');
     break;
   default:
     console.log('Invalid or missing trace option');

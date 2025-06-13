@@ -21,8 +21,8 @@ async function handleDeposit(
     const localLucid = _.cloneDeep(lucid);
     let fundsUtxo: UTxO | undefined = undefined;
     if (fundsUtxoRef) {
-      const { hash: txHash, index: outputIndex } = fundsUtxoRef;
-      [fundsUtxo] = await localLucid.utxosByOutRef([{ txHash, outputIndex }]);
+      const { hash: txHash, index } = fundsUtxoRef;
+      [fundsUtxo] = await localLucid.utxosByOutRef([{ txHash, outputIndex: Number(index) }]);
     }
     const walletUtxos = await localLucid
       .utxosAt(userAddress)

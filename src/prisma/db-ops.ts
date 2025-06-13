@@ -28,15 +28,12 @@ export namespace DBOps {
         logger.error(`DB Error while updating status to ${status}: ${error}`);
         throw error;
       });
-
-    };
+  };
 
   export const cleanDB = async () => {
-    await prisma.process
-      .deleteMany()
-      .catch((error) => {
-        logger.error('DB Error while cleaning up: ' + error);
-        throw error;
-      });
-  }
+    await prisma.process.deleteMany().catch((error) => {
+      logger.error('DB Error while cleaning up: ' + error);
+      throw error;
+    });
+  };
 }

@@ -10,7 +10,6 @@ import {
   validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { env } from '../../config';
-import { handleDeposit } from '../handlers/deposit';
 import {
   bech32ToAddressType,
   dataAddressToBech32,
@@ -20,7 +19,6 @@ import {
 } from '../lib/utils';
 import { HydraHandler } from '../lib/hydra';
 import { Layer, PayMerchantSchema, WithdrawSchema } from '../../shared';
-import { handleWithdraw } from '../handlers/withdraw';
 import { logger } from '../../logger';
 import {
   FundsDatum,

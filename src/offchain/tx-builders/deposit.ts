@@ -76,6 +76,7 @@ async function deposit(
       [validationToken]: 1n,
     });
 
+    tx.collectFrom([selectedUtxo]);
     tx.mintAssets({ [validationToken]: 1n }, Mint.Mint(outRef));
   }
 
@@ -98,7 +99,6 @@ async function deposit(
     )
     .attachMetadata(674, { msg: 'HydraPay: Deposit' })
     .complete();
-  logger.info('HEREEE 2');
 
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),

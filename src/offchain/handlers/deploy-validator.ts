@@ -40,7 +40,6 @@ async function deployScript(
   const adminKey = admin_key ?? adminCredential.hash;
   const hydraKey = hydra_key ?? env.HYDRA_KEY;
 
-
   // TODO implement a proper script to hold the validator?
   const validator = buildValidator(adminKey, {
     Script_cred: { Key: hydraKey },

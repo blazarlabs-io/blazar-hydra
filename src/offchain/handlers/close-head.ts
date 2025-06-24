@@ -1,4 +1,9 @@
-import { Data, getAddressDetails, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
+import {
+  Data,
+  getAddressDetails,
+  LucidEvolution,
+  UTxO,
+} from '@lucid-evolution/lucid';
 import { logger } from '../../logger';
 import { HydraHandler } from '../lib/hydra';
 import _ from 'lodash';

@@ -1,4 +1,10 @@
-import { Data, getAddressDetails, LucidEvolution, OutRef, UTxO } from '@lucid-evolution/lucid';
+import {
+  Data,
+  getAddressDetails,
+  LucidEvolution,
+  OutRef,
+  UTxO,
+} from '@lucid-evolution/lucid';
 import { PayMerchantParams } from '../lib/params';
 import { PayMerchantSchema } from '../../shared';
 import { payMerchant } from '../tx-builders/pay';

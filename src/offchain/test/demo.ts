@@ -46,7 +46,6 @@ const adminCredential = getAddressDetails(adminAddress).paymentCredential;
 if (!adminCredential || !adminCredential.hash) {
   throw new Error('Could not get admin key from address');
 }
-const adminKey = adminCredential.hash;
 const aliceWsUrl = 'ws://127.0.0.1:4001';
 
 const aliceApiUrl = 'http://127.0.0.1:4001/commit';

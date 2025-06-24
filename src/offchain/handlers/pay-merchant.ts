@@ -1,4 +1,4 @@
-import { Data, LucidEvolution, OutRef, UTxO } from '@lucid-evolution/lucid';
+import { Data, getAddressDetails, LucidEvolution, OutRef, UTxO } from '@lucid-evolution/lucid';
 import { PayMerchantParams } from '../lib/params';
 import { PayMerchantSchema } from '../../shared';
 import { payMerchant } from '../tx-builders/pay';
@@ -14,6 +14,12 @@ async function handlePay(
 ): Promise<{ fundsUtxoRef: OutRef; merchUtxo: OutRef }> {
   try {
     const localLucid = _.cloneDeep(lucid);
+    const adminAddress = await localLucid.wallet().address();
+    const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+    if (!adminCredential || !adminCredential.hash) {
+      throw new Error('Could not get admin key from address');
+    }
+    const adminKey = adminCredential.hash;
     const {
       merchant_address: merchantAddress,
       funds_utxo_ref,
@@ -21,7 +27,7 @@ async function handlePay(
       signature,
       merchant_funds_utxo,
     } = params;
-    const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
+    const { HYDRA_KEY: hydraKey } = env;
     let merchantFundsUtxo: UTxO | undefined;
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const utxosInL2 = await hydra.getSnapshot();
@@ -30,7 +36,7 @@ async function handlePay(
       return utxo.txHash === txHash && BigInt(utxo.outputIndex) === outputIndex;
     });
     const adminCollateral = utxosInL2.find(
-      (utxo) => utxo.address === env.ADMIN_ADDRESS
+      (utxo) => utxo.address === adminAddress
     );
     if (!userFundsUtxo || !adminCollateral) {
       throw new Error(`User funds or collateral utxo not found`);

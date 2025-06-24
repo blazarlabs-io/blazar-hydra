@@ -1,6 +1,7 @@
 import {
   Blockfrost,
   Data,
+  getAddressDetails,
   Lucid,
   LucidEvolution,
   Network,
@@ -21,9 +22,6 @@ async function deployScript(
     console.log('Using validator parameters from environment file.');
   }
 
-  const adminKey = admin_key ?? env.ADMIN_KEY;
-  const hydraKey = hydra_key ?? env.HYDRA_KEY;
-
   const lucid =
     lucid_config ??
     ((await Lucid(
@@ -32,6 +30,16 @@ async function deployScript(
     )) as LucidEvolution);
   lucid.selectWallet.fromSeed(env.SEED);
   const network = getNetworkFromLucid(lucid);
+
+  const adminAddress = await lucid.wallet().address();
+  const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+  if (!adminCredential || !adminCredential.hash) {
+    throw new Error('Could not get admin key from address');
+  }
+
+  const adminKey = admin_key ?? adminCredential.hash;
+  const hydraKey = hydra_key ?? env.HYDRA_KEY;
+
 
   // TODO implement a proper script to hold the validator?
   const validator = buildValidator(adminKey, {

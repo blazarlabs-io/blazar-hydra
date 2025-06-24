@@ -2,6 +2,7 @@ import {
   Address,
   Blockfrost,
   Data,
+  getAddressDetails,
   Lucid,
   LucidEvolution,
   Network,
@@ -40,6 +41,12 @@ const lucid = (await Lucid(
   env.NETWORK as Network
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);
+const adminAddress = await lucid.wallet().address();
+const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+if (!adminCredential || !adminCredential.hash) {
+  throw new Error('Could not get admin key from address');
+}
+const adminKey = adminCredential.hash;
 const aliceWsUrl = 'ws://127.0.0.1:4001';
 
 const aliceApiUrl = 'http://127.0.0.1:4001/commit';
@@ -84,9 +91,9 @@ const openHead = async () => {
 
 const deposit = async (fromWallet: 1 | 2) => {
   const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
-  lucid.selectWallet.fromSeed(thisSeed);
+  lucid.selectWallet.fromSeed(thisSeed!);
   const address = await lucid.wallet().address();
-  const privKey = getPrivateKey(thisSeed);
+  const privKey = getPrivateKey(thisSeed!);
   const publicKey = toHex(privKey.to_public().to_raw_bytes());
   const funds: OutRef[] = [];
   for (let i = 0; i < 2; i++) {
@@ -129,7 +136,7 @@ const pay = async (
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   const utxos = await hydra.getSnapshot();
   const [fRef] = utxos.filter((utxo) => {
-    if (utxo.address === env.ADMIN_ADDRESS) {
+    if (utxo.address === adminAddress) {
       return false;
     }
     const dat = utxo.datum;
@@ -149,7 +156,7 @@ const pay = async (
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
   const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
-  const userPrivKey = getPrivateKey(signatureSeed);
+  const userPrivKey = getPrivateKey(signatureSeed!);
   const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), 'hex');
   const sig = userPrivKey.sign(msg).to_hex();
 
@@ -294,7 +301,7 @@ switch (trace) {
     }
     const withWallet = user === 'user1' ? 1 : 2;
     const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
-    await pay(BigInt(amount), userAddr, mAddr, withWallet);
+    await pay(BigInt(amount), userAddr!, mAddr, withWallet);
     break;
   case 'fanout':
     await fanout();
@@ -307,7 +314,7 @@ switch (trace) {
     const wallet = from === 'user1' ? 1 : 2;
     const addr = wallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
     const seed = wallet === 1 ? env.USER_SEED : env.USER_SEED_2;
-    await withdraw(addr, seed);
+    await withdraw(addr!, seed!);
     break;
   case 'paymany':
     const hydra = new HydraHandler(lucid, aliceWsUrl);
@@ -318,7 +325,7 @@ switch (trace) {
         if (!dat) {
           return false;
         }
-        if (utxo.address == env.ADMIN_ADDRESS) {
+        if (utxo.address == adminAddress) {
           return false;
         }
         const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type;
@@ -328,7 +335,7 @@ switch (trace) {
         return utxo.txHash + '#' + utxo.outputIndex;
       })
       .forEach(async () => {
-        await pay(2000000n, env.USER_ADDRESS_2, env.USER_ADDRESS, 2);
+        await pay(2000000n, env.USER_ADDRESS_2!, env.USER_ADDRESS!, 2);
         await hydra.listen('TxValid');
       });
     console.dir('Many payments done', { depth: null });

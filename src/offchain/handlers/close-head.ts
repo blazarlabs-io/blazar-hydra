@@ -1,4 +1,4 @@
-import { Data, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
+import { Data, getAddressDetails, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { logger } from '../../logger';
 import { HydraHandler } from '../lib/hydra';
 import _ from 'lodash';
@@ -34,10 +34,16 @@ async function handleCloseHead(processId: string): Promise<{ status: string }> {
  */
 async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
   try {
-    const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
-    const { ADMIN_ADDRESS: adminAddress, ADMIN_NODE_WS_URL: wsUrl } = env;
+    const { HYDRA_KEY: hydraKey } = env;
+    const { ADMIN_NODE_WS_URL: wsUrl } = env;
     const localLucid = _.cloneDeep(lucid);
     localLucid.selectWallet.fromSeed(env.SEED);
+    const adminAddress = await localLucid.wallet().address();
+    const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+    if (!adminCredential || !adminCredential.hash) {
+      throw new Error('Could not get admin key from address');
+    }
+    const adminKey = adminCredential.hash;
     const hydra = new HydraHandler(localLucid, wsUrl);
 
     // Step 1: Withdraw Merchant utxos

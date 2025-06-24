@@ -199,6 +199,7 @@ class HydraHandler {
 
       const response = await axios.post(apiUrl, payload);
       const txWitnessed = response.data.cborHex;
+      this.lucid.selectWallet.fromSeed(env.SEED);
       const signedTx = await this.lucid
         .fromTx(txWitnessed)
         .sign.withWallet()

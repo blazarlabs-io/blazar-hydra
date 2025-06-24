@@ -1,6 +1,10 @@
 import { Layer, WithdrawSchema } from '../../shared';
 import { withdraw } from '../tx-builders/withdraw-user';
-import { LucidEvolution, selectUTxOs } from '@lucid-evolution/lucid';
+import {
+  getAddressDetails,
+  LucidEvolution,
+  selectUTxOs,
+} from '@lucid-evolution/lucid';
 import { WithdrawParams } from '../lib/params';
 import _ from 'lodash';
 import { env } from '../../config';
@@ -12,7 +16,14 @@ async function handleWithdraw(
 ): Promise<TxBuiltResponse> {
   const localLucid = _.cloneDeep(lucid);
   const { address, owner, funds_utxos, network_layer } = params;
-  const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey, VALIDATOR_REF: vRef } = env;
+  const { HYDRA_KEY: hydraKey, VALIDATOR_REF: vRef } = env;
+
+  const adminAddress = await localLucid.wallet().address();
+  const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+  if (!adminCredential || !adminCredential.hash) {
+    throw new Error('Could not get admin key from address');
+  }
+  const adminKey = adminCredential.hash;
 
   // Lookup funds and validator UTxOs
   const fundsRefs = funds_utxos.map(({ ref }) => ({

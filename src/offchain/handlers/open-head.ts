@@ -78,9 +78,10 @@ async function finalizeOpenHead(
   localLucid.selectWallet.fromSeed(env.SEED);
   const network = getNetworkFromLucid(localLucid);
   const { peer_api_urls: peerUrls } = params;
-  const { ADMIN_ADDRESS: adminAddress, VALIDATOR_REF: vRef } = env;
+  const { VALIDATOR_REF: vRef } = env;
   try {
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
+    const adminAddress = await localLucid.wallet().address();
 
     // Step 2: Lookup deposit UTxOs in L1
     const [validatorRef] = await localLucid.utxosByOutRef([

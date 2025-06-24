@@ -15,7 +15,6 @@ import {
   getValidatorDetails,
 } from '../lib/utils';
 import blake2b from 'blake2b';
-import { logger } from '../../shared/logger';
 
 async function deposit(
   lucid: LucidEvolution,

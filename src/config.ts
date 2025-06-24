@@ -19,17 +19,22 @@ const envSchema = z
     PROVIDER_URL: z.string(),
     NETWORK: z.string(),
     VALIDATOR_REF: z.string(),
-    ADMIN_KEY: z.string(),
     HYDRA_KEY: z.string(),
     SEED: z.string(),
     ADMIN_NODE_WS_URL: z.string(),
     ADMIN_NODE_API_URL: z.string(),
-    ADMIN_ADDRESS: z.string(),
-    USER_ADDRESS: z.string(),
-    USER_SEED: z.string(),
-    USER_ADDRESS_2: z.string(),
-    USER_SEED_2: z.string(),
-    LOGGER_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('debug'),
+    USER_ADDRESS: z.string().optional(),
+    USER_SEED: z.string().optional(),
+    USER_ADDRESS_2: z.string().optional(),
+    USER_SEED_2: z.string().optional(),
+    LOGGER_LEVEL: z
+      .string()
+      .refine(
+        (val) => ['error', 'warn', 'info', 'debug'].includes(val.toLowerCase()),
+        "Invalid logger level: must be one of 'error', 'warn', 'info', or 'debug'"
+      )
+      .default('info')
+      .transform((val) => val.toLowerCase()),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;

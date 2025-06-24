@@ -2,6 +2,7 @@ import {
   addAssets,
   Assets,
   Data,
+  getAddressDetails,
   LucidEvolution,
   OutRef,
   UTxO,
@@ -29,13 +30,19 @@ async function handlePay(
     merchant_funds_utxo,
   } = params;
   const { hash: txHash, index: outputIndex } = funds_utxo_ref;
-  const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
+  const { HYDRA_KEY: hydraKey } = env;
   const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
   const utxosInL2 = await hydra.getSnapshot();
 
   // Lookup admin collateral UTxO in L2
+  const adminAddress = await localLucid.wallet().address();
+  const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+  if (!adminCredential || !adminCredential.hash) {
+    throw new Error('Could not get admin key from address');
+  }
+  const adminKey = adminCredential.hash;
   const adminCollateral = utxosInL2.find(
-    (utxo) => utxo.address === env.ADMIN_ADDRESS
+    (utxo) => utxo.address === adminAddress
   );
   if (!adminCollateral) {
     throw new Error(`Admin collateral UTxO not found`);

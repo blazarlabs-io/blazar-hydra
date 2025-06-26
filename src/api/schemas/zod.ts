@@ -142,7 +142,7 @@ const PayMerchantZodSchema = z.object({
       .regex(/^[0-9a-fA-F]/, 'Transaction hash must be a hex string.'),
     index: z.bigint(),
   }),
-  amount: z.bigint(),
+  amount: z.array(z.tuple([z.string(), z.bigint()])),
   signature: z.string(),
   merchant_funds_utxo: z
     .object({

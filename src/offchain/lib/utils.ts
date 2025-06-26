@@ -1,14 +1,16 @@
 import {
+  Assets,
   CML,
   credentialToAddress,
   fromHex,
+  fromUnit,
   getAddressDetails,
   LucidEvolution,
   Network,
   Script,
   UTxO,
 } from '@lucid-evolution/lucid';
-import { AddressT, CredentialT } from './types';
+import { AddressT, CredentialT, PayInfoT } from './types';
 import { mnemonicToEntropy } from 'bip39';
 import { logger } from '../../logger';
 import { buildValidator } from '../validator/handle';
@@ -57,6 +59,23 @@ function bech32ToAddressType(lucid: LucidEvolution, add: string): AddressT {
         }
       : null,
   };
+}
+
+export function assetsToDataPairs(assets: Assets): PayInfoT['amount'] {
+  const policiesToAssets: Map<string, Map<string, bigint>> = new Map();
+  for (const [unit, amount] of Object.entries(assets)) {
+    const { policyId, assetName } = fromUnit(unit);
+    const policy = policyId === 'lovelace' ? '' : policyId;
+    const policyAssets = policiesToAssets.get(policy);
+    if (policyAssets) {
+      policyAssets.set(assetName ?? '', amount);
+    } else {
+      const assetNamesToAmountMap: Map<string, bigint> = new Map();
+      assetNamesToAmountMap.set(assetName ?? '', amount);
+      policiesToAssets.set(policy, assetNamesToAmountMap);
+    }
+  }
+  return policiesToAssets;
 }
 
 function getPrivateKey(

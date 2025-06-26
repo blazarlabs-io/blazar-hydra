@@ -11,11 +11,16 @@ import {
   validatorToAddress,
   assetsToValue,
   sortUTxOs,
+  Assets,
 } from '@lucid-evolution/lucid';
 import { PayMerchantParams } from '../lib/params';
 import { buildValidator } from '../validator/handle';
 import { FundsDatum, FundsDatumT, Mint, PayInfoT, Spend } from '../lib/types';
-import { bech32ToAddressType, getNetworkFromLucid } from '../lib/utils';
+import {
+  assetsToDataPairs,
+  bech32ToAddressType,
+  getNetworkFromLucid,
+} from '../lib/utils';
 import blake2b from 'blake2b';
 
 async function payMerchant(
@@ -26,7 +31,7 @@ async function payMerchant(
     adminCollateral,
     userFundsUtxo,
     merchantAddress,
-    amountToPay,
+    assets: amountToPay,
     signature,
     adminKey,
     hydraKey,
@@ -61,7 +66,7 @@ async function payMerchant(
   const outputs = CML.TransactionOutputList.new();
   // User
   const newUserValue = assetsToValue(
-    addAssets(userFundsUtxo.assets, { lovelace: -amountToPay })
+    addAssets(userFundsUtxo.assets, negate(amountToPay))
   );
   if (!userFundsUtxo.datum) {
     throw new Error('User UTxO datum not found');
@@ -81,12 +86,11 @@ async function payMerchant(
   );
   const tokenNameHash = blake2b(32).update(newTokenName).digest('hex');
   const validationToken = toUnit(policyId, tokenNameHash);
-  const newMerchValue = {
-    [validationToken]: 1n,
-    ['lovelace']:
-      amountToPay +
-      (merchantFundsUtxo ? merchantFundsUtxo.assets['lovelace'] : 0n),
-  };
+  const previousMerchValue = merchantFundsUtxo ? merchantFundsUtxo.assets : {};
+  const newMerchValue = addAssets(
+    { [validationToken]: 1n },
+    addAssets(previousMerchValue, amountToPay)
+  );
   const merchDatum = Data.to<FundsDatumT>(
     {
       addr: bech32ToAddressType(lucid, merchantAddress),
@@ -142,7 +146,7 @@ async function payMerchant(
       units = CML.ExUnits.new(0n, 0n);
     } else {
       const payInfo: PayInfoT = {
-        amount: amountToPay,
+        amount: assetsToDataPairs(amountToPay),
         merchant_addr: bech32ToAddressType(lucid, merchantAddress),
         ref: {
           transaction_id: userFundsUtxo.txHash,
@@ -210,3 +214,11 @@ async function payMerchant(
 }
 
 export { payMerchant };
+
+function negate(assets: Assets): Assets {
+  return Object.fromEntries(
+    Object.entries(assets).map(([asset, value]) => {
+      return [asset, -value];
+    })
+  );
+}

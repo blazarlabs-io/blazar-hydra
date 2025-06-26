@@ -1,4 +1,11 @@
-import { Data, LucidEvolution, OutRef, UTxO } from '@lucid-evolution/lucid';
+import {
+  addAssets,
+  Assets,
+  Data,
+  LucidEvolution,
+  OutRef,
+  UTxO,
+} from '@lucid-evolution/lucid';
 import { PayMerchantParams } from '../lib/params';
 import { PayMerchantSchema } from '../../shared';
 import { payMerchant } from '../tx-builders/pay';
@@ -17,28 +24,46 @@ async function handlePay(
     const {
       merchant_address: merchantAddress,
       funds_utxo_ref,
-      amount: amountToPay,
+      amount,
       signature,
       merchant_funds_utxo,
     } = params;
+    const { hash: txHash, index: outputIndex } = funds_utxo_ref;
     const { ADMIN_KEY: adminKey, HYDRA_KEY: hydraKey } = env;
-    let merchantFundsUtxo: UTxO | undefined;
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const utxosInL2 = await hydra.getSnapshot();
-    const { hash: txHash, index: outputIndex } = funds_utxo_ref;
-    const userFundsUtxo: UTxO | undefined = utxosInL2.find((utxo) => {
-      return utxo.txHash === txHash && BigInt(utxo.outputIndex) === outputIndex;
-    });
+
+    // Lookup admin collateral UTxO in L2
     const adminCollateral = utxosInL2.find(
       (utxo) => utxo.address === env.ADMIN_ADDRESS
     );
-    if (!userFundsUtxo || !adminCollateral) {
+    if (!adminCollateral) {
+      throw new Error(`Admin collateral UTxO not found`);
+    }
+
+    // Lookup user Funds UTxO in L2
+    const userFundsUtxo: UTxO | undefined = utxosInL2.find((utxo) => {
+      return utxo.txHash === txHash && BigInt(utxo.outputIndex) === outputIndex;
+    });
+    if (!userFundsUtxo) {
       throw new Error(`User funds or collateral utxo not found`);
     }
     const datum = Data.from<FundsDatumT>(userFundsUtxo.datum!, FundsDatum);
-    if (amountToPay > userFundsUtxo.assets['lovelace'] - datum.locked_deposit) {
+
+    // Check if there are enough funds to pay the merchant
+    const amountToPay: Assets = amount.reduce((acc, [asset, value]) => {
+      acc[asset] = value;
+      return acc;
+    }, {} as Assets);
+    const availableFunds = addAssets(userFundsUtxo.assets, {
+      ['lovelace']: -datum.locked_deposit,
+    });
+    if (isGreaterOrEqual(amountToPay, availableFunds)) {
       throw new Error(`Insufficient funds`);
     }
+
+    // Check if there is a merchant UTxO to pay the funds to
+    let merchantFundsUtxo: UTxO | undefined;
     if (merchant_funds_utxo) {
       const { hash: txHash, index: outputIndex } = merchant_funds_utxo;
       const merchantFundsUtxo = utxosInL2.find((utxo) => {
@@ -52,7 +77,7 @@ async function handlePay(
     const payMerchantParams: PayMerchantParams = {
       adminCollateral,
       merchantAddress,
-      amountToPay,
+      assets: amountToPay,
       userFundsUtxo,
       signature,
       adminKey,
@@ -63,7 +88,6 @@ async function handlePay(
       localLucid,
       payMerchantParams
     );
-
     logger.info('Submitting payment to hydra head...');
     lucid.selectWallet.fromSeed(env.SEED);
     const signedTx = await lucid
@@ -95,3 +119,14 @@ async function handlePay(
 }
 
 export { handlePay };
+
+function isGreaterOrEqual(a: Assets, b: Assets): boolean {
+  const aEntries = Object.entries(a);
+  const bEntries = Object.entries(b);
+  return (
+    aEntries.length == bEntries.length &&
+    aEntries.every(([asset, value]) => {
+      return b[asset] && value >= BigInt(b[asset]);
+    })
+  );
+}

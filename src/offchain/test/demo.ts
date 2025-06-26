@@ -12,6 +12,7 @@ import {
 import { env } from '../../config';
 import { handleDeposit } from '../handlers/deposit';
 import {
+  assetsToDataPairs,
   bech32ToAddressType,
   dataAddressToBech32,
   getNetworkFromLucid,
@@ -140,19 +141,22 @@ const pay = async (
   const [fundsTxId, fundsIx] = [fRef.txHash, fRef.outputIndex];
   const mAddr = bech32ToAddressType(lucid, to);
   const payInfo: PayInfoT = {
-    amount: amount,
+    amount: assetsToDataPairs({ ['lovelace']: amount }),
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
   const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   const userPrivKey = getPrivateKey(signatureSeed);
-  const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), 'hex');
+  const msg = Buffer.from(
+    Data.to<PayInfoT>(payInfo, PayInfo, { canonical: true }),
+    'hex'
+  );
   const sig = userPrivKey.sign(msg).to_hex();
 
   const pSchema: PayMerchantSchema = {
     merchant_address: to,
     funds_utxo_ref: { hash: fundsTxId, index: BigInt(fundsIx) },
-    amount: amount,
+    amount: [['lovelace', amount]],
     signature: sig,
     merchant_funds_utxo: undefined,
   };
@@ -216,7 +220,6 @@ const withdraw = async (address: Address, seed: string) => {
   };
   lucid.selectWallet.fromSeed(seed);
   const withdrawTx = await handleWithdraw(lucid, wSchema);
-  console.log(withdrawTx);
   // Sign user
   const signedTx = await lucid
     .fromTx(withdrawTx.cborHex)

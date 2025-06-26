@@ -47,7 +47,7 @@ type FundsDatumT = Data.Static<typeof FundsDatumSchema>;
 const FundsDatum = FundsDatumSchema as unknown as FundsDatumT;
 
 const PayInfoSchema = Data.Object({
-  amount: Data.Integer(),
+  amount: Data.Map(Data.Bytes(), Data.Map(Data.Bytes(), Data.Integer())),
   merchant_addr: AddressSchema,
   ref: OutputRefSchema,
 });
@@ -61,6 +61,7 @@ const WithdrawInfo = WithdrawInfoSchema as unknown as WithdrawInfoT;
 const FundsRedeemerSchema = Data.Enum([
   Data.Literal('AddFunds'),
   Data.Literal('Commit'),
+  Data.Literal('PartialCommit'),
   Data.Literal('Merge'),
   Data.Object({ Pay: Data.Object({ info: PayInfoSchema, sig: Data.Bytes() }) }),
   Data.Object({

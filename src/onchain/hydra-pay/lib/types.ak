@@ -1,6 +1,7 @@
 use aiken/crypto.{Signature, VerificationKey}
 use cardano/address.{Address}
 use cardano/transaction.{OutputReference}
+use cardano/assets.{AssetName, PolicyId}
 
 pub type FundsType {
   User { public_key: VerificationKey }
@@ -25,7 +26,7 @@ pub type FundsRedeemer {
 }
 
 pub type PayInfo {
-  amount: Int,
+  amount: Pairs<PolicyId, Pairs<AssetName, Int>>,
   merchant_addr: Address,
   ref: OutputReference,
 }

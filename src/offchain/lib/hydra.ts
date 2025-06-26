@@ -198,6 +198,7 @@ class HydraHandler {
 
       const response = await axios.post(apiUrl, payload);
       const txWitnessed = response.data.cborHex;
+      this.lucid.selectWallet.fromSeed(env.SEED);
       const signedTx = await this.lucid
         .fromTx(txWitnessed)
         .sign.withWallet()
@@ -206,7 +207,9 @@ class HydraHandler {
       const txHash = await this.lucid.wallet().submitTx(signedTx);
       return txHash;
     } catch (error) {
-      logger.error(error as unknown as string);
+      logger.debug('There was an error sending the commit transaction:', {
+        error: error as unknown as string,
+      });
       throw error;
     }
   }

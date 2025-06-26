@@ -1,4 +1,4 @@
-import { UTxO } from '@lucid-evolution/lucid';
+import { Assets, UTxO } from '@lucid-evolution/lucid';
 
 /**
  * Tx Builders params
@@ -30,7 +30,7 @@ type WithdrawParams = {
 type PayMerchantParams = {
   adminCollateral: UTxO;
   merchantAddress: string;
-  amountToPay: bigint;
+  assets: Assets;
   userFundsUtxo: UTxO;
   signature: string;
   adminKey: string;

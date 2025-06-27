@@ -52,7 +52,7 @@ async function handlePay(
     const datum = Data.from<FundsDatumT>(userFundsUtxo.datum!, FundsDatum);
 
     // Check if there are enough funds to pay the merchant
-    const amountToPay: Assets = valueTuplesToAssets(amount)
+    const amountToPay: Assets = valueTuplesToAssets(amount);
     const availableFunds = addAssets(userFundsUtxo.assets, {
       ['lovelace']: -datum.locked_deposit,
     });

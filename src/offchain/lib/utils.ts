@@ -94,8 +94,8 @@ export function getValidatorDetails(script: Script, network: Network) {
   }
   return {
     scriptAddress,
-    scriptHash
-  }
+    scriptHash,
+  };
 }
 
 ///// Testing

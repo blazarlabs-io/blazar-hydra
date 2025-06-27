@@ -69,7 +69,10 @@ async function deposit(
     );
     const tokenNameHash = blake2b(32).update(newTokenName).digest('hex');
     validationToken = toUnit(policyId, tokenNameHash);
-    totalAmount = addAssets(totalAmount, {["lovelace"]: minLvc, [validationToken]: 1n});
+    totalAmount = addAssets(totalAmount, {
+      ['lovelace']: minLvc,
+      [validationToken]: 1n,
+    });
 
     tx.mintAssets({ [validationToken]: 1n }, Mint.Mint(outRef));
   }

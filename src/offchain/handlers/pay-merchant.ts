@@ -14,6 +14,7 @@ import { logger } from '../../logger';
 import _ from 'lodash';
 import { HydraHandler } from '../lib/hydra';
 import { FundsDatum, FundsDatumT } from '../lib/types';
+import { valueTuplesToAssets } from '../lib/utils';
 
 async function handlePay(
   lucid: LucidEvolution,
@@ -51,10 +52,7 @@ async function handlePay(
     const datum = Data.from<FundsDatumT>(userFundsUtxo.datum!, FundsDatum);
 
     // Check if there are enough funds to pay the merchant
-    const amountToPay: Assets = amount.reduce((acc, [asset, value]) => {
-      acc[asset] = value;
-      return acc;
-    }, {} as Assets);
+    const amountToPay: Assets = valueTuplesToAssets(amount)
     const availableFunds = addAssets(userFundsUtxo.assets, {
       ['lovelace']: -datum.locked_deposit,
     });

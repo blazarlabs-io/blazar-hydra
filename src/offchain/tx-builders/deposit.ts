@@ -1,16 +1,19 @@
 import {
+  addAssets,
   Data,
   fromUnit,
-  getAddressDetails,
   LucidEvolution,
   OutRef,
   toUnit,
   TxSignBuilder,
-  validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { DepositParams } from '../lib/params';
 import { Spend, Mint, OutputRefT, FundsDatumT, FundsDatum } from '../lib/types';
-import { bech32ToAddressType, getNetworkFromLucid } from '../lib/utils';
+import {
+  bech32ToAddressType,
+  getNetworkFromLucid,
+  getValidatorDetails,
+} from '../lib/utils';
 import blake2b from 'blake2b';
 
 async function deposit(
@@ -21,7 +24,7 @@ async function deposit(
   const {
     userAddress,
     publicKey,
-    amountToDeposit,
+    amountsToDeposit,
     walletUtxos,
     validatorRef,
     fundsUtxo,
@@ -33,22 +36,24 @@ async function deposit(
   if (!validator) {
     throw new Error('Invalid validator reference');
   }
-  const scriptAddress = validatorToAddress(network, validator);
-  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
-  if (!policyId) {
-    throw new Error('Invalid script address');
-  }
+  const { scriptAddress, scriptHash: policyId } = getValidatorDetails(
+    validator,
+    network
+  );
 
   // Build the transaction
   const minLvc = 2_000_000n;
-  let totalAmount = amountToDeposit;
+  let totalAmount = amountsToDeposit;
   let validationToken = '';
+  // If a funds UTxO for this user already exists, we will add the new funds to it. Otherwise, we will create a new one.
   if (fundsUtxo) {
     validationToken = Object.keys(fundsUtxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     ) as string;
-    // Add the funds from the input UTxO, including the locked_deposit
-    totalAmount += fundsUtxo.assets['lovelace'];
+
+    // Add the funds from the input UTxO
+    totalAmount = addAssets(totalAmount, fundsUtxo.assets);
+
     tx.collectFrom([fundsUtxo], Spend.AddFunds);
   } else {
     const selectedUtxo = walletUtxos[0];
@@ -56,6 +61,7 @@ async function deposit(
       transaction_id: selectedUtxo.txHash,
       output_index: BigInt(selectedUtxo.outputIndex),
     };
+
     const serializedIndex = Data.to<bigint>(outRef.output_index);
     const newTokenName = Buffer.from(
       outRef.transaction_id + serializedIndex,
@@ -63,9 +69,11 @@ async function deposit(
     );
     const tokenNameHash = blake2b(32).update(newTokenName).digest('hex');
     validationToken = toUnit(policyId, tokenNameHash);
-    totalAmount += minLvc;
+    totalAmount = addAssets(totalAmount, {["lovelace"]: minLvc, [validationToken]: 1n});
+
     tx.mintAssets({ [validationToken]: 1n }, Mint.Mint(outRef));
   }
+
   const datum = Data.to<FundsDatumT>(
     {
       addr: bech32ToAddressType(lucid, userAddress),
@@ -82,7 +90,7 @@ async function deposit(
     .pay.ToContract(
       scriptAddress,
       { kind: 'inline', value: datum },
-      { ['lovelace']: totalAmount, [validationToken]: 1n }
+      totalAmount
     )
     .attachMetadata(674, { msg: 'HydraPay: Deposit' })
     .complete();

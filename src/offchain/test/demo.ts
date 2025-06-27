@@ -1,5 +1,6 @@
 import {
   Address,
+  Assets,
   Blockfrost,
   Data,
   Lucid,
@@ -83,7 +84,7 @@ const openHead = async () => {
   logger.debug(`Operation ID: ${operationId}`);
 };
 
-const deposit = async (fromWallet: 1 | 2) => {
+const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
   const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   lucid.selectWallet.fromSeed(thisSeed);
   const address = await lucid.wallet().address();
@@ -91,11 +92,13 @@ const deposit = async (fromWallet: 1 | 2) => {
   const publicKey = toHex(privKey.to_public().to_raw_bytes());
   const funds: OutRef[] = [];
   for (let i = 0; i < 2; i++) {
-    console.log(`Creating a funds utxo with 10 ADA`);
+    console.log(
+      `Creating a funds utxo with ${tokens ? 'multiassets' : 'lovelace'}`
+    );
     const depTx = await handleDeposit(lucid, {
       user_address: address,
       public_key: publicKey,
-      amount: 40_000_000n,
+      amount: tokens ? Object.entries(tokens) : [['lovelace', 10_000_000n]],
     });
     const signedTx = await lucid
       .fromTx(depTx.cborHex)
@@ -241,15 +244,26 @@ const trace = process.env.npm_config_trace;
 switch (trace) {
   case 'deposit': {
     const wallet = process.env.npm_config_wallet;
+    const pathToTokensFile = process.env.npm_config_tokens_file;
     if (!wallet) {
       throw new Error('Missing wallet. Provide one with --wallet');
     }
+    let tokens: Assets | undefined;
+    if (!pathToTokensFile) {
+      console.log('No tokens file provided. Using only lovelace.');
+    } else {
+      tokens = JSON.parse(
+        await import('fs/promises').then((fs) =>
+          fs.readFile(pathToTokensFile, 'utf-8')
+        )
+      );
+    }
     switch (wallet) {
       case 'user1':
-        await deposit(1);
+        await deposit(1, tokens);
         break;
       case 'user2':
-        await deposit(2);
+        await deposit(2, tokens);
         break;
       default:
         console.log('Invalid or missing wallet option');

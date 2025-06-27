@@ -1,13 +1,13 @@
 import {
+  addAssets,
+  assetsToValue,
   CML,
   Data,
   fromUnit,
-  getAddressDetails,
   LucidEvolution,
   sortUTxOs,
   TxSignBuilder,
   utxoToCore,
-  validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { WithdrawParams } from '../lib/params';
 import { buildValidator } from '../validator/handle';
@@ -19,7 +19,11 @@ import {
   OutputRefT,
   Spend,
 } from '../lib/types';
-import { dataAddressToBech32, getNetworkFromLucid } from '../lib/utils';
+import {
+  dataAddressToBech32,
+  getNetworkFromLucid,
+  getValidatorDetails,
+} from '../lib/utils';
 
 async function withdrawMerchant(
   lucid: LucidEvolution,
@@ -36,11 +40,7 @@ async function withdrawMerchant(
     throw new Error('Invalid validator');
   }
   const network = getNetworkFromLucid(lucid);
-  const scriptAddress = validatorToAddress(network, validator);
-  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
-  if (!policyId) {
-    throw new Error('Invalid script address');
-  }
+  const { scriptHash: policyId } = getValidatorDetails(validator, network);
 
   // Build inputs
   const fundsUtxos = withdraws.map((w) => w.fundUtxo);
@@ -51,10 +51,24 @@ async function withdrawMerchant(
     inputs.add(cmlInput);
   });
 
-  // Build outputs
+  // Build outputs and burn validation tokens
   const outputs = CML.TransactionOutputList.new();
+  const burn = CML.Mint.new();
+  const policy = CML.ScriptHash.from_hex(policyId);
   sortedInputs.map((utxo) => {
-    const outValue = utxo.assets['lovelace'];
+    // First add the validation token to the burn list
+    const validationToken = Object.entries(utxo.assets).find(
+      ([asset]) => fromUnit(asset).policyId === policyId
+    );
+    if (!validationToken) {
+      throw new Error('Invalid validation token');
+    }
+    const assetName = fromUnit(validationToken[0]).assetName!;
+    const name = CML.AssetName.from_hex(assetName);
+    burn.set(policy, name, -1n);
+
+    // Now build the output for the merchant
+    const payoutValue = addAssets(utxo.assets, { [validationToken[0]]: -1n });
     const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
     const inpRef = Data.to<OutputRefT>(
       {
@@ -65,30 +79,15 @@ async function withdrawMerchant(
     );
     const cmlOutput = CML.TransactionOutput.new(
       CML.Address.from_bech32(dataAddressToBech32(lucid, datum.addr)),
-      CML.Value.new(outValue, CML.MultiAsset.new()),
+      assetsToValue(payoutValue),
       CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(inpRef))
     );
     outputs.add(cmlOutput);
   });
 
-  // Build txBody
+  // Build txBody and set burn
   const fee = 0n;
   const txBody = CML.TransactionBody.new(inputs, outputs, fee);
-
-  // Set burn
-  const burn = CML.Mint.new();
-  const policy = CML.ScriptHash.from_hex(policyId);
-  sortedInputs.map((utxo) => {
-    const validationToken = Object.entries(utxo.assets).find(
-      ([asset]) => fromUnit(asset).policyId === policyId
-    );
-    if (!validationToken) {
-      throw new Error('Invalid validation token');
-    }
-    const assetName = fromUnit(validationToken[0]).assetName!;
-    const name = CML.AssetName.from_hex(assetName);
-    burn.set(policy, name, -1n);
-  });
   txBody.set_mint(burn);
 
   // Add collateral

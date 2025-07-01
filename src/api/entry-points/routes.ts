@@ -20,7 +20,6 @@ import { LucidEvolution } from '@lucid-evolution/lucid';
 import { JSONBig } from './server';
 import { logger } from '../../logger';
 import { prisma } from '../../config';
-import { error } from 'node:console';
 
 enum ERRORS {
   ADDRESS_NOT_FOUND = "The provided address couldn't be found on the protocol",

@@ -544,7 +544,10 @@ fn recursive_withdraw_checks(
         reference_script: o_ref_script,
       } = o
 
-      let expected_value = from_lovelace(lovelace_of(i_value))
+      expect [Pair(validation_token_name, 1)] =
+        tokens(i_value, own_hash) |> to_pairs()
+
+      let expected_value = add(i_value, own_hash, validation_token_name, -1)
 
       and {
         // Output address must match address stored in datum

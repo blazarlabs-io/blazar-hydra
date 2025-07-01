@@ -315,7 +315,9 @@ pub fn validate_merchant_withdraw(
             let expected_datum = i_ref
             let expected_datum_data: Data = expected_datum
 
-            let expected_value = from_lovelace(lovelace_of(i_value))
+            // Merchant should receive all tokens, except the validation token
+            let expected_value =
+              add(i_value, own_hash, validation_token_name, -1)
 
             and {
               (o_addr == dat_addr)?,

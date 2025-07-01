@@ -10,7 +10,7 @@ use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, add, flatten, from_asset,
   from_asset_list, from_lovelace, lovelace_of, match, merge, negate, quantity_of,
-  tokens, without_lovelace, zero,
+  restricted_to, tokens, without_lovelace, zero,
 }
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
@@ -462,12 +462,19 @@ pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
       fn(i) { i.output.address.payment_credential == Script(own_hash) },
     )
 
-  // Calculate funds to be merged
-  let sum_of_lovelace =
-    list.foldl(own_inputs, 0, fn(i, acc) { acc + lovelace_of(i.output.value) })
+  // Get first input to copy over datum and control token
+  expect [first_input, ..rest_i] = own_inputs
 
-  // Get first input to copy over datum
-  expect Some(first_input) = head(own_inputs)
+  // Calculate funds to be merged
+  let sum_of_values =
+    list.foldl(rest_i, zero, fn(i, acc) { merge(acc, i.output.value) })
+
+  let control_tokens = restricted_to(sum_of_values, [own_hash])
+
+  let sum_without_control_token = merge(sum_of_values, negate(control_tokens))
+
+  let expected_output_value =
+    merge(sum_without_control_token, first_input.output.value)
 
   // Only one output allowed to have a token of ours
   expect [
@@ -479,9 +486,6 @@ pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
     },
   ] = list.filter(outputs, fn(o) { tokens(o.value, own_hash) != empty })
 
-  // This output should have adas and only one of our tokens
-  expect [(fst_pol, fst_an, fst_qty), (snd_pol, _snd_tn, 1)] = flatten(o_value)
-
   and {
     // All inputs must have the same datum
     list.all(own_inputs, fn(i) { i.output.datum == first_input.output.datum }),
@@ -489,10 +493,8 @@ pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
     length(own_inputs) > 1,
     // Output must be paid to our script
     o_addr.payment_credential == Script(own_hash),
-    // Make sure that the output value contains enough ada and one token
-    (fst_pol, fst_an) == (ada_policy_id, ada_asset_name),
-    fst_qty >= sum_of_lovelace,
-    snd_pol == own_hash,
+    // Make sure that the output value contains the expected tokens
+    match(o_value, expected_output_value, >=),
     // Make sure datum is copied over
     o_datum == first_input.output.datum,
     // No ref script to avoid paying excessive fees

@@ -7,7 +7,6 @@ import {
   LucidEvolution,
   sortUTxOs,
   TxSignBuilder,
-  utxoToCore,
 } from '@lucid-evolution/lucid';
 import { WithdrawParams } from '../lib/params';
 import { buildValidator } from '../validator/handle';

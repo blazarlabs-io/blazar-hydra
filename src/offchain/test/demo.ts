@@ -174,7 +174,7 @@ const pay = async (
   };
   const res = await postEp(ownServerUrl + API_ROUTES.PAY, pSchema);
   logger.info(res);
-  return res
+  return res;
 };
 
 const fanout = async () => {
@@ -353,7 +353,7 @@ switch (trace) {
         return type != 'Merchant';
       })
       .forEach(async () => {
-        const res = await pay(
+        await pay(
           { ['lovelace']: 2000000n },
           env.USER_ADDRESS_2,
           env.USER_ADDRESS,

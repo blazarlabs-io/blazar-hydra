@@ -208,7 +208,6 @@ function buildOutputs(
   return { outputs, minting };
 }
 
-
 export function addPaySpendRedeemers(
   legacyRedeemers: CML.LegacyRedeemerList,
   sortedInputs: UTxO[],

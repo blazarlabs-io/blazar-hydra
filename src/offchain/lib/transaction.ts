@@ -1,13 +1,4 @@
-import {
-  Assets,
-  CML,
-  Data,
-  LucidEvolution,
-  UTxO,
-  utxoToCore,
-} from '@lucid-evolution/lucid';
-import { FundsDatum, FundsDatumT, Mint, PayInfoT, Spend } from './types';
-import { assetsToDataPairs, bech32ToAddressType } from './utils';
+import { CML, LucidEvolution, UTxO, utxoToCore } from '@lucid-evolution/lucid';
 
 export function buildInputs(sortedInputs: UTxO[]): CML.TransactionInputList {
   const inputs = CML.TransactionInputList.new();
@@ -41,7 +32,10 @@ export function setCollateralInputs(
   txBody.set_collateral_inputs(collateral);
 }
 
-export function setRequiredSigners(txBody: CML.TransactionBody, adminKey: string) {
+export function setRequiredSigners(
+  txBody: CML.TransactionBody,
+  adminKey: string
+) {
   const signer = CML.Ed25519KeyHash.from_hex(adminKey);
   const signers = CML.Ed25519KeyHashList.new();
   signers.add(signer);
@@ -57,7 +51,6 @@ export function setPlutusScripts(
   scripts.add(script);
   txWitnessSet.set_plutus_v3_scripts(scripts);
 }
-
 
 export function addMintRedeemer(
   legacyRedeemers: CML.LegacyRedeemerList,

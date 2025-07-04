@@ -174,6 +174,7 @@ const pay = async (
   };
   const res = await postEp(ownServerUrl + API_ROUTES.PAY, pSchema);
   logger.info(res);
+  return res;
 };
 
 const fanout = async () => {
@@ -350,9 +351,6 @@ switch (trace) {
         }
         const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type;
         return type != 'Merchant';
-      })
-      .map((utxo) => {
-        return utxo.txHash + '#' + utxo.outputIndex;
       })
       .forEach(async () => {
         await pay(

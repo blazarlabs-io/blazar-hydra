@@ -35,6 +35,7 @@ import {
 import axios from 'axios';
 import JSONbig from 'json-bigint';
 import { API_ROUTES } from '../../api/schemas/routes';
+import { JSONBig } from '../../api/entry-points/server';
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
@@ -91,6 +92,10 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
   const privKey = getPrivateKey(thisSeed);
   const publicKey = toHex(privKey.to_public().to_raw_bytes());
   const funds: OutRef[] = [];
+  const totalDeposit: [string, bigint][] = [['lovelace', 20_000_000n]];
+  if (tokens) {
+    Object.entries(tokens).forEach((e) => totalDeposit.push(e));
+  }
   for (let i = 0; i < 2; i++) {
     console.log(
       `Creating a funds utxo with ${tokens ? 'multiassets' : 'lovelace'}`
@@ -98,7 +103,7 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
     const depTx = await handleDeposit(lucid, {
       user_address: address,
       public_key: publicKey,
-      amount: tokens ? Object.entries(tokens) : [['lovelace', 10_000_000n]],
+      amount: totalDeposit,
     });
     const signedTx = await lucid
       .fromTx(depTx.cborHex)
@@ -121,7 +126,7 @@ const getSnapshot = async () => {
 };
 
 const pay = async (
-  amount: bigint,
+  amount: Assets,
   from: Address,
   to: Address,
   withWallet: 1 | 2
@@ -141,10 +146,14 @@ const pay = async (
   });
   await hydra.stop();
 
+  const totalAmount: Assets = { ['lovelace']: 2_000_000n };
+  Object.entries(amount).forEach(([asset, value]) => {
+    totalAmount[asset] = (totalAmount[asset] || 0n) + BigInt(value);
+  });
   const [fundsTxId, fundsIx] = [fRef.txHash, fRef.outputIndex];
   const mAddr = bech32ToAddressType(lucid, to);
   const payInfo: PayInfoT = {
-    amount: assetsToDataPairs({ ['lovelace']: amount }),
+    amount: assetsToDataPairs(totalAmount),
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
@@ -159,7 +168,7 @@ const pay = async (
   const pSchema: PayMerchantSchema = {
     merchant_address: to,
     funds_utxo_ref: { hash: fundsTxId, index: BigInt(fundsIx) },
-    amount: [['lovelace', amount]],
+    amount: Object.entries(totalAmount),
     signature: sig,
     merchant_funds_utxo: undefined,
   };
@@ -252,7 +261,7 @@ switch (trace) {
     if (!pathToTokensFile) {
       console.log('No tokens file provided. Using only lovelace.');
     } else {
-      tokens = JSON.parse(
+      tokens = JSONBig.parse(
         await import('fs/promises').then((fs) =>
           fs.readFile(pathToTokensFile, 'utf-8')
         )
@@ -287,12 +296,9 @@ switch (trace) {
     });
     break;
   case 'pay':
-    const amount = process.env.npm_config_amount;
+    const pathToTokensFile = process.env.npm_config_tokens_file;
     const user = process.env.npm_config_from;
     const mAddr = process.env.npm_config_merchant_address;
-    if (!amount) {
-      throw new Error('Missing amount. Provide with --amount');
-    }
     if (!mAddr) {
       throw new Error(
         'Missing merchant address. Provide with --merchant-address'
@@ -303,9 +309,19 @@ switch (trace) {
         'User not specified. Provide with --from. Options: user1, user2'
       );
     }
+    let parsedTokens: Assets = {};
+    if (!pathToTokensFile) {
+      console.log('No tokens file provided. Using only lovelace.');
+    } else {
+      parsedTokens = JSONBig.parse(
+        await import('fs/promises').then((fs) =>
+          fs.readFile(pathToTokensFile, 'utf-8')
+        )
+      );
+    }
     const withWallet = user === 'user1' ? 1 : 2;
     const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
-    await pay(BigInt(amount), userAddr, mAddr, withWallet);
+    await pay(parsedTokens, userAddr, mAddr, withWallet);
     break;
   case 'fanout':
     await fanout();
@@ -339,7 +355,12 @@ switch (trace) {
         return utxo.txHash + '#' + utxo.outputIndex;
       })
       .forEach(async () => {
-        await pay(2000000n, env.USER_ADDRESS_2, env.USER_ADDRESS, 2);
+        await pay(
+          { ['lovelace']: 2000000n },
+          env.USER_ADDRESS_2,
+          env.USER_ADDRESS,
+          2
+        );
         await hydra.listen('TxValid');
       });
     console.dir('Many payments done', { depth: null });

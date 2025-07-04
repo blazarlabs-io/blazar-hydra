@@ -102,7 +102,7 @@ const DepositZodSchema = z.object({
   public_key: z
     .string()
     .regex(/^[0-9a-fA-F]/, 'Public key must be a hex string'),
-  amount: z.bigint(),
+  amount: z.array(z.tuple([z.string(), z.bigint()])),
   funds_utxo_ref: z
     .object({
       hash: z

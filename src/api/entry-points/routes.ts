@@ -141,7 +141,11 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       const _res = await handleOpenHead(lucid);
       res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.OPEN_HEAD}`);
-      finalizeOpenHead(lucid, openHeadSchema, _res.operationId);
+      finalizeOpenHead(lucid, openHeadSchema, _res.operationId).catch(
+        (error) => {
+          logger.error(`Error finalizing open head: ${error}`);
+        }
+      );
     } catch (e) {
       if (e instanceof Error) {
         logger.error(`500 - ${API_ROUTES.OPEN_HEAD}: ${e}`);
@@ -162,7 +166,9 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       const _res = await handleCloseHead(procId);
       res.status(200).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`200 - ${API_ROUTES.CLOSE_HEAD}`);
-      finalizeCloseHead(lucid, procId);
+      finalizeCloseHead(lucid, procId).catch((error) => {
+        logger.error(`Error finalizing close head: ${error}`);
+      });
     } catch (e) {
       if (e instanceof Error) {
         res

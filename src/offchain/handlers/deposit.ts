@@ -6,6 +6,7 @@ import { env } from '../../config';
 import _ from 'lodash';
 import { logger } from '../../logger';
 import { TxBuiltResponse } from '../../api/schemas/response';
+import { valueTuplesToAssets } from '../lib/utils';
 
 async function handleDeposit(
   lucid: LucidEvolution,
@@ -15,7 +16,7 @@ async function handleDeposit(
     const {
       user_address: userAddress,
       public_key: publicKey,
-      amount: amountToDeposit,
+      amount,
       funds_utxo_ref: fundsUtxoRef,
     } = params;
     const localLucid = _.cloneDeep(lucid);
@@ -24,16 +25,18 @@ async function handleDeposit(
       const { hash: txHash, index: outputIndex } = fundsUtxoRef;
       [fundsUtxo] = await localLucid.utxosByOutRef([{ txHash, outputIndex }]);
     }
+
+    const amountsToDeposit = valueTuplesToAssets(amount);
     const walletUtxos = await localLucid
       .utxosAt(userAddress)
-      .then((utxos) => selectUTxOs(utxos, { lovelace: amountToDeposit }));
+      .then((utxos) => selectUTxOs(utxos, amountsToDeposit));
     const [validatorRef] = await localLucid.utxosByOutRef([
       { txHash: env.VALIDATOR_REF, outputIndex: 0 },
     ]);
     const depositParams: DepositParams = {
       userAddress,
       publicKey,
-      amountToDeposit,
+      amountsToDeposit,
       walletUtxos,
       validatorRef,
       fundsUtxo,

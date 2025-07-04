@@ -7,7 +7,7 @@ import { Assets, UTxO } from '@lucid-evolution/lucid';
 type DepositParams = {
   userAddress: string;
   publicKey: string;
-  amountToDeposit: bigint;
+  amountsToDeposit: Assets;
   walletUtxos: UTxO[];
   validatorRef: UTxO;
   fundsUtxo?: UTxO;

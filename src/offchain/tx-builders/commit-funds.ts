@@ -5,12 +5,10 @@ import {
   LucidEvolution,
   sortUTxOs,
   utxoToCore,
-  validatorToAddress,
-  validatorToRewardAddress,
 } from '@lucid-evolution/lucid';
 import { CommitFundsParams } from '../lib/params';
 import { Combined, Spend } from '../lib/types';
-import { getNetworkFromLucid } from '../lib/utils';
+import { getNetworkFromLucid, getValidatorDetails } from '../lib/utils';
 
 /**
  * Builds a transaction to commit funds to a Hydra head. If there are no user funds to commit,
@@ -30,8 +28,10 @@ async function commitFunds(
     throw new Error(`Validator not found at UTxO: ${validatorRefUtxo}`);
   }
   const network = getNetworkFromLucid(lucid);
-  const scriptAddress = validatorToAddress(network, validator);
-  const rewardAddress = validatorToRewardAddress(network, validator);
+  const { scriptAddress, rewardAddress } = getValidatorDetails(
+    validator,
+    network
+  );
   const adminKey = getAddressDetails(adminAddress).paymentCredential
     ?.hash as string;
 

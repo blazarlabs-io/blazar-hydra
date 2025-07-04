@@ -1,11 +1,9 @@
 import {
+  addAssets,
   Data,
   fromUnit,
-  getAddressDetails,
   LucidEvolution,
   TxSignBuilder,
-  validatorToAddress,
-  validatorToRewardAddress,
 } from '@lucid-evolution/lucid';
 import { WithdrawParams } from '../lib/params';
 import {
@@ -20,6 +18,7 @@ import {
   dataAddressToBech32,
   getNetworkFromLucid,
   getValidator,
+  getValidatorDetails,
 } from '../lib/utils';
 
 async function withdraw(
@@ -33,11 +32,10 @@ async function withdraw(
   // Script UTxO related boilerplate
   const validator = getValidator(validatorRef, adminKey, hydraKey);
   const network = getNetworkFromLucid(lucid);
-  const scriptAddress = validatorToAddress(network, validator);
-  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
-  if (!policyId) {
-    throw new Error('Invalid script address');
-  }
+  const { scriptHash: policyId, rewardAddress } = getValidatorDetails(
+    validator,
+    network
+  );
 
   const sortedInputs = withdraws.sort((a, b) => {
     const aLex = `${a.fundUtxo.txHash}${a.fundUtxo.outputIndex}`;
@@ -54,28 +52,28 @@ async function withdraw(
       throw new Error('Funds UTxO datum not found');
     }
     const datum = Data.from<FundsDatumT>(fundsUtxo.datum, FundsDatum);
-    const address = dataAddressToBech32(lucid, datum.addr);
-    const totalFunds = fundsUtxo.assets['lovelace'];
+
     const validationToken = Object.keys(fundsUtxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
       throw new Error('Validation token not found in funds UTxO');
     }
+    const burnedValidationToken = { [validationToken]: -1n };
+    const userReturn = addAssets(fundsUtxo.assets, burnedValidationToken);
+
     const withdrawInfo: WithdrawInfoT = {
       ref: {
         transaction_id: fundsUtxo.txHash,
         output_index: BigInt(fundsUtxo.outputIndex),
       },
     };
-    const redeemer =
-      kind === 'merchant'
-        ? Spend.MerchantWithdraw
-        : Spend.UserWithdraw(withdrawInfo, sig!);
 
-    tx.collectFrom([fundsUtxo], redeemer);
-    tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
-    tx.pay.ToAddress(address, { ['lovelace']: totalFunds });
+    const userAddress = dataAddressToBech32(lucid, datum.addr);
+
+    tx.collectFrom([fundsUtxo], Spend.UserWithdraw(withdrawInfo, sig!));
+    tx.mintAssets(burnedValidationToken, Mint.Burn);
+    tx.pay.ToAddress(userAddress, userReturn);
   }
 
   // Complete transaction
@@ -86,7 +84,6 @@ async function withdraw(
     tx.readFrom([validatorRef!]);
   }
 
-  const rewardAddress = validatorToRewardAddress(network, validator);
   const txSignBuilder = await tx
     .withdraw(rewardAddress, 0n, Combined.CombinedWithdraw)
     .attachMetadata(674, { msg: 'HydraPay: Withdraw' })

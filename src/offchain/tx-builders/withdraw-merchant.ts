@@ -1,13 +1,12 @@
 import {
+  addAssets,
+  assetsToValue,
   CML,
   Data,
   fromUnit,
-  getAddressDetails,
   LucidEvolution,
   sortUTxOs,
   TxSignBuilder,
-  utxoToCore,
-  validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { WithdrawParams } from '../lib/params';
 import { buildValidator } from '../validator/handle';
@@ -19,7 +18,21 @@ import {
   OutputRefT,
   Spend,
 } from '../lib/types';
-import { dataAddressToBech32, getNetworkFromLucid } from '../lib/utils';
+import {
+  dataAddressToBech32,
+  getNetworkFromLucid,
+  getValidatorDetails,
+} from '../lib/utils';
+import {
+  addMintRedeemer,
+  buildInputs,
+  buildTxBody,
+  setCollateralInputs,
+  setPlutusScripts,
+  setRedeemers,
+  setRequiredSigners,
+  setScriptDataHash,
+} from '../lib/transaction';
 
 async function withdrawMerchant(
   lucid: LucidEvolution,
@@ -36,25 +49,31 @@ async function withdrawMerchant(
     throw new Error('Invalid validator');
   }
   const network = getNetworkFromLucid(lucid);
-  const scriptAddress = validatorToAddress(network, validator);
-  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
-  if (!policyId) {
-    throw new Error('Invalid script address');
-  }
+  const { scriptHash: policyId } = getValidatorDetails(validator, network);
 
   // Build inputs
   const fundsUtxos = withdraws.map((w) => w.fundUtxo);
   const sortedInputs = sortUTxOs(fundsUtxos, 'Canonical');
-  const inputs = CML.TransactionInputList.new();
-  sortedInputs.map((utxo) => {
-    const cmlInput = utxoToCore(utxo).input();
-    inputs.add(cmlInput);
-  });
+  const inputs = buildInputs(sortedInputs);
 
-  // Build outputs
+  // Build outputs and burn validation tokens
+  const policy = CML.ScriptHash.from_hex(policyId);
   const outputs = CML.TransactionOutputList.new();
+  const burn = CML.Mint.new();
   sortedInputs.map((utxo) => {
-    const outValue = utxo.assets['lovelace'];
+    // First add the validation token to the burn list
+    const validationToken = Object.entries(utxo.assets).find(
+      ([asset]) => fromUnit(asset).policyId === policyId
+    );
+    if (!validationToken) {
+      throw new Error('Invalid validation token');
+    }
+    const assetName = fromUnit(validationToken[0]).assetName!;
+    const name = CML.AssetName.from_hex(assetName);
+    burn.set(policy, name, -1n);
+
+    // Now build the output for the merchant
+    const payoutValue = addAssets(utxo.assets, { [validationToken[0]]: -1n });
     const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
     const inpRef = Data.to<OutputRefT>(
       {
@@ -65,99 +84,51 @@ async function withdrawMerchant(
     );
     const cmlOutput = CML.TransactionOutput.new(
       CML.Address.from_bech32(dataAddressToBech32(lucid, datum.addr)),
-      CML.Value.new(outValue, CML.MultiAsset.new()),
+      assetsToValue(payoutValue),
       CML.DatumOption.new_datum(CML.PlutusData.from_cbor_hex(inpRef))
     );
     outputs.add(cmlOutput);
   });
 
   // Build txBody
-  const fee = 0n;
-  const txBody = CML.TransactionBody.new(inputs, outputs, fee);
-
-  // Set burn
-  const burn = CML.Mint.new();
-  const policy = CML.ScriptHash.from_hex(policyId);
-  sortedInputs.map((utxo) => {
-    const validationToken = Object.entries(utxo.assets).find(
-      ([asset]) => fromUnit(asset).policyId === policyId
-    );
-    if (!validationToken) {
-      throw new Error('Invalid validation token');
-    }
-    const assetName = fromUnit(validationToken[0]).assetName!;
-    const name = CML.AssetName.from_hex(assetName);
-    burn.set(policy, name, -1n);
-  });
-  txBody.set_mint(burn);
+  const txBody = buildTxBody(inputs, outputs, burn);
 
   // Add collateral
   if (!walletUtxos) {
     throw new Error('Must provide collateral utxo to build withdraw tx on L2');
   }
   const adminCollateral = walletUtxos[0];
-  const collateral = CML.TransactionInputList.new();
-  const cmlInput = utxoToCore(adminCollateral).input();
-  collateral.add(cmlInput);
-  txBody.set_collateral_inputs(collateral);
+  setCollateralInputs(txBody, adminCollateral);
 
   // Add required signers
-  const signer = CML.Ed25519KeyHash.from_hex(adminKey);
-  const signers = CML.Ed25519KeyHashList.new();
-  signers.add(signer);
-  txBody.set_required_signers(signers);
+  setRequiredSigners(txBody, adminKey);
 
   // Create witness set
   const txWitnessSet = CML.TransactionWitnessSet.new();
 
+  // Build and set redeemers
+  const redeemers = CML.LegacyRedeemerList.new();
+
   // Add spend redeemers
-  const legacyRedeemers = CML.LegacyRedeemerList.new();
   sortedInputs.map((_, idx) => {
     const tag = CML.RedeemerTag.Spend;
     const index = BigInt(idx);
     const data = CML.PlutusData.from_cbor_hex(Spend.MerchantWithdraw);
     const units = CML.ExUnits.new(20_000_000n, 1000_000_000_000n);
-    legacyRedeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
+    redeemers.add(CML.LegacyRedeemer.new(tag, index, data, units));
   });
 
   // Add mint redeemer
-  legacyRedeemers.add(
-    CML.LegacyRedeemer.new(
-      CML.RedeemerTag.Mint,
-      0n,
-      CML.PlutusData.from_cbor_hex(Mint.Burn),
-      CML.ExUnits.new(20_000_000n, 1000_000_000_000n)
-    )
-  );
+  addMintRedeemer(redeemers, Mint.Burn);
 
   // Build redeemers
-  const redeemers = CML.Redeemers.new_arr_legacy_redeemer(legacyRedeemers);
-  txWitnessSet.set_redeemers(redeemers);
+  setRedeemers(txWitnessSet, redeemers);
 
   // Add plutus script
-  const scripts = CML.PlutusV3ScriptList.new();
-  const script = CML.PlutusV3Script.from_cbor_hex(validator.script);
-  scripts.add(script);
-  txWitnessSet.set_plutus_v3_scripts(scripts);
+  setPlutusScripts(txWitnessSet, validator.script);
 
   // Calculate script data hash
-  const costModels = lucid.config().costModels;
-  if (!costModels) {
-    throw new Error('Cost models for Plutus V3 are required');
-  }
-  const language = CML.LanguageList.new();
-  language.add(CML.Language.PlutusV3);
-  const scriptDataHash = CML.calc_script_data_hash(
-    redeemers,
-    CML.PlutusDataList.new(),
-    costModels,
-    language
-  );
-  if (!scriptDataHash) {
-    throw new Error(`Could not calculate script data hash`);
-  } else {
-    txBody.set_script_data_hash(scriptDataHash);
-  }
+  setScriptDataHash(lucid, txBody, txWitnessSet);
 
   // Complete transaction
   const cmlTx = CML.Transaction.new(txBody, txWitnessSet, true).to_cbor_hex();

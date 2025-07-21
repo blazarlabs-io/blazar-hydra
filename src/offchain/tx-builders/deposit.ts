@@ -12,7 +12,6 @@ import { DepositParams } from '../lib/params';
 import { Spend, Mint, OutputRefT, FundsDatumT, FundsDatum } from '../lib/types';
 import { bech32ToAddressType, getNetworkFromLucid } from '../lib/utils';
 import blake2b from 'blake2b';
-import { env } from '../../config';
 
 async function deposit(
   lucid: LucidEvolution,

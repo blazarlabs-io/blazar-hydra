@@ -21,7 +21,6 @@ import {
   getNetworkFromLucid,
   getValidator,
 } from '../lib/utils';
-import { env } from '../../config';
 
 async function withdraw(
   lucid: LucidEvolution,

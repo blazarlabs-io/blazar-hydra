@@ -43,7 +43,11 @@ async function handleDeposit(
       validatorRef,
       fundsUtxo,
     };
-    const { tx, newFundsUtxo } = await deposit(localLucid, depositParams, adminAddress);
+    const { tx, newFundsUtxo } = await deposit(
+      localLucid,
+      depositParams,
+      adminAddress
+    );
     return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
   } catch (e) {
     if (e instanceof Error) {

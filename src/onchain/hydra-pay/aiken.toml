@@ -16,4 +16,4 @@ version = "v2.1.0"
 source = "github"
 
 [config.default]
-add_funds_min_lovelace = 1000000
+add_funds_min_lovelace = 0

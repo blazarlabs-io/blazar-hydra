@@ -85,7 +85,7 @@ const openHead = async () => {
 };
 
 const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
-  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
+  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.SEED;
   lucid.selectWallet.fromSeed(thisSeed!);
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed!);
@@ -156,7 +156,7 @@ const pay = async (
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
-  const signatureSeed = withWallet === 1 ? env.USER_SEED! : env.USER_SEED_2!;
+  const signatureSeed = withWallet === 1 ? env.USER_SEED! : env.SEED;
   const userPrivKey = getPrivateKey(signatureSeed);
 
   const hexAssets = Data.to<MapAssetsT>(
@@ -331,6 +331,7 @@ switch (trace) {
     }
     const withWallet = user === 'user1' ? 1 : 2;
     const userAddr = withWallet === 1 ? env.USER_ADDRESS! : env.USER_ADDRESS_2!;
+    lucid.selectWallet.fromSeed(env.SEED);
     await pay(parsedTokens, userAddr, mAddr, withWallet);
     break;
   case 'fanout':
@@ -342,8 +343,10 @@ switch (trace) {
       throw new Error('Missing from. Provide one with --from');
     }
     const wallet = from === 'user1' ? 1 : 2;
-    const addr = wallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
-    const seed = wallet === 1 ? env.USER_SEED : env.USER_SEED_2;
+    const seed = wallet === 1 ? env.USER_SEED : env.SEED;
+    lucid.selectWallet.fromSeed(seed!);
+    const addr =
+      wallet === 1 ? env.USER_ADDRESS : await lucid.wallet().address();
     await withdraw(addr!, seed!);
     break;
   case 'paymany':

@@ -34,7 +34,7 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
       Merge -> validate_merge(own_input, tx)
       Pay { info, sig } -> validate_pay(info, sig, datum, own_input, tx)
       UserWithdraw { info, sig } ->
-        validate_withdraw(info, sig, datum, own_input, tx)
+        validate_withdraw(info, sig, datum, own_input, tx, admin_key)
       MerchantWithdraw -> validate_merchant_withdraw(datum, own_input, tx)
       PartialCommit -> validate_partial_commit(datum, own_input, tx)
     }
@@ -42,7 +42,7 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
 
   mint(redeemer: MintRedeemer, own_policy: PolicyId, tx: Transaction) {
     when redeemer is {
-      Mint { ref } -> validate_minting(ref, own_policy, tx)
+      Mint { ref } -> validate_minting(ref, own_policy, tx, admin_key)
       Burn -> validate_burning(own_policy, tx)
     }
   }

@@ -30,7 +30,6 @@ import {
   FundsDatumT,
   MapAssets,
   MapAssetsT,
-  PayInfo,
   PayInfoT,
   WithdrawInfo,
   WithdrawInfoT,

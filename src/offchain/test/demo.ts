@@ -3,6 +3,7 @@ import {
   Assets,
   Blockfrost,
   Data,
+  getAddressDetails,
   Lucid,
   LucidEvolution,
   Network,
@@ -27,6 +28,8 @@ import { logger } from '../../logger';
 import {
   FundsDatum,
   FundsDatumT,
+  MapAssets,
+  MapAssetsT,
   PayInfo,
   PayInfoT,
   WithdrawInfo,
@@ -159,8 +162,15 @@ const pay = async (
   };
   const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   const userPrivKey = getPrivateKey(signatureSeed);
+
+  const hexAssets = Data.to<MapAssetsT>(
+    payInfo.amount,
+    MapAssets as unknown as MapAssetsT,
+    { canonical: true }
+  );
+  const det = getAddressDetails(to);
   const msg = Buffer.from(
-    Data.to<PayInfoT>(payInfo, PayInfo, { canonical: true }),
+    `d8799f${hexAssets}d8799fd8799f581c${det.paymentCredential!.hash}ffd8799fd8799fd8799f581c${det.stakeCredential!.hash}ffffffffd8799f5820${payInfo.ref.transaction_id}${Data.to<bigint>(payInfo.ref.output_index)}ffff`,
     'hex'
   );
   const sig = userPrivKey.sign(msg).to_hex();

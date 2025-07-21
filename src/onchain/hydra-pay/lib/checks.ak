@@ -1,6 +1,6 @@
 use aiken/cbor.{serialise}
 use aiken/collection/dict.{empty, size, to_pairs}
-use aiken/collection/list.{head, length}
+use aiken/collection/list.{length}
 use aiken/collection/pairs
 use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash, blake2b_224,
@@ -8,9 +8,8 @@ use aiken/crypto.{
 }
 use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
 use cardano/assets.{
-  PolicyId, ada_asset_name, ada_policy_id, add, flatten, from_asset,
-  from_asset_list, from_lovelace, lovelace_of, match, merge, negate, quantity_of,
-  restricted_to, tokens, without_lovelace, zero,
+  PolicyId, add, from_asset, from_asset_list, lovelace_of, match, merge, negate,
+  quantity_of, restricted_to, tokens, without_lovelace, zero,
 }
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
@@ -221,9 +220,10 @@ pub fn validate_pay(
 
   and {
     // The msg and signature from the redeemer validate against the user vkey stored in the datum
+
     // COMMENTED OUT: There is a serialization difference in the offchain and onchain which is causing this
     // to fail. We'll leave it commented out for now but will come back to it later.
-    //verify_ed25519_signature(public_key, msg, red_sig)?,
+    verify_ed25519_signature(public_key, msg, red_sig)?,
 
     // The ref stored in the redeemer msg is being spent
     list.any(inputs, fn(i) { i.output_reference == red_ref })?,
@@ -392,8 +392,8 @@ pub fn validate_minting(
     list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
     // The script output has the correct address
     (o_address == from_script(own_policy))?,
-    // The script value only has lovelaces and the minted token
-    (without_lovelace(o_value) == from_asset(own_policy, token_name, 1))?,
+    // The script value has the minted token
+    (quantity_of(o_value,  own_policy, expected_token_name) == 1)?,
     // Make sure the address stored in the datum can sign messages for the rest of the operations
     is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value

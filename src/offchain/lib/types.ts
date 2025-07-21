@@ -46,6 +46,11 @@ const FundsDatumSchema = Data.Object({
 type FundsDatumT = Data.Static<typeof FundsDatumSchema>;
 const FundsDatum = FundsDatumSchema as unknown as FundsDatumT;
 
+const MapAssets = Data.Map(
+  Data.Bytes(),
+  Data.Map(Data.Bytes(), Data.Integer())
+);
+type MapAssetsT = Data.Static<typeof MapAssets>;
 const PayInfoSchema = Data.Object({
   amount: Data.Map(Data.Bytes(), Data.Map(Data.Bytes(), Data.Integer())),
   merchant_addr: AddressSchema,
@@ -56,6 +61,7 @@ const PayInfo = PayInfoSchema as unknown as PayInfoT;
 const WithdrawInfoSchema = Data.Object({
   ref: OutputRefSchema,
 });
+
 type WithdrawInfoT = Data.Static<typeof WithdrawInfoSchema>;
 const WithdrawInfo = WithdrawInfoSchema as unknown as WithdrawInfoT;
 const FundsRedeemerSchema = Data.Enum([
@@ -134,6 +140,8 @@ export {
   FundsDatumT,
   FundsRedeemer,
   FundsRedeemerT,
+  MapAssets,
+  MapAssetsT,
   MintRedeemer,
   MintRedeemerT,
   Mint,

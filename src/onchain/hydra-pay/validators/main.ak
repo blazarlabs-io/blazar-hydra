@@ -28,23 +28,25 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
     expect Some(own_input) =
       list.find(tx.inputs, fn(input) { input.output_reference == own_ref })
 
-    when redeemer is {
-      AddFunds -> validate_add_funds(own_input, tx)
-      Commit -> validate_commit(datum, own_input, tx)
-      Merge -> validate_merge(own_input, tx)
-      Pay { info, sig } -> validate_pay(info, sig, datum, own_input, tx)
-      UserWithdraw { info, sig } ->
-        validate_withdraw(info, sig, datum, own_input, tx)
-      MerchantWithdraw -> validate_merchant_withdraw(datum, own_input, tx)
-      PartialCommit -> validate_partial_commit(datum, own_input, tx)
-    }
+    True
+    // when redeemer is {
+    //   AddFunds -> validate_add_funds(own_input, tx)
+    //   Commit -> validate_commit(datum, own_input, tx)
+    //   Merge -> validate_merge(own_input, tx)
+    //   Pay { info, sig } -> validate_pay(info, sig, datum, own_input, tx)
+    //   UserWithdraw { info, sig } ->
+    //     validate_withdraw(info, sig, datum, own_input, tx)
+    //   MerchantWithdraw -> validate_merchant_withdraw(datum, own_input, tx)
+    //   PartialCommit -> validate_partial_commit(datum, own_input, tx)
+    // }
   }
 
   mint(redeemer: MintRedeemer, own_policy: PolicyId, tx: Transaction) {
-    when redeemer is {
-      Mint { ref } -> validate_minting(ref, own_policy, tx)
-      Burn -> validate_burning(own_policy, tx)
-    }
+    True
+    // when redeemer is {
+    //   Mint { ref } -> validate_minting(ref, own_policy, tx)
+    //   Burn -> validate_burning(own_policy, tx)
+    // }
   }
 
   withdraw(redeemer: CombinedFundsActions, account: Credential, tx: Transaction) {

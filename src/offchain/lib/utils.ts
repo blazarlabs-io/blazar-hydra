@@ -9,6 +9,8 @@ import {
   Network,
   Script,
   UTxO,
+  validatorToAddress,
+  validatorToRewardAddress,
 } from '@lucid-evolution/lucid';
 import { AddressT, CredentialT, PayInfoT } from './types';
 import { mnemonicToEntropy } from 'bip39';
@@ -78,6 +80,28 @@ export function assetsToDataPairs(assets: Assets): PayInfoT['amount'] {
   return policiesToAssets;
 }
 
+export function valueTuplesToAssets(valueTuples: [string, bigint][]): Assets {
+  return valueTuples.reduce((acc, [asset, value]) => {
+    acc[asset] = value;
+    return acc;
+  }, {} as Assets);
+}
+
+export function getValidatorDetails(script: Script, network: Network) {
+  const scriptAddress = validatorToAddress(network, script);
+  const rewardAddress = validatorToRewardAddress(network, script);
+  const scriptHash = getAddressDetails(scriptAddress).paymentCredential?.hash;
+  if (!scriptHash) {
+    throw new Error('Invalid script address');
+  }
+  return {
+    scriptAddress,
+    scriptHash,
+    rewardAddress,
+  };
+}
+
+///// Testing
 function getPrivateKey(
   seed: string,
   options: {

@@ -23,7 +23,8 @@ import {
 
 async function withdraw(
   lucid: LucidEvolution,
-  params: WithdrawParams
+  params: WithdrawParams,
+  adminAddress: string
 ): Promise<{ tx: TxSignBuilder }> {
   const tx = lucid.newTx();
   const { kind, withdraws, adminKey, hydraKey, validatorRef, walletUtxos } =
@@ -85,6 +86,7 @@ async function withdraw(
   }
 
   const txSignBuilder = await tx
+    .addSigner(adminAddress)
     .withdraw(rewardAddress, 0n, Combined.CombinedWithdraw)
     .attachMetadata(674, { msg: 'HydraPay: Withdraw' })
     .complete();

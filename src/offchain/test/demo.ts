@@ -343,10 +343,8 @@ switch (trace) {
       throw new Error('Missing from. Provide one with --from');
     }
     const wallet = from === 'user1' ? 1 : 2;
-    const seed = wallet === 1 ? env.USER_SEED : env.SEED;
-    lucid.selectWallet.fromSeed(seed!);
-    const addr =
-      wallet === 1 ? env.USER_ADDRESS : await lucid.wallet().address();
+    const addr = wallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
+    const seed = wallet === 1 ? env.USER_SEED : env.USER_SEED_2;
     await withdraw(addr!, seed!);
     break;
   case 'paymany':

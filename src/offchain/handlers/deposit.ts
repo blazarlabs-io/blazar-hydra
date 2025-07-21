@@ -31,15 +31,20 @@ async function handleDeposit(
     ]);
   }
 
+  lucid.selectWallet.fromSeed(env.SEED);
+  const adminAddress = await lucid.wallet().address();
   const amountsToDeposit = valueTuplesToAssets(amount);
   const walletUtxos = await localLucid
-    .utxosAt(userAddress)
+    .utxosAt(adminAddress)
     .then((utxos) =>
       selectUTxOs(
         utxos,
         addAssets({ ['lovelace']: 5_000_000n }, amountsToDeposit)
       )
     );
+  if (walletUtxos.length === 0) {
+    throw new Error('No UTxOs found in wallet to cover the deposit');
+  }
   const [validatorRef] = await localLucid.utxosByOutRef([
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);
@@ -51,7 +56,11 @@ async function handleDeposit(
     validatorRef,
     fundsUtxo,
   };
-  const { tx, newFundsUtxo } = await deposit(localLucid, depositParams);
+  const { tx, newFundsUtxo } = await deposit(
+    localLucid,
+    depositParams,
+    adminAddress
+  );
   return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
 }
 

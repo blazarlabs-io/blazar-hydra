@@ -16,14 +16,14 @@ async function handleWithdraw(
 ): Promise<TxBuiltResponse> {
   const localLucid = _.cloneDeep(lucid);
   const { address, owner, funds_utxos, network_layer } = params;
-  const { HYDRA_KEY: hydraKey, VALIDATOR_REF: vRef } = env;
+  const { SEED: adminSeed, HYDRA_KEY: hydraKey, VALIDATOR_REF: vRef } = env;
 
-  const adminAddress = await localLucid.wallet().address();
-  const adminCredential = getAddressDetails(adminAddress).paymentCredential;
-  if (!adminCredential || !adminCredential.hash) {
-    throw new Error('Could not get admin key from address');
+  lucid.selectWallet.fromSeed(adminSeed);
+  const adminAddress = await lucid.wallet().address();
+  const adminKey = getAddressDetails(adminAddress).paymentCredential?.hash;
+  if (!adminKey) {
+    throw new Error('Admin address does not have a valid payment credential');
   }
-  const adminKey = adminCredential.hash;
 
   // Lookup funds and validator UTxOs
   const fundsRefs = funds_utxos.map(({ ref }) => ({
@@ -92,7 +92,7 @@ async function handleWithdraw(
   }
 
   // Build and return the transaction
-  const { tx } = await withdraw(localLucid, withdrawParams);
+  const { tx } = await withdraw(localLucid, withdrawParams, adminAddress);
   return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
 }
 

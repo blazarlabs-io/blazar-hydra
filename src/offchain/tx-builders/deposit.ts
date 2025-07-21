@@ -18,7 +18,8 @@ import blake2b from 'blake2b';
 
 async function deposit(
   lucid: LucidEvolution,
-  params: DepositParams
+  params: DepositParams,
+  adminAddress: string
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
   const {
     userAddress,
@@ -46,6 +47,7 @@ async function deposit(
   const minLvc = 2_000_000n;
   let totalAmount = amountsToDeposit;
   let validationToken = '';
+
   // If a funds UTxO for this user already exists, we will add the new funds to it. Otherwise, we will create a new one.
   if (fundsUtxo) {
     validationToken = Object.keys(fundsUtxo.assets).find(
@@ -90,7 +92,7 @@ async function deposit(
 
   const txSignBuilder = await tx
     .readFrom([validatorRef])
-    .addSigner(userAddress)
+    .addSigner(adminAddress)
     .pay.ToContract(
       scriptAddress,
       { kind: 'inline', value: datum },

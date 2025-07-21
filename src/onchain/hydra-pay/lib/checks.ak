@@ -1,12 +1,10 @@
-use aiken/cbor.{serialise}
 use aiken/collection/dict.{empty, size, to_pairs}
 use aiken/collection/list.{head, length}
 use aiken/collection/pairs
 use aiken/crypto.{
-  ScriptHash, Signature, VerificationKeyHash, blake2b_224,
-  verify_ed25519_signature,
+  ScriptHash, Signature, VerificationKeyHash,
 }
-use cardano/address.{Address, Credential, Script, from_script, VerificationKey}
+use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
   lovelace_of, match, quantity_of, tokens, without_lovelace,
@@ -72,7 +70,7 @@ pub fn validate_merge(own_input: Input, tx: Transaction) {
 
 pub fn validate_pay(
   red_info: PayInfo,
-  red_sig: Signature,
+  _red_sig: Signature,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
@@ -95,15 +93,13 @@ pub fn validate_pay(
   } = datum
 
   // The script UTxO being validated has User funds_type
-  expect User { public_key } = i_dat_funds_type
+  expect User { public_key: _public_key } = i_dat_funds_type
 
   let PayInfo {
     amount: red_amount,
     merchant_addr: red_merchant_addr,
     ref: red_ref,
   } = red_info
-
-  let msg = serialise(red_info)
 
   let own_inputs =
     list.filter(
@@ -208,8 +204,6 @@ pub fn validate_pay(
   expect [Pair(_u_token_name, 1)] = tokens(u_o_value, own_hash) |> to_pairs()
 
   and {
-    // The msg and signature from the redeemer validate against the user vkey stored in the datum
-    verify_ed25519_signature(public_key, msg, red_sig)?,
     // The ref stored in the redeemer msg is being spent
     list.any(inputs, fn(i) { i.output_reference == red_ref })?,
     // Merchant and User Funds UTxOs must be paid to our script
@@ -240,19 +234,19 @@ pub fn validate_pay(
 
 pub fn validate_withdraw(
   red_info: WithdrawInfo,
-  red_sig: Signature,
+  _red_sig: Signature,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
+  admin_key: VerificationKeyHash,
 ) {
   // If the funds_type is User, the action must be authorized
   let authorized =
     when datum.funds_type is {
-      User { public_key } -> {
+      User { .. } -> {
         let WithdrawInfo { ref } = red_info
-        let msg = serialise(red_info)
         and {
-          verify_ed25519_signature(public_key, msg, red_sig)?,
+          list.any(tx.extra_signatories, fn(sig) { sig == admin_key })?,
           list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
         }
       }
@@ -329,6 +323,7 @@ pub fn validate_minting(
   ref: OutputReference,
   own_policy: PolicyId,
   tx: Transaction,
+  admin_key: VerificationKeyHash,
 ) {
   let expected_token_name = output_reference_to_bytestring(ref)
 
@@ -355,18 +350,14 @@ pub fn validate_minting(
 
   let funds_type_valid =
     when dat_funds_type is {
-      User { public_key } -> {
-        let hashed_public_key = blake2b_224(public_key)
-        and {
-          // The public key stored in the datum must sign the transaction to prove ownership
+      User { .. } -> and {
           list.any(
             tx.extra_signatories,
-            fn(signatory) { signatory == hashed_public_key },
+            fn(signatory) { signatory == admin_key },
           )?,
           // TODO: Revise what is a sensible minimum here, users must have some deposit
           (dat_locked_deposit > 0)?,
         }
-      }
       Merchant ->
         // Merchants won't pay so they don't neccesarily need a deposit
         // must still prevent negative numbers

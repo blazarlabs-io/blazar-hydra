@@ -26,8 +26,11 @@ async function handleDeposit(
         { txHash, outputIndex: Number(index) },
       ]);
     }
+
+    lucid.selectWallet.fromSeed(env.SEED);
+    const adminAddress = await lucid.wallet().address();
     const walletUtxos = await localLucid
-      .utxosAt(userAddress)
+      .utxosAt(adminAddress)
       .then((utxos) => selectUTxOs(utxos, { lovelace: amountToDeposit }));
     const [validatorRef] = await localLucid.utxosByOutRef([
       { txHash: env.VALIDATOR_REF, outputIndex: 0 },
@@ -40,7 +43,7 @@ async function handleDeposit(
       validatorRef,
       fundsUtxo,
     };
-    const { tx, newFundsUtxo } = await deposit(localLucid, depositParams);
+    const { tx, newFundsUtxo } = await deposit(localLucid, depositParams, adminAddress);
     return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
   } catch (e) {
     if (e instanceof Error) {

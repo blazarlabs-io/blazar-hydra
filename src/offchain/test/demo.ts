@@ -89,7 +89,7 @@ const openHead = async () => {
 };
 
 const deposit = async (fromWallet: 1 | 2) => {
-  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.SEED;
+  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   lucid.selectWallet.fromSeed(thisSeed!);
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed!);
@@ -106,6 +106,7 @@ const deposit = async (fromWallet: 1 | 2) => {
       ownServerUrl + API_ROUTES.DEPOSIT,
       depositParams
     );
+    lucid.selectWallet.fromSeed(adminSeed);
     const signedTx = await lucid
       .fromTx(depTx.cborHex)
       .sign.withWallet()
@@ -154,7 +155,7 @@ const pay = async (
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
-  const signatureSeed = withWallet === 1 ? env.USER_SEED : env.SEED;
+  const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   const userPrivKey = getPrivateKey(signatureSeed!);
   const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), 'hex');
   const sig = userPrivKey.sign(msg).to_hex();
@@ -299,10 +300,7 @@ switch (trace) {
       );
     }
     const withWallet = user === 'user1' ? 1 : 2;
-    lucid.selectWallet.fromSeed(env.SEED);
-    const userAddr =
-      withWallet === 1 ? env.USER_ADDRESS : await lucid.wallet().address();
-
+    const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
     await pay(BigInt(amount), userAddr!, mAddr, withWallet);
     break;
   case 'fanout':
@@ -314,10 +312,8 @@ switch (trace) {
       throw new Error('Missing from. Provide one with --from');
     }
     const wallet = from === 'user1' ? 1 : 2;
-    const seed = wallet === 1 ? env.USER_SEED : env.SEED;
-    lucid.selectWallet.fromSeed(seed!);
-    const addr =
-      wallet === 1 ? env.USER_ADDRESS : await lucid.wallet().address();
+    const addr = wallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
+    const seed = wallet === 1 ? env.USER_SEED : env.USER_SEED_2;
     await withdraw(addr!, seed!);
     break;
   case 'paymany':

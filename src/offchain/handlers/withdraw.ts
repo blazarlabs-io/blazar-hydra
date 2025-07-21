@@ -1,6 +1,6 @@
 import { Layer, WithdrawSchema } from '../../shared';
 import { withdraw } from '../tx-builders/withdraw-user';
-import { LucidEvolution, selectUTxOs } from '@lucid-evolution/lucid';
+import { getAddressDetails, LucidEvolution, selectUTxOs } from '@lucid-evolution/lucid';
 import { WithdrawParams } from '../lib/params';
 import _ from 'lodash';
 import { env } from '../../config';
@@ -16,10 +16,18 @@ async function handleWithdraw(
     const { address, owner, funds_utxos, network_layer } = params;
     localLucid.selectWallet.fromAddress(address, []);
     const {
-      ADMIN_KEY: adminKey,
+      SEED: adminSeed,
       HYDRA_KEY: hydraKey,
       VALIDATOR_REF: vRef,
     } = env;
+
+
+    lucid.selectWallet.fromSeed(adminSeed);
+    const adminAddress = await lucid.wallet().address();
+    const adminKey = getAddressDetails(adminAddress).paymentCredential?.hash;
+    if (!adminKey) {
+      throw new Error('Admin address does not have a valid payment credential');
+    }
 
     // Lookup funds and validator UTxOs
     const fundsRefs = funds_utxos.map(({ ref }) => ({
@@ -60,7 +68,7 @@ async function handleWithdraw(
           throw new Error('User cannot withdraw from L2');
         }
         const walletUtxos = await localLucid
-          .utxosAt(address)
+          .utxosAt(adminAddress)
           .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
         const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
           const signature = funds_utxos.find(
@@ -88,7 +96,7 @@ async function handleWithdraw(
     }
 
     // Build and return the transaction
-    const { tx } = await withdraw(localLucid, withdrawParams);
+    const { tx } = await withdraw(localLucid, withdrawParams, adminAddress);
     return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
   } catch (e) {
     if (e instanceof Error) {

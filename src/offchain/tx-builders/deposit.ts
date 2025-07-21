@@ -12,10 +12,12 @@ import { DepositParams } from '../lib/params';
 import { Spend, Mint, OutputRefT, FundsDatumT, FundsDatum } from '../lib/types';
 import { bech32ToAddressType, getNetworkFromLucid } from '../lib/utils';
 import blake2b from 'blake2b';
+import { env } from '../../config';
 
 async function deposit(
   lucid: LucidEvolution,
-  params: DepositParams
+  params: DepositParams,
+  adminAddress: string
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
   const {
     userAddress,
@@ -79,7 +81,7 @@ async function deposit(
 
   const txSignBuilder = await tx
     .readFrom([validatorRef])
-    .addSigner(userAddress)
+    .addSigner(adminAddress)
     .pay.ToContract(
       scriptAddress,
       { kind: 'inline', value: datum },

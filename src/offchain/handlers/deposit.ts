@@ -48,9 +48,12 @@ async function handleDeposit(
   const [validatorRef] = await localLucid.utxosByOutRef([
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);
+
+  const nonEmptyPubKey =
+    publicKey && publicKey.length > 0 ? publicKey : '0'.repeat(64);
   const depositParams: DepositParams = {
     userAddress,
-    publicKey,
+    publicKey: nonEmptyPubKey,
     amountsToDeposit,
     walletUtxos,
     validatorRef,

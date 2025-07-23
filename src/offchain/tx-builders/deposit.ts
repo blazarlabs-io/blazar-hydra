@@ -26,7 +26,7 @@ async function deposit(
     validatorRef,
     fundsUtxo,
   } = params;
-  lucid.selectWallet.fromAddress(userAddress, walletUtxos);
+  lucid.selectWallet.fromAddress(adminAddress, walletUtxos);
   const tx = lucid.newTx();
   const network = getNetworkFromLucid(lucid);
 

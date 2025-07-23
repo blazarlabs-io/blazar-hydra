@@ -49,6 +49,7 @@ async function handleDeposit(
     );
 
     logger.info(`Submitting deposit transaction with id ${tx.toHash()}`);
+    lucid.selectWallet.fromSeed(env.SEED);
     (await tx.sign.withWallet().complete()).submit();
     logger.info(`Deposit transaction ${tx.toHash()} submitted successfully`);
     return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };

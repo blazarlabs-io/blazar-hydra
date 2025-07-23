@@ -72,7 +72,7 @@ async function withdraw(
     const redeemer =
       kind === 'merchant'
         ? Spend.MerchantWithdraw
-        : Spend.UserWithdraw(withdrawInfo, sig!);
+        : Spend.UserWithdraw(withdrawInfo, sig ?? "");
 
     tx.collectFrom([fundsUtxo], redeemer);
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);

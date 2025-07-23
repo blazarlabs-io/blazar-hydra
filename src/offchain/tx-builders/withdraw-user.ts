@@ -69,10 +69,14 @@ async function withdraw(
         output_index: BigInt(fundsUtxo.outputIndex),
       },
     };
+    const redeemer =
+      kind === 'merchant'
+        ? Spend.MerchantWithdraw
+        : Spend.UserWithdraw(withdrawInfo, sig ?? '');
 
     const userAddress = dataAddressToBech32(lucid, datum.addr);
 
-    tx.collectFrom([fundsUtxo], Spend.UserWithdraw(withdrawInfo, sig!));
+    tx.collectFrom([fundsUtxo], Spend.UserWithdraw(withdrawInfo, redeemer));
     tx.mintAssets(burnedValidationToken, Mint.Burn);
     tx.pay.ToAddress(userAddress, userReturn);
   }

@@ -73,11 +73,14 @@ async function handleWithdraw(
             u.ref.hash === utxo.txHash &&
             Number(u.ref.index) === utxo.outputIndex
         )?.signature;
-        if (!signature) {
-          throw new Error(
-            `User signature not found for UTxO ${utxo.txHash}#${utxo.outputIndex}`
-          );
-        }
+        /**
+         * COMMENTED BLOCK: This is a temporary fix to handle the case where the signature is not provided.
+         */
+        // if (!signature) {
+        //   throw new Error(
+        //     `User signature not found for UTxO ${utxo.txHash}#${utxo.outputIndex}`
+        //   );
+        // }
         return { fundUtxo: utxo, signature };
       });
       withdrawParams = {

@@ -1,8 +1,9 @@
 import {
+  addAssets,
+  Assets,
   Data,
   LucidEvolution,
   UTxO,
-  validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { QueryFundsResponse } from '../../api/schemas/response';
 import { HydraHandler } from '../lib/hydra';
@@ -12,6 +13,7 @@ import {
   dataAddressToBech32,
   getNetworkFromLucid,
   getValidator,
+  getValidatorDetails,
 } from '../lib/utils';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { logger } from '../../logger';
@@ -28,7 +30,9 @@ async function handleQueryFunds(
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);
   const validator = getValidator(vRef);
-  const validatorAddr = validatorToAddress(network, validator);
+  const { scriptAddress: validatorAddr, scriptHash: controlTokenPolicy } =
+    getValidatorDetails(validator, network);
+
   const isOwnUtxo = (utxo: UTxO, addr: string) => {
     if (!utxo.datum) {
       return false;
@@ -47,6 +51,8 @@ async function handleQueryFunds(
       return false;
     }
   };
+
+  // Fetch funds in L1
   try {
     fundsInL1 = await localLucid
       .utxosAt(validatorAddr)
@@ -55,6 +61,8 @@ async function handleQueryFunds(
     logger.error(`Error querying funds in L1: ${error}`);
     throw new Error(`Error querying funds in L1: ${error}`);
   }
+
+  // Fetch funds in L2. Precondition: the head must be opened
   try {
     const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     fundsInL2 = await hydra
@@ -69,17 +77,29 @@ async function handleQueryFunds(
       logger.error(`Error querying funds in L2: ${error}`);
     }
   }
-  const getTotalLvc = (acc: bigint, utxo: UTxO) =>
-    acc + utxo.assets['lovelace'];
-  const totalInL1 = fundsInL1.reduce(getTotalLvc, 0n);
-  const totalInL2 = fundsInL2.reduce(getTotalLvc, 0n);
-  const funds: QueryFundsResponse = {
+
+  const addAssetsFromUtxo = (acc: Assets, utxo: UTxO) =>
+    addAssets(acc, utxo.assets);
+  const removeControlTokens = (assets: Assets): Assets => {
+    return Object.fromEntries(
+      Object.entries(assets).filter(([unit]) => {
+        return !unit.startsWith(controlTokenPolicy);
+      })
+    );
+  };
+  const totalInL1 = removeControlTokens(
+    fundsInL1.reduce(addAssetsFromUtxo, {})
+  );
+  const totalInL2 = removeControlTokens(
+    fundsInL2.reduce(addAssetsFromUtxo, {})
+  );
+
+  return {
     fundsInL1,
     totalInL1,
     fundsInL2,
     totalInL2,
   };
-  return funds;
 }
 
 export { handleQueryFunds };

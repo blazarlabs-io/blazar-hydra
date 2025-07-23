@@ -11,6 +11,7 @@ import { env } from '../../config';
 import _ from 'lodash';
 import { TxBuiltResponse } from '../../api/schemas/response';
 import { valueTuplesToAssets } from '../lib/utils';
+import { logger } from '../../shared/logger';
 
 async function handleDeposit(
   lucid: LucidEvolution,
@@ -29,6 +30,39 @@ async function handleDeposit(
     [fundsUtxo] = await localLucid.utxosByOutRef([
       { txHash, outputIndex: Number(index) },
     ]);
+<<<<<<< HEAD
+=======
+    const nonEmptyPubKey =
+      publicKey && publicKey.length > 0 ? publicKey : '0'.repeat(64);
+    const depositParams: DepositParams = {
+      userAddress,
+      publicKey: nonEmptyPubKey,
+      amountToDeposit,
+      walletUtxos,
+      validatorRef,
+      fundsUtxo,
+    };
+    const { tx, newFundsUtxo } = await deposit(
+      localLucid,
+      depositParams,
+      adminAddress
+    );
+
+    logger.info(`Submitting deposit transaction with id ${tx.toHash()}`);
+    (await tx.sign.withWallet().complete()).submit();
+    logger.info(`Deposit transaction ${tx.toHash()} submitted successfully`);
+    return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
+  } catch (e) {
+    if (e instanceof Error) {
+      logger.error('500 /deposit - ' + e.message);
+    } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+      logger.error('400 /deposit - ' + e);
+    } else {
+      logger.error('520 /deposit - Unknown error type');
+      logger.error(JSON.stringify(e));
+    }
+    throw e;
+>>>>>>> 10dc3de (submit deposit txs)
   }
 
   lucid.selectWallet.fromSeed(env.SEED);
@@ -64,6 +98,10 @@ async function handleDeposit(
     depositParams,
     adminAddress
   );
+
+  logger.info(`Submitting deposit transaction with id ${tx.toHash()}`);
+  (await tx.sign.withWallet().complete()).submit();
+  logger.info(`Deposit transaction ${tx.toHash()} submitted successfully`);
   return { cborHex: tx.toCBOR(), fundsUtxoRef: newFundsUtxo };
 }
 

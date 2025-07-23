@@ -96,6 +96,13 @@ async function handleWithdraw(
 
     // Build and return the transaction
     const { tx } = await withdraw(localLucid, withdrawParams, adminAddress);
+
+    logger.info(`Submitting withdraw transaction with id ${tx.toHash()}`);
+    lucid.selectWallet.fromSeed(env.SEED);
+    const signed = await lucid.fromTx(tx.toCBOR()).sign.withWallet().complete();
+    await signed.submit();
+    logger.info(`Withdraw transaction ${tx.toHash()} submitted successfully`);
+
     return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
   } catch (e) {
     if (e instanceof Error) {

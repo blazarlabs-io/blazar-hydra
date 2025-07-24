@@ -1,5 +1,5 @@
 import { prisma } from '../config';
-import { logger } from '../logger';
+import { logger } from '../shared/logger';
 import { DBStatus } from '../shared/prisma-schemas';
 
 export namespace DBOps {

@@ -1,9 +1,9 @@
 import figlet from 'figlet';
 import { env } from '../config';
-import { logger } from '../logger';
 import { createServer } from './entry-points/server';
 import { setRoutes } from './entry-points/routes';
 import { Blockfrost, Lucid, Network } from '@lucid-evolution/lucid';
+import { logger } from '../shared/logger';
 
 const startServer = async () => {
   const PORT = env.PORT;

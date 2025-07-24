@@ -34,6 +34,7 @@
     "@eslint/js": "^9.28.0",
     "@lucid-evolution/lucid": "^0.4.27",
     "@prisma/client": "^5.22.0",
+    "@ptkdev/logger": "^1.8.0",
     "axios": "^1.7.7",
     "bip39": "^3.1.0",
     "blake2b": "^2.1.4",

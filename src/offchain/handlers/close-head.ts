@@ -1,5 +1,4 @@
 import { Data, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
-import { logger } from '../../logger';
 import { HydraHandler } from '../lib/hydra';
 import _ from 'lodash';
 import { env, prisma } from '../../config';
@@ -8,6 +7,7 @@ import { WithdrawParams } from '../lib/params';
 import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
 import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
+import { logger } from '../../shared/logger';
 
 const MAX_UTXOS_PER_DECOMMIT = 15;
 

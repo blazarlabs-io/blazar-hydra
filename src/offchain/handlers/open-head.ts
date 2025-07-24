@@ -20,11 +20,11 @@ import {
 import _ from 'lodash';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { mergeFunds } from '../tx-builders/merge-funds';
-import { logger } from '../../logger';
 import { commitFunds } from '../tx-builders/commit-funds';
 import { CommitFundsParams } from '../lib/params';
 import { DBStatus } from '../../shared/prisma-schemas';
 import { DBOps } from '../../prisma/db-ops';
+import { logger } from '../../shared/logger';
 
 const MAX_UTXOS_PER_COMMIT = 10;
 
@@ -41,7 +41,7 @@ async function handleOpenHead(
     localLucid.selectWallet.fromSeed(env.SEED);
 
     // Step 1: Initialize the head
-    logger.info('Initializing head...');
+    logger.debug('Initializing head...');
     const hydra = new HydraHandler(localLucid, wsUrl);
     let initTag = await hydra.init();
     if (initTag !== 'HeadIsInitializing') {
@@ -255,10 +255,7 @@ async function commitUtxos(
     const peerUrl = peerUrls[i];
     const thisPeerUtxos = fundUtxosToCommit.slice(0, utxosPerPeer);
     logger.debug(
-      `Committing ${thisPeerUtxos.length} fund UTxOs to peer ${peerUrl}`,
-      thisPeerUtxos.map((utxo) => {
-        return { hash: utxo.txHash, idx: utxo.outputIndex };
-      })
+      `Committing ${thisPeerUtxos.length} fund UTxOs to peer ${peerUrl}`
     );
     fundUtxosToCommit.splice(0, utxosPerPeer);
 
@@ -280,9 +277,9 @@ async function commitUtxos(
     const { tx } = await commitFunds(lucid, params);
     const peerCommitTxId = await hydra.sendCommit(peerUrl, commitUtxos, tx);
 
-    logger.info(`Commit transaction submitted! tx id: ${peerCommitTxId}`);
+    logger.debug(`Commit transaction submitted! tx id: ${peerCommitTxId}`);
     let commitTag = '';
-    logger.info('Waiting for last commit to be confirmed by the hydra node');
+    logger.debug('Waiting for last commit to be confirmed by the hydra node');
     while (commitTag !== 'Committed') {
       commitTag = await hydra.listen('Committed');
     }

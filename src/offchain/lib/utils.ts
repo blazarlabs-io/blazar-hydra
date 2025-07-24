@@ -14,8 +14,8 @@ import {
 } from '@lucid-evolution/lucid';
 import { AddressT, CredentialT, PayInfoT } from './types';
 import { mnemonicToEntropy } from 'bip39';
-import { logger } from '../../logger';
 import { buildValidator } from '../validator/handle';
+import { logger } from '../../shared/logger';
 
 function dataAddressToBech32(lucid: LucidEvolution, add: AddressT): string {
   const paymentCred = add.payment_credential;
@@ -141,7 +141,7 @@ async function waitForUtxosUpdate(
   let userUtxosUpdated = false;
   let scriptUtxoUpdated = false;
   while (!scriptUtxoUpdated || !userUtxosUpdated) {
-    logger.info('Waiting for utxos update...');
+    logger.debug('Waiting for utxos update...');
     await new Promise((r) => setTimeout(r, 10000));
     try {
       const utxos = await lucid.utxosAt(address);
@@ -152,7 +152,7 @@ async function waitForUtxosUpdate(
       scriptUtxoUpdated = scriptUtxos.length !== 0;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      logger.info('Failed to fetch utxos from blockfrost, retrying...');
+      logger.debug('Failed to fetch utxos from blockfrost, retrying...');
     }
   }
   // wait for 20 more seconds because sometimes it is insufficient

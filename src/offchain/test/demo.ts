@@ -12,7 +12,6 @@ import {
   validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { env } from '../../config';
-import { handleDeposit } from '../handlers/deposit';
 import {
   assetsToDataPairs,
   bech32ToAddressType,
@@ -94,7 +93,7 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
     logger.debug(
       `Creating a funds utxo with ${tokens ? 'multiassets' : 'lovelace'}`
     );
-    const depTx = await handleDeposit(lucid, {
+    const depTx = await postEp(ownServerUrl + API_ROUTES.DEPOSIT, {
       user_address: address,
       public_key: publicKey,
       amount: totalDeposit,

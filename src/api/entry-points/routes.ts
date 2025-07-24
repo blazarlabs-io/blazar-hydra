@@ -151,7 +151,7 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       const { address } = req.query as { address: string };
       const _res = await handleQueryFunds(lucid, address);
       res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
-      logger.info(`${STATUS.OK} - ${API_ROUTES.QUERY_FUNDS}`);
+      logger.info(`${STATUS.OK}`, `${API_ROUTES.QUERY_FUNDS}`);
     } catch (e) {
       res
         .status(STATUS.INTERNAL_SERVER_ERROR)

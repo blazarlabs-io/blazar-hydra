@@ -15,12 +15,12 @@ import {
   getValidatorDetails,
 } from '../lib/utils';
 import blake2b from 'blake2b';
+import { logger } from '../../shared/logger';
 
 async function deposit(
   lucid: LucidEvolution,
   params: DepositParams
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
-  const tx = lucid.newTx();
   const {
     userAddress,
     publicKey,
@@ -30,6 +30,9 @@ async function deposit(
     fundsUtxo,
   } = params;
   const network = getNetworkFromLucid(lucid);
+
+  lucid.selectWallet.fromAddress(userAddress, walletUtxos);
+  const tx = lucid.newTx();
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
@@ -97,6 +100,8 @@ async function deposit(
     )
     .attachMetadata(674, { msg: 'HydraPay: Deposit' })
     .complete();
+  logger.info("HEREEE 2")
+
 
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),

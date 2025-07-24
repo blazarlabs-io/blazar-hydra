@@ -29,6 +29,7 @@ const envSchema = z
     USER_SEED: z.string(),
     USER_ADDRESS_2: z.string(),
     USER_SEED_2: z.string(),
+    LOGGER_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('debug'),
   })
   .readonly();
 type EnvSchema = z.infer<typeof envSchema>;

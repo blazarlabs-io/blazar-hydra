@@ -100,8 +100,7 @@ async function deposit(
     )
     .attachMetadata(674, { msg: 'HydraPay: Deposit' })
     .complete();
-  logger.info("HEREEE 2")
-
+  logger.info('HEREEE 2');
 
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),

@@ -9,8 +9,8 @@ import {
   UTxO,
 } from '@lucid-evolution/lucid';
 import blake2b from 'blake2b';
-import { logger } from '../../logger';
 import { env } from '../../config';
+import { logger } from '../../shared/logger';
 
 const ERROR_TAGS = [
   'PeerHandshakeFailure',
@@ -207,9 +207,11 @@ class HydraHandler {
       const txHash = await this.lucid.wallet().submitTx(signedTx);
       return txHash;
     } catch (error) {
-      logger.debug('There was an error sending the commit transaction:', {
-        error: error as unknown as string,
-      });
+      logger.debug(
+        `There was an error sending the commit transaction: ${{
+          error: error as unknown as string,
+        }}`
+      );
       throw error;
     }
   }

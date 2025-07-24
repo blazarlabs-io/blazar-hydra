@@ -16,7 +16,7 @@ import {
   getValidatorDetails,
 } from '../lib/utils';
 import { FundsDatum, FundsDatumT } from '../lib/types';
-import { logger } from '../../logger';
+import { logger } from '../../shared/logger';
 
 async function handleQueryFunds(
   lucid: LucidEvolution,
@@ -58,8 +58,9 @@ async function handleQueryFunds(
       .utxosAt(validatorAddr)
       .then((utxos) => utxos.filter((utxo) => isOwnUtxo(utxo, address)));
   } catch (error) {
-    logger.error(`Error querying funds in L1: ${error}`);
-    throw new Error(`Error querying funds in L1: ${error}`);
+    const msg = `Error querying funds in L1: ${error}`;
+    logger.error(msg);
+    throw new Error(msg);
   }
 
   // Fetch funds in L2. Precondition: the head must be opened

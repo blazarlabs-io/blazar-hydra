@@ -3,3 +3,6 @@ build/
 .env
 **/*.db
 **/*.txt
+app.log
+.cursor
+*.log

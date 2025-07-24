@@ -1,7 +1,6 @@
 import express, { RequestHandler } from 'express';
 import cors from 'cors';
 import { addRequestIdExpressMiddleware } from '../middleware/request-id-middleware';
-import { logger } from '../../logger';
 import JSONBig from 'json-bigint';
 
 const JSONbig = JSONBig({
@@ -11,13 +10,6 @@ const JSONbig = JSONBig({
 
 // Initialize the express engine
 const createServer = () => {
-  logger.configureLogger(
-    {
-      level: 'debug', //env.LOGGER_LEVEL,
-      prettyPrint: true, //env.PRETTY_PRINT,
-    },
-    true
-  );
   const app: express.Application = express();
   const bigintMiddleware: RequestHandler = (req, res, next) => {
     if (req.headers['content-type'] === 'application/json') {

@@ -24,7 +24,6 @@ import {
 import { HydraHandler } from '../lib/hydra';
 import { Layer, PayMerchantSchema, WithdrawSchema } from '../../shared';
 import { handleWithdraw } from '../handlers/withdraw';
-import { logger } from '../../logger';
 import {
   FundsDatum,
   FundsDatumT,
@@ -38,6 +37,7 @@ import axios from 'axios';
 import JSONbig from 'json-bigint';
 import { API_ROUTES } from '../../api/schemas/routes';
 import { JSONBig } from '../../api/entry-points/server';
+import { logger } from '../../shared/logger';
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
@@ -71,14 +71,6 @@ const postEp = async (path: string, param: any): Promise<any> => {
     });
 };
 
-logger.configureLogger(
-  {
-    level: 'debug', //env.LOGGER_LEVEL,
-    prettyPrint: true, //env.PRETTY_PRINT,
-  },
-  false
-);
-
 const openHead = async () => {
   lucid.selectWallet.fromSeed(adminSeed);
   const { operationId } = await postEp(ownServerUrl + API_ROUTES.OPEN_HEAD, {
@@ -99,7 +91,7 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
     Object.entries(tokens).forEach((e) => totalDeposit.push(e));
   }
   for (let i = 0; i < 2; i++) {
-    console.log(
+    logger.debug(
       `Creating a funds utxo with ${tokens ? 'multiassets' : 'lovelace'}`
     );
     const depTx = await handleDeposit(lucid, {
@@ -112,7 +104,7 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
       .sign.withWallet()
       .complete();
     const txHash = await signedTx.submit();
-    console.log(`Submitted deposit tx with hash: ${txHash}`);
+    logger.debug(`Submitted deposit tx with hash: ${txHash}`);
     funds.push(depTx.fundsUtxoRef!);
     const addr = await lucid.wallet().address();
     await waitForUtxosUpdate(lucid, addr, txHash);
@@ -182,7 +174,7 @@ const pay = async (
     merchant_funds_utxo: undefined,
   };
   const res = await postEp(ownServerUrl + API_ROUTES.PAY, pSchema);
-  logger.info(res);
+  logger.debug(res);
   return res;
 };
 
@@ -248,7 +240,7 @@ const withdraw = async (address: Address, seed: string) => {
     .sign.withWallet()
     .complete();
   const txHash = await signedTx.submit();
-  console.log(`Submitted withdraw tx with hash: ${txHash}`);
+  logger.debug(`Submitted withdraw tx with hash: ${txHash}`);
   lucid.selectWallet.fromSeed(adminSeed);
 };
 
@@ -269,7 +261,7 @@ switch (trace) {
     }
     let tokens: Assets | undefined;
     if (!pathToTokensFile) {
-      console.log('No tokens file provided. Using only lovelace.');
+      logger.debug('No tokens file provided. Using only lovelace.');
     } else {
       tokens = JSONBig.parse(
         await import('fs/promises').then((fs) =>
@@ -285,7 +277,7 @@ switch (trace) {
         await deposit(2, tokens);
         break;
       default:
-        console.log('Invalid or missing wallet option');
+        logger.debug('Invalid or missing wallet option');
         break;
     }
     break;
@@ -321,7 +313,7 @@ switch (trace) {
     }
     let parsedTokens: Assets = {};
     if (!pathToTokensFile) {
-      console.log('No tokens file provided. Using only lovelace.');
+      logger.debug('No tokens file provided. Using only lovelace.');
     } else {
       parsedTokens = JSONBig.parse(
         await import('fs/promises').then((fs) =>
@@ -374,6 +366,6 @@ switch (trace) {
     await hydra.stop();
     break;
   default:
-    console.log('Invalid or missing trace option');
+    logger.debug('Invalid or missing trace option');
     break;
 }

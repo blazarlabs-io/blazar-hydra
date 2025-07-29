@@ -1,6 +1,6 @@
 use aiken/cbor.{serialise}
 use aiken/collection/dict.{empty, size, to_pairs}
-use aiken/collection/list.{length}
+use aiken/collection/list.{all, length}
 use aiken/collection/pairs
 use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash, blake2b_224,
@@ -8,8 +8,8 @@ use aiken/crypto.{
 }
 use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
 use cardano/assets.{
-  PolicyId, add, from_asset, from_asset_list, lovelace_of, match, merge, negate,
-  quantity_of, restricted_to, tokens, without_lovelace, zero,
+  PolicyId, add, flatten, from_asset, from_asset_list, lovelace_of, match, merge,
+  negate, quantity_of, restricted_to, tokens, zero,
 }
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
@@ -42,16 +42,15 @@ pub fn validate_add_funds(own_input: Input, tx: Transaction) {
     reference_script: o_ref_script,
   } = script_output
 
+  let added_value = i_value |> negate() |> merge(o_value)
+
   and {
     // Validation token is present in the input
     ( tokens(i_value, own_hash) |> size() ) == 1,
-    // Output value is equal to the input value, except for lovelaces that must
-    // increase by at least add_funds_min_lovelace
-    match(
-      o_value,
-      i_value,
-      fn(o_l, i_l) { o_l >= i_l + add_funds_min_lovelace },
-    ),
+    // Lovelaces added must increase by at least add_funds_min_lovelace
+    lovelace_of(added_value) >= add_funds_min_lovelace,
+    // No assets can be taken out
+    added_value |> flatten() |> all(fn((_, _, qty)) { qty >= 0 }),
     // Address doesn't change
     o_address == i_address,
     // Datum doesn't change
@@ -224,7 +223,6 @@ pub fn validate_pay(
     // COMMENTED OUT: There is a serialization difference in the offchain and onchain which is causing this
     // to fail. We'll leave it commented out for now but will come back to it later.
     verify_ed25519_signature(public_key, msg, red_sig)?,
-
     // The ref stored in the redeemer msg is being spent
     list.any(inputs, fn(i) { i.output_reference == red_ref })?,
     // Merchant and User Funds UTxOs must be paid to our script
@@ -393,7 +391,7 @@ pub fn validate_minting(
     // The script output has the correct address
     (o_address == from_script(own_policy))?,
     // The script value has the minted token
-    (quantity_of(o_value,  own_policy, expected_token_name) == 1)?,
+    (quantity_of(o_value, own_policy, expected_token_name) == 1)?,
     // Make sure the address stored in the datum can sign messages for the rest of the operations
     is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value

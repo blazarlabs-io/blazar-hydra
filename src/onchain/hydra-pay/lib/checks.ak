@@ -219,9 +219,6 @@ pub fn validate_pay(
 
   and {
     // The msg and signature from the redeemer validate against the user vkey stored in the datum
-
-    // COMMENTED OUT: There is a serialization difference in the offchain and onchain which is causing this
-    // to fail. We'll leave it commented out for now but will come back to it later.
     verify_ed25519_signature(public_key, msg, red_sig)?,
     // The ref stored in the redeemer msg is being spent
     list.any(inputs, fn(i) { i.output_reference == red_ref })?,

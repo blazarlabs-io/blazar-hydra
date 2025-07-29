@@ -107,13 +107,14 @@ export async function mergeDeposits(
  * @param validatorRef Validator script UTxO reference
  */
 export async function commitUtxos(
-  processId: string,
   hydra: HydraHandler,
   lucid: LucidEvolution,
   fundUtxosToCommit: UTxO[],
   peerUrls: string[],
   adminAddress: string,
-  validatorRef: UTxO
+  validatorRef: UTxO,
+  isPartialCommit: boolean,
+  processId?: string
 ) {
   const adminCollateral = await lucid
     .utxosAt(adminAddress)
@@ -123,13 +124,13 @@ export async function commitUtxos(
       )
     )
     .then((utxos) => utxos.pop());
-  if (!adminCollateral) {
+  if (!isPartialCommit && !adminCollateral) {
     throw new Error(
       'No admin collateral found. Make sure to have a UTxO with just lovelace at the admin address.'
     );
   }
   const utxosPerPeer = 1 + fundUtxosToCommit.length / peerUrls.length;
-  await DBOps.updateHeadStatus(processId, DBStatus.COMMITTING);
+  !processId || (await DBOps.updateHeadStatus(processId, DBStatus.COMMITTING));
 
   for (let i = 0; i < peerUrls.length; i++) {
     const peerUrl = peerUrls[i];
@@ -150,12 +151,14 @@ export async function commitUtxos(
     const isLastCommit = i === peerUrls.length - 1;
 
     // Add admin collateral to the last commit tx
-    if (isLastCommit) {
+    let commitUtxos: UTxO[] = [];
+    if (!isPartialCommit && isLastCommit) {
       params['adminCollateral'] = adminCollateral;
+      // We already checked before that if it's not a partial commit, adminCollateral must exist
+      commitUtxos = [...thisPeerUtxos, adminCollateral!];
+    } else {
+      commitUtxos = thisPeerUtxos;
     }
-    const commitUtxos = isLastCommit
-      ? [...thisPeerUtxos, adminCollateral]
-      : thisPeerUtxos;
 
     const { tx } = await commitFunds(lucid, params);
     const peerCommitTxId = await hydra.sendCommit(peerUrl, commitUtxos, tx);

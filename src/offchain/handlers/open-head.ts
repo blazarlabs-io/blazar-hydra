@@ -99,13 +99,14 @@ async function finalizeOpenHead(
 
     // Step 4: Commit the funds to the hydra head
     await commitUtxos(
-      processId,
       hydra,
       localLucid,
       utxosToCommit,
       peerUrls,
       adminAddress,
-      validatorRef
+      validatorRef,
+      false, // isPartialCommit
+      processId,
     );
 
     await DBOps.updateHeadStatus(processId, DBStatus.AWAITING);

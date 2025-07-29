@@ -254,10 +254,18 @@ components:
     QueryFundsResponse:
       type: object
       properties:
-        adaInL1:
-          type: integer
-        adaInL2:
-          type: integer
+        fundsInL1:
+          type: array
+          items:
+            $ref: '#/components/schemas/TxOutRef'
+        fundsInL2:
+          type: array
+          items:
+            $ref: '#/components/schemas/TxOutRef'
+        totalInL1:
+          type: object
+        totalInL2:
+          type: object
 
     TxBuiltResponse:
       type: object

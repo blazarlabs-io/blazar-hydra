@@ -392,7 +392,7 @@ pub fn validate_minting(
     // Make sure the address stored in the datum can sign messages for the rest of the operations
     is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value
-    (dat_locked_deposit < lovelace_of(o_value))?,
+    (dat_locked_deposit <= lovelace_of(o_value))?,
     // No ref script to avoid paying excessive fees
     (o_ref_script == None)?,
     // Validations change depending on the funds_type

@@ -1,7 +1,12 @@
 import { DepositSchema } from '../../shared';
 import { DepositParams } from '../lib/params';
 import { deposit } from '../tx-builders/deposit';
-import { LucidEvolution, selectUTxOs, UTxO } from '@lucid-evolution/lucid';
+import {
+  addAssets,
+  LucidEvolution,
+  selectUTxOs,
+  UTxO,
+} from '@lucid-evolution/lucid';
 import { env } from '../../config';
 import _ from 'lodash';
 import { TxBuiltResponse } from '../../api/schemas/response';
@@ -27,7 +32,12 @@ async function handleDeposit(
   const amountsToDeposit = valueTuplesToAssets(amount);
   const walletUtxos = await localLucid
     .utxosAt(userAddress)
-    .then((utxos) => selectUTxOs(utxos, amountsToDeposit));
+    .then((utxos) =>
+      selectUTxOs(
+        utxos,
+        addAssets({ ['lovelace']: 5_000_000n }, amountsToDeposit)
+      )
+    );
   const [validatorRef] = await localLucid.utxosByOutRef([
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);

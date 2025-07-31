@@ -82,7 +82,7 @@ export function assetsToDataPairs(assets: Assets): PayInfoT['amount'] {
 
 export function valueTuplesToAssets(valueTuples: [string, bigint][]): Assets {
   return valueTuples.reduce((acc, [asset, value]) => {
-    acc[asset] = value;
+    acc[asset] = (acc[asset] ?? 0n) + value;
     return acc;
   }, {} as Assets);
 }

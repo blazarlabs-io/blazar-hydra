@@ -14,7 +14,7 @@ import { env } from '../../config';
 import _ from 'lodash';
 import { HydraHandler } from '../lib/hydra';
 import { FundsDatum, FundsDatumT } from '../lib/types';
-import { valueTuplesToAssets } from '../lib/utils';
+import { dataAddressToBech32, valueTuplesToAssets } from '../lib/utils';
 import { logger } from '../../shared/logger';
 
 async function handlePay(
@@ -76,6 +76,16 @@ async function handlePay(
     if (!merchantFundsUtxo) {
       throw new Error(`Merchant funds utxo not found`);
     }
+  }
+  if (!merchantFundsUtxo) {
+    merchantFundsUtxo = utxosInL2.find((utxo) => {
+      if (!utxo.datum) return false;
+      const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
+      return (
+        datum.funds_type === 'Merchant' &&
+        dataAddressToBech32(lucid, datum.addr) === merchantAddress
+      );
+    });
   }
 
   const payMerchantParams: PayMerchantParams = {

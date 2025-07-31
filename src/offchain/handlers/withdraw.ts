@@ -65,7 +65,7 @@ async function handleWithdraw(
         throw new Error('User cannot withdraw from L2');
       }
       const walletUtxos = await localLucid
-        .utxosAt(address)
+        .utxosAt(adminAddress)
         .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
       const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
         const signature = funds_utxos.find(

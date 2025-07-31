@@ -85,7 +85,7 @@ const openHead = async () => {
 };
 
 const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
-  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.SEED;
+  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   lucid.selectWallet.fromSeed(thisSeed!);
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed!);
@@ -108,11 +108,12 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
       .fromTx(depTx.cborHex)
       .sign.withWallet()
       .complete();
-    const txHash = await signedTx.submit();
-    logger.debug(`Submitted deposit tx with hash: ${txHash}`);
-    funds.push(depTx.fundsUtxoRef!);
+    // const txHash = await signedTx.submit();
+    // logger.debug(`Submitted deposit tx with hash: ${txHash}`);
+    // funds.push(depTx.fundsUtxoRef!);
+    lucid.selectWallet.fromSeed(adminSeed);
     const addr = await lucid.wallet().address();
-    await waitForUtxosUpdate(lucid, addr, txHash);
+    await waitForUtxosUpdate(lucid, addr, signedTx.toHash());
   }
   lucid.selectWallet.fromSeed(adminSeed);
 };

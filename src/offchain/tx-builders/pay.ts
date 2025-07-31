@@ -144,7 +144,7 @@ function buildOutputs(
     network
   );
   const outputs = CML.TransactionOutputList.new();
-  const minting = CML.Mint.new();
+  let minting: CML.Mint | undefined;
 
   // User
   if (!userFundsUtxo.datum) {
@@ -184,6 +184,7 @@ function buildOutputs(
     // Set mint
     const policy = CML.ScriptHash.from_hex(policyId);
     const name = CML.AssetName.from_hex(tokenNameHash);
+    minting = CML.Mint.new()
     minting.set(policy, name, 1n);
   }
 
@@ -221,7 +222,7 @@ export function addPaySpendRedeemers(
     let data, units;
     if (inpDatum.funds_type === 'Merchant') {
       data = CML.PlutusData.from_cbor_hex(Spend.AddFunds);
-      units = CML.ExUnits.new(0n, 0n);
+      units = CML.ExUnits.new(3_000_000n, 3_000_000_000n);
     } else {
       data = CML.PlutusData.from_cbor_hex(Spend.Pay(payInfo, signature));
       units = CML.ExUnits.new(3_000_000n, 3_000_000_000n);

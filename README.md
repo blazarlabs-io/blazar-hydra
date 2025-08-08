@@ -33,4 +33,27 @@ npm run dev
 
 ### Branch: demo-native-assets
 
-This branch is the same as the main branch but it also supports native assets. The main difference is the removal of signatures from the client-side. Everything is taken care of in the backend. We use this branch to demo the mobile app payment using the BLE contactless terminal
+This branch is the same as the main branch but it also supports native assets. The main difference is the removal of signatures from the client-side. Everything is taken care of in the backend. We use this branch to demo the mobile app payment using the BLE contactless terminal.
+
+```bash
+cd blazar-hydra
+git checkout demo-native-assets
+npm install
+npm run dev
+```
+
+## Debugging Tools
+
+To monitor the websocket we can use the following command on a terminal:
+
+```bash
+sudo websocat -B 2000000 "ws://127.0.0.1:4001/?history=yes
+```
+
+To see current processes and their states use:
+
+```bash
+npx prisma studio
+```
+
+## Run the Merchant App.

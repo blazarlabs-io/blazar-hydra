@@ -27,7 +27,7 @@ This branch has native assets inplemented, supports any cardano native asset as 
 ```bash
 cd blazar-hydra
 git checkout main
-npm install
+cd src && npm install
 npm run dev
 ```
 
@@ -38,7 +38,7 @@ This branch is the same as the main branch but it also supports native assets. T
 ```bash
 cd blazar-hydra
 git checkout demo-native-assets
-npm install
+cd src && npm install
 npm run dev
 ```
 

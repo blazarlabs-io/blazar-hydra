@@ -19,9 +19,8 @@ The complete proposed flow looks like this:
 - Users can pay Merchants using the funds committed into the head
 - Each Merchant will have at most one UTxO inside the hydra head, combining all the payments they received so far
 - Users can also deposit more funds in the L1. But it won't be available until the current head is closed and the new head is open
-- Users and Merchants can request a withdrawal at any moment, and the funds will be returned to them when the head closes.
-- Once the day has ended, all Merchants UTxOs will be withdrawn. Meaning that the funds will leave the smart contract UTxO and go to their respective addresses, still in the L2
-- Then, the head will close and fanout the User and Merchant UTxOs to the L1
+- Once the day has ended, all Merchants UTxOs will be withdrawn. Meaning that the funds will leave the smart contract UTxO and go to their respective addresses, using Incremental Decommits to move them to the L1.
+- Then, the head will close and fanout the User UTxOs to the L1
 - Before opening a new head, any deposit UTxOs that share the same User will be merged. Including new deposits and remaining funds from the previous head
 - Now that every user has only one deposit UTxO in their name, a new head can be opened
 
@@ -51,8 +50,9 @@ Context: An Admin wants to collect User deposits and open the hydra head
 - The backend submits the merge transactions to the cardano node and waits for the confirmation (6)
 - The backend builds a transaction consuming the user deposit UTxOs (7)
 - The backend sends a Commit request to the hydra-node using the built transactions as a blueprint (8)
-- The hydra node builds and submits the Commit transaction (9&10)
-- The hydra node builds and submits the CollectCom transaction
+- The hydra node builds the Commit transaction (9)
+- The backend signs the transaction with the admin key (10)
+- The backend submits the transaction to the cardano node (11)
 
 ![OpenHeadDiagram](img/diagram-open-head.png)
 
@@ -61,7 +61,7 @@ Context: An Admin wants to collect User deposits and open the hydra head
 Context: A User or Merchant wants to know how much funds they have in the protocol
 
 - The backend receives a request with the user or merchant address (1)
-- The backend queries L2 and gets the funds UTxO and the withdraw UTxOs if any (2)
+- The backend queries L2 and gets the funds UTxO (2)
 - The backend queries L1 and gets a list of user deposit UTxOs (3)
 - The backend returns the total assets in L1 and L2, along with the UTxOs in each layer (4)
 
@@ -84,12 +84,10 @@ Context: A User wants to use their available funds to pay a Merchant
 
 Context: A User wants to withdraw assets from the protocol
 
-- The backend receives a request with the user address, amount to withdraw and signature (1)
-- The backend queries the L2 User Funds UTxOs (2)
-- The backend builds an L2 transaction that spends the user funds UTxO and creates a new UTxO at the user address (3)
-- The backend sends the transaction to the hydra node (4)
-- The hydra node responds with the confirmation of the transaction
-- The backend returns the confirmation and the updated User Funds
+- The backend receives a request with the user UTxO ref and signature (1)
+- The backend builds an L1 transaction that spends the user funds UTxO and creates a new UTxO at the user address (2)
+- The backend sends the transaction to the cardano node (3)
+- The backend returns the confirmation and the updated UTxO ref
 
 ![WithdrawFundsDiagram](img/diagram-withdraw-user-funds.png)
 
@@ -100,8 +98,9 @@ Context: An Admin wants to close the hydra head for the day, preparing for the o
 - The backend receives a request to close the head
 - The backend queries all Merchant Funds UTxOs from L2 (1)
 - The backend builds and submits L2 transactions to withdraw all merchant funds (2&3)
-- The backend sends a Close command to the hydra node (4)
-- The hydra node builds and submits the L1 transaction to close the head (5&6)
+- The hydra node builds and submits decommit transactions to the L1 (4)
+- The backend sends a Close command to the hydra node (5)
+- The hydra node builds and submits the L1 transaction to close the head (6&7)
 - Once the contestation period has ended, the backed sends a Fanout command to the hydra node
 - The hydra node builds and submits the L1 transaction to fan-out the head, opening new user funds UTxOs and sending merchant funds to their address
 - The backend returns a success or error message
@@ -110,7 +109,7 @@ Context: An Admin wants to close the hydra head for the day, preparing for the o
 
 ## Technical Details
 
-For the implementation we propose using Aiken (Latest version being V1.1.3) for the on-chain validators and typescript with the Blaze library for the off-chain code and backend. In terms of infrastructure a Cardano Node is needed for querying and submitting transactions to L1, and a collection of hydra nodes to manage the hydra head.
+For the implementation we propose using Aiken (Latest version being V1.1.3) for the on-chain validators and typescript with the Lucid Evolution library for the off-chain code and backend. In terms of infrastructure a Cardano Node is needed for querying and submitting transactions to L1, and a collection of hydra nodes to manage the hydra head.
 
 ### Hydra limitations
 
@@ -149,7 +148,8 @@ Another way to support more users is to use Incremental Commits when they become
 ### Datum
 
 - address: Address
-- funds_type: User {vkey: VerificationKey} | Merchant
+- locked_deposit: Int
+- funds_type: User {public_key: VerificationKey} | Merchant
 
 ### Value
 
@@ -214,7 +214,7 @@ For the **Pay** redeemer, the validations are the following:
 - The script UTxO being validated has User funds_type
 - The msg and signature in the redeemer are valid considering the vkey of the User in the datum
 - At most, one other input at the script address is present. This input is considered the Merchant Funds input
-- If present, the Merchant Funds input has the Merchant funds_type (CAN WE PAY TO ANOTHER USER?)
+- If present, the Merchant Funds input has the Merchant funds_type
 - If present, the Merchant Funds input has the same address than the merchantAddr passed by redeemer
 - If present, the Merchant Funds input has the validation token
 - If present, the Merchant Funds input is being consumed with the AddFunds redeemer
@@ -225,9 +225,9 @@ For the **Pay** redeemer, the validations are the following:
 - It must have at least the original amount of assets minus the amounts specified in the redeemer
 - Remaining User Funds datum must be the same as User Funds UTxO
 - Remaining User Funds address must be the same as User Funds UTxO
-
-- If there's no Remaining User Funds, the validation token must be burnt
 - If there's no Merchant Funds input, a new validation token must be minted
+- The User Funds output doesn't have a reference script
+- The Merchant Funds output doesn't have a reference script
 
 For the **Withdraw** redeemer, the validations are the following:
 
@@ -246,14 +246,15 @@ Validates the actions that contain multiple script inputs interacting together
 For the **Commit** redemeer the validations are the following:
 
 - There's a single input that has the Hydra Init script address
-- The redeemer of the Hydra Init UTxO is the list of utxo refs of all inputs from out script address
+- The redeemer of the Hydra Init UTxO is the list of UTxOs refs of all inputs from out script address
 - The transaction is signed by the blazar admin
+- No tokens from our policy are minted or burned
 
 For the **Merge** redeemer the validations are the following:
 
 - All inputs at the script address have the same datum
 - There's more than one script input
-- There's only one output at the script address
+- There's only one output that has a token from our policy
 - The datum of the output is the same as all the inputs
 - The output has the sum of all assets of the inputs
 - The output has one validation token
@@ -276,9 +277,9 @@ Validates that the Funds UTxOs are created correctly.
 
 The validations are the following when **minting**:
 
-- The minted token is paid to the script address
 - Only one token is being minted
-- The token name is the same as the UTxO ref passed by redeemer
+- The minted token is paid to the script address
+- The token name is the same as the hashed UTxO ref passed by redeemer
 - The UTxO ref passed by redeemer is being consumed
 
 And the following when **burning**:

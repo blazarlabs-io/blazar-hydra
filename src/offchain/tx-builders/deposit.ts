@@ -1,53 +1,62 @@
 import {
+  addAssets,
   Data,
   fromUnit,
-  getAddressDetails,
   LucidEvolution,
   OutRef,
   toUnit,
   TxSignBuilder,
-  validatorToAddress,
-} from "@lucid-evolution/lucid";
-import { DepositParams } from "../lib/params";
-import { Spend, Mint, OutputRefT, FundsDatumT, FundsDatum } from "../lib/types";
-import { bech32ToAddressType } from "../lib/utils";
-import blake2b from "blake2b";
+} from '@lucid-evolution/lucid';
+import { DepositParams } from '../lib/params';
+import { Spend, Mint, OutputRefT, FundsDatumT, FundsDatum } from '../lib/types';
+import {
+  bech32ToAddressType,
+  getNetworkFromLucid,
+  getValidatorDetails,
+} from '../lib/utils';
+import blake2b from 'blake2b';
+import { logger } from '../../shared/logger';
 
 async function deposit(
   lucid: LucidEvolution,
   params: DepositParams
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef }> {
-  const tx = lucid.newTx();
   const {
     userAddress,
     publicKey,
-    amountToDeposit,
+    amountsToDeposit,
     walletUtxos,
     validatorRef,
     fundsUtxo,
   } = params;
+  const network = getNetworkFromLucid(lucid);
+
+  lucid.selectWallet.fromAddress(userAddress, walletUtxos);
+  const tx = lucid.newTx();
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
   if (!validator) {
-    throw new Error("Invalid validator reference");
+    throw new Error('Invalid validator reference');
   }
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
-  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
-  if (!policyId) {
-    throw new Error("Invalid script address");
-  }
+  const { scriptAddress, scriptHash: policyId } = getValidatorDetails(
+    validator,
+    network
+  );
 
   // Build the transaction
   const minLvc = 2_000_000n;
-  let totalAmount = amountToDeposit;
-  let validationToken = "";
+  let totalAmount = amountsToDeposit;
+  let validationToken = '';
+  // If a funds UTxO for this user already exists, we will add the new funds to it. Otherwise, we will create a new one.
   if (fundsUtxo) {
     validationToken = Object.keys(fundsUtxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     ) as string;
-    // Add the funds from the input UTxO, including the locked_deposit
-    totalAmount += fundsUtxo.assets["lovelace"];
+
+    // Add the funds from the input UTxO
+    totalAmount = addAssets(totalAmount, fundsUtxo.assets);
+
     tx.collectFrom([fundsUtxo], Spend.AddFunds);
   } else {
     const selectedUtxo = walletUtxos[0];
@@ -55,16 +64,22 @@ async function deposit(
       transaction_id: selectedUtxo.txHash,
       output_index: BigInt(selectedUtxo.outputIndex),
     };
+
     const serializedIndex = Data.to<bigint>(outRef.output_index);
     const newTokenName = Buffer.from(
       outRef.transaction_id + serializedIndex,
-      "hex"
+      'hex'
     );
-    const tokenNameHash = blake2b(32).update(newTokenName).digest("hex");
+    const tokenNameHash = blake2b(32).update(newTokenName).digest('hex');
     validationToken = toUnit(policyId, tokenNameHash);
-    totalAmount += minLvc;
+    totalAmount = addAssets(totalAmount, {
+      ['lovelace']: minLvc,
+      [validationToken]: 1n,
+    });
+
     tx.mintAssets({ [validationToken]: 1n }, Mint.Mint(outRef));
   }
+
   const datum = Data.to<FundsDatumT>(
     {
       addr: bech32ToAddressType(lucid, userAddress),
@@ -80,11 +95,12 @@ async function deposit(
     .addSigner(userAddress)
     .pay.ToContract(
       scriptAddress,
-      { kind: "inline", value: datum },
-      { ["lovelace"]: totalAmount, [validationToken]: 1n }
+      { kind: 'inline', value: datum },
+      totalAmount
     )
-    .attachMetadata(674, {"msg": "HydraPay: Deposit"})
+    .attachMetadata(674, { msg: 'HydraPay: Deposit' })
     .complete();
+  logger.info('HEREEE 2');
 
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),

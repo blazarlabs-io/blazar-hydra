@@ -1,15 +1,18 @@
 import {
+  addAssets,
+  Assets,
+  CML,
+  coreToUtxo,
   fromUnit,
-  getAddressDetails,
   LucidEvolution,
   OutRef,
+  sortUTxOs,
   TxSignBuilder,
   UTxO,
-  validatorToAddress,
-  validatorToRewardAddress,
-} from "@lucid-evolution/lucid";
-import { MergeFundsParams } from "../lib/params";
-import { Combined, Mint, Spend } from "../lib/types";
+} from '@lucid-evolution/lucid';
+import { MergeFundsParams } from '../lib/params';
+import { Combined, Mint, Spend } from '../lib/types';
+import { getNetworkFromLucid, getValidatorDetails } from '../lib/utils';
 
 async function mergeFunds(
   lucid: LucidEvolution,
@@ -17,47 +20,50 @@ async function mergeFunds(
 ): Promise<{ tx: TxSignBuilder; newFundsUtxo: OutRef; newAdminUtxos: UTxO[] }> {
   const { userFundsUtxos, adminUtxos, validatorRef } = params;
   lucid.overrideUTxOs(adminUtxos);
+  const network = getNetworkFromLucid(lucid);
 
   // Script UTxO related boilerplate
   const validator = validatorRef.scriptRef;
   if (!validator) {
-    throw new Error("Invalid validator reference");
+    throw new Error('Invalid validator reference');
   }
-  const scriptAddress = validatorToAddress(lucid.config().network, validator);
-  const policyId = getAddressDetails(scriptAddress).paymentCredential?.hash;
-  if (!policyId) {
-    throw new Error("Invalid script address");
-  }
+  const {
+    scriptAddress,
+    rewardAddress,
+    scriptHash: policyId,
+  } = getValidatorDetails(validator, network);
 
   // Build transaction values and datum
-  const userFunds = userFundsUtxos.reduce(
-    (acc, utxo) => acc + utxo.assets["lovelace"],
-    0n
-  );
-  const validationToken = Object.keys(userFundsUtxos[0].assets).find(
+  const sortedInputs = sortUTxOs(userFundsUtxos, 'Canonical');
+  const firstInput = sortedInputs[0];
+  if (!firstInput.datum) {
+    throw new Error('Invalid user funds UTxO');
+  }
+
+  const totalFunds = sortedInputs.reduce((acc, utxo) => {
+    const assets = Object.fromEntries(
+      Object.entries(utxo.assets).filter(
+        ([asset]) => fromUnit(asset).policyId !== policyId
+      )
+    );
+    return addAssets(acc, assets);
+  }, {} as Assets);
+
+  const continuingToken = Object.keys(firstInput.assets).find(
     (asset) => fromUnit(asset).policyId === policyId
   );
-  if (!validationToken) {
+  if (!continuingToken) {
     throw new Error(
       `Couldn't find validation token in ${JSON.stringify({
-        hash: userFundsUtxos[0].txHash,
-        index: userFundsUtxos[0].outputIndex,
+        hash: firstInput.txHash,
+        index: firstInput.outputIndex,
       })}`
     );
   }
-  const newFundsValue = {
-    lovelace: userFunds,
-    [validationToken]: 1n,
-  };
-  if (!userFundsUtxos[0].datum) {
-    throw new Error("Invalid user funds UTxO");
-  }
+  const newFundsValue = addAssets(totalFunds, { [continuingToken]: 1n });
+  const newFundsDatum = firstInput.datum;
 
   // Start transaction building
-  const rewardAddress = validatorToRewardAddress(
-    lucid.config().network,
-    validator
-  );
   const tx = lucid
     .newTx()
     .readFrom([validatorRef])
@@ -65,34 +71,48 @@ async function mergeFunds(
     .collectFrom(userFundsUtxos, Spend.Merge)
     .pay.ToContract(
       scriptAddress,
-      { kind: "inline", value: userFundsUtxos[0].datum },
+      { kind: 'inline', value: newFundsDatum },
       newFundsValue
     )
     .withdraw(rewardAddress, 0n, Combined.CombinedMerge);
 
-  // Burn all validation tokens but one
-  for (let i = 1; i < userFundsUtxos.length; i++) {
-    const utxo = userFundsUtxos[i];
+  // Burn all validation tokens except the one from the first UTxO
+  sortedInputs.forEach((utxo, index) => {
+    if (index === 0) return;
     const validationToken = Object.keys(utxo.assets).find(
       (asset) => fromUnit(asset).policyId === policyId
     );
     if (!validationToken) {
       throw new Error(
         `Couldn't find validation token in ${JSON.stringify({
-          hash: userFundsUtxos[0].txHash,
-          index: userFundsUtxos[0].outputIndex,
+          hash: utxo.txHash,
+          index: utxo.outputIndex,
         })}`
       );
     }
     tx.mintAssets({ [validationToken]: -1n }, Mint.Burn);
-  }
+  });
 
   // Complete tx
-  const [newAdminUtxos, _, txSignBuilder] = await tx.chain();
+  const txSignBuilder = await tx.complete();
   const newFundsUtxo = {
     txHash: txSignBuilder.toHash(),
     outputIndex: 0,
   };
+  const txOutputs = txSignBuilder.toTransaction().body().outputs();
+  const newAdminUtxos = [];
+  const adminAddress = adminUtxos[0].address;
+  for (let i = 0; i < txOutputs.len(); i++) {
+    const output = txOutputs.get(i);
+    if (output.address().to_bech32() === adminAddress) {
+      const input = CML.TransactionInput.new(
+        CML.TransactionHash.from_hex(txSignBuilder.toHash()),
+        BigInt(i)
+      );
+      const utxo = CML.TransactionUnspentOutput.new(input, output);
+      newAdminUtxos.push(coreToUtxo(utxo));
+    }
+  }
 
   return { tx: txSignBuilder, newFundsUtxo, newAdminUtxos };
 }

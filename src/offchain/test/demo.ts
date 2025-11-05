@@ -1,80 +1,109 @@
 import {
   Address,
+  Assets,
   Blockfrost,
   Data,
+  getAddressDetails,
   Lucid,
   LucidEvolution,
   Network,
   OutRef,
   toHex,
-} from "@lucid-evolution/lucid";
-import { env } from "../../config";
-import { handleDeposit } from "../handlers/deposit";
-import { commitFunds } from "../tx-builders/commit-funds";
+  validatorToAddress,
+} from '@lucid-evolution/lucid';
+import { env } from '../../config';
 import {
+  assetsToDataPairs,
   bech32ToAddressType,
+  dataAddressToBech32,
+  getNetworkFromLucid,
   getPrivateKey,
   waitForUtxosUpdate,
-} from "../lib/utils";
-import { HydraHandler } from "../lib/hydra";
-import { Layer, PayMerchantSchema, WithdrawSchema } from "../../shared";
-import { handleWithdraw } from "../handlers/withdraw";
-import blake2b from "blake2b";
-import { handleOpenHead } from "../handlers/open-head";
-import { logger } from "../../logger";
-import { PayInfo, PayInfoT, WithdrawInfo, WithdrawInfoT } from "../lib/types";
-import { handlePay } from "../handlers/pay-merchant";
-import { PayMerchantParams } from "../lib/params";
+} from '../lib/utils';
+import { HydraHandler } from '../lib/hydra';
+import { Layer, PayMerchantSchema, WithdrawSchema } from '../../shared';
+import { handleWithdraw } from '../handlers/withdraw';
+import {
+  FundsDatum,
+  FundsDatumT,
+  MapAssets,
+  MapAssetsT,
+  PayInfoT,
+  WithdrawInfo,
+  WithdrawInfoT,
+} from '../lib/types';
+import axios from 'axios';
+import JSONbig from 'json-bigint';
+import { API_ROUTES } from '../../api/schemas/routes';
+import { JSONBig } from '../../api/entry-points/server';
+import { logger } from '../../shared/logger';
 
 const adminSeed = env.SEED;
-const privKey = getPrivateKey(adminSeed);
 const lucid = (await Lucid(
   new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
   env.NETWORK as Network
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);
-const aliceWsUrl = "ws://127.0.0.1:4002";
+const aliceWsUrl = 'ws://127.0.0.1:4001';
 
-const aliceApiUrl = "http://127.0.0.1:4001/commit";
-const bobApiUrl = "http://127.0.0.1:4002/commit";
+const aliceApiUrl = 'http://127.0.0.1:4001/commit';
+const bobApiUrl = 'http://127.0.0.1:4002/commit';
 
-logger.configureLogger(
-  {
-    level: "debug", //env.LOGGER_LEVEL,
-    prettyPrint: true, //env.PRETTY_PRINT,
-  },
-  false
-);
+const ownServerUrl = 'http://localhost:3002';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const postEp = async (path: string, param: any): Promise<any> => {
+  return axios
+    .post(path, JSONbig.stringify(param), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      transformRequest: [(data) => data],
+      transformResponse: [(data) => JSONbig.parse(data)],
+    })
+    .then((response) => {
+      if (response.status === 200) {
+        return response.data;
+      }
+      throw response;
+    });
+};
 
 const openHead = async () => {
   lucid.selectWallet.fromSeed(adminSeed);
-  await handleOpenHead(lucid, {
-    auth_token: "",
+  const { operationId } = await postEp(ownServerUrl + API_ROUTES.OPEN_HEAD, {
     peer_api_urls: [aliceApiUrl, bobApiUrl],
   });
+  logger.debug(`Operation ID: ${operationId}`);
 };
 
-const deposit = async (fromWallet: 1 | 2) => {
-  const thisSeed = fromWallet === 1 ? env.SEED : env.USER_SEED;
+const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
+  const thisSeed = fromWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   lucid.selectWallet.fromSeed(thisSeed);
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed);
   const publicKey = toHex(privKey.to_public().to_raw_bytes());
-  let funds: OutRef[] = [];
+  const funds: OutRef[] = [];
+  const totalDeposit: [string, bigint][] = [['lovelace', 20_000_000n]];
+  if (tokens) {
+    Object.entries(tokens).forEach((e) => totalDeposit.push(e));
+  }
   for (let i = 0; i < 2; i++) {
-    console.log(`Creating a funds utxo with 10 ADA`);
-    const depTx = await handleDeposit(lucid, {
+    logger.debug(
+      `Creating a funds utxo with ${tokens ? 'multiassets' : 'lovelace'}`
+    );
+    const depTx = await postEp(ownServerUrl + API_ROUTES.DEPOSIT, {
       user_address: address,
       public_key: publicKey,
-      amount: 10_000_000n,
+      amount: totalDeposit,
     });
     const signedTx = await lucid
       .fromTx(depTx.cborHex)
       .sign.withWallet()
       .complete();
-    console.log(signedTx.toCBOR());
     const txHash = await signedTx.submit();
-    console.log(`Submitted deposit tx with hash: ${txHash}`);
+    logger.debug(`Submitted deposit tx with hash: ${txHash}`);
     funds.push(depTx.fundsUtxoRef!);
     const addr = await lucid.wallet().address();
     await waitForUtxosUpdate(lucid, addr, txHash);
@@ -89,69 +118,63 @@ const getSnapshot = async () => {
   await hydra.stop();
 };
 
-const closeHead = async () => {
-  async function repeatCloseUntilSuccess(
-    hydra: HydraHandler,
-    intervalMs: number = 10000
-  ): Promise<string> {
-    return new Promise((resolve, _) => {
-      const attemptClose = async () => {
-        try {
-          const result = await hydra.close();
-          if (result === "HeadIsClosed") {
-            clearInterval(interval); // Stop further attempts when expected tag is received
-            resolve(result);
-          }
-        } catch (error) {
-          console.error("Error during close attempt,:", error);
-          console.error("Retrying...");
-        }
-      };
-
-      const interval = setInterval(attemptClose, intervalMs);
-      attemptClose(); // Initial attempt immediately
-    });
-  }
+const pay = async (
+  amount: Assets,
+  from: Address,
+  to: Address,
+  withWallet: 1 | 2
+) => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
-  await repeatCloseUntilSuccess(hydra);
-  let readyToFanoutTag = "";
-  while (readyToFanoutTag !== "ReadyToFanout") {
-    readyToFanoutTag = await hydra.listen("ReadyToFanout");
-  }
+  const utxos = await hydra.getSnapshot();
+  const [fRef] = utxos.filter((utxo) => {
+    if (utxo.address === env.ADMIN_ADDRESS) {
+      return false;
+    }
+    const dat = utxo.datum;
+    if (!dat) {
+      return false;
+    }
+    const owner = Data.from<FundsDatumT>(dat, FundsDatum).addr;
+    return dataAddressToBech32(lucid, owner) === from;
+  });
   await hydra.stop();
-};
 
-const pay = async (amount: bigint, mAddrB32: Address, fRef: string, withWallet: 1 | 2) => {
-  const hydra = new HydraHandler(lucid, aliceWsUrl);
-  const [fundsTxId, fundsIx] = fRef.split("#");
-  const mAddr = bech32ToAddressType(lucid, mAddrB32);
+  const totalAmount: Assets = { ['lovelace']: 2_000_000n };
+  Object.entries(amount).forEach(([asset, value]) => {
+    totalAmount[asset] = (totalAmount[asset] || 0n) + BigInt(value);
+  });
+  const [fundsTxId, fundsIx] = [fRef.txHash, fRef.outputIndex];
+  const mAddr = bech32ToAddressType(lucid, to);
   const payInfo: PayInfoT = {
-    amount: amount,
+    amount: assetsToDataPairs(totalAmount),
     merchant_addr: mAddr,
     ref: { transaction_id: fundsTxId, output_index: BigInt(fundsIx) },
   };
-  const signatureSeed = withWallet === 1 ? env.SEED : env.USER_SEED;
+  const signatureSeed = withWallet === 1 ? env.USER_SEED : env.USER_SEED_2;
   const userPrivKey = getPrivateKey(signatureSeed);
-  const msg = Buffer.from(Data.to<PayInfoT>(payInfo, PayInfo), "hex");
+
+  const hexAssets = Data.to<MapAssetsT>(
+    payInfo.amount,
+    MapAssets as unknown as MapAssetsT,
+    { canonical: true }
+  );
+  const det = getAddressDetails(to);
+  const msg = Buffer.from(
+    `d8799f${hexAssets}d8799fd8799f581c${det.paymentCredential!.hash}ffd8799fd8799fd8799f581c${det.stakeCredential!.hash}ffffffffd8799f5820${payInfo.ref.transaction_id}${Data.to<bigint>(payInfo.ref.output_index)}ffff`,
+    'hex'
+  );
   const sig = userPrivKey.sign(msg).to_hex();
 
   const pSchema: PayMerchantSchema = {
-    merchant_address: mAddrB32,
-    funds_utxo_ref: { hash: fundsTxId, index: Number(fundsIx) },
-    amount: amount,
+    merchant_address: to,
+    funds_utxo_ref: { hash: fundsTxId, index: BigInt(fundsIx) },
+    amount: Object.entries(totalAmount),
     signature: sig,
     merchant_funds_utxo: undefined,
-    user_address: "",
   };
-  const { cborHex } = await handlePay(lucid, pSchema);
-  lucid.selectWallet.fromSeed(adminSeed);
-  console.log(cborHex);
-
-  const signedTx = await lucid.fromTx(cborHex).sign.withWallet().complete();
-  console.log(signedTx.toCBOR());
-  logger.info("Before send tx");
-  const tag = await hydra.sendTx(signedTx.toCBOR());
-  logger.info("After send tx");
+  const res = await postEp(ownServerUrl + API_ROUTES.PAY, pSchema);
+  logger.debug(res);
+  return res;
 };
 
 const fanout = async () => {
@@ -160,109 +183,188 @@ const fanout = async () => {
   await hydra.stop();
 };
 
-const withdraw = async (fanoutTxId: string) => {
-  const adminAddress = await lucid.wallet().address();
-  const withdrawInfo: WithdrawInfoT = {
-    ref: {
-      transaction_id: fanoutTxId,
-      output_index: 0n,
-    },
-  };
-  const msg = Buffer.from(
-    Data.to<WithdrawInfoT>(withdrawInfo, WithdrawInfo),
-    "hex"
-  );
-  const hashedMsg = blake2b(32).update(msg).digest("hex");
-  const sig = privKey.sign(Buffer.from(hashedMsg, "hex")).to_hex();
+const withdraw = async (address: Address, seed: string) => {
+  const [validatorUtxo] = await lucid.utxosByOutRef([
+    { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+  ]);
+  const validator = validatorUtxo.scriptRef!;
+  const network = getNetworkFromLucid(lucid);
+  const scriptAddress = validatorToAddress(network, validator);
+  const withdrawInfos: WithdrawInfoT[] = await lucid
+    .utxosAt(scriptAddress)
+    .then((utxos) =>
+      utxos.filter((utxo) => {
+        const dat = utxo.datum;
+        if (!dat) {
+          return false;
+        }
+        const datum = Data.from<FundsDatumT>(dat, FundsDatum);
+        if (datum.funds_type === 'Merchant') {
+          return false;
+        }
+        return dataAddressToBech32(lucid, datum.addr) === address;
+      })
+    )
+    .then((utxos) =>
+      utxos.map((u) => {
+        return {
+          ref: {
+            transaction_id: u.txHash,
+            output_index: BigInt(u.outputIndex),
+          },
+        };
+      })
+    );
+
+  const withdraws = withdrawInfos.map((w) => {
+    const msg = Buffer.from(Data.to<WithdrawInfoT>(w, WithdrawInfo), 'hex');
+    const sig = getPrivateKey(seed).sign(msg).to_hex();
+    return {
+      ref: { hash: w.ref.transaction_id, index: Number(w.ref.output_index) },
+      signature: sig,
+    };
+  });
 
   const wSchema: WithdrawSchema = {
-    address: adminAddress,
-    owner: "user",
-    funds_utxos_ref: [{ hash: fanoutTxId, index: 0 }],
-    signature: sig,
+    address: address,
+    owner: 'user',
+    funds_utxos: withdraws,
     network_layer: Layer.L1,
   };
+  lucid.selectWallet.fromSeed(seed);
   const withdrawTx = await handleWithdraw(lucid, wSchema);
+  // Sign user
   const signedTx = await lucid
     .fromTx(withdrawTx.cborHex)
     .sign.withWallet()
     .complete();
   const txHash = await signedTx.submit();
-  console.log(`Submitted withdraw tx with hash: ${txHash}`);
+  logger.debug(`Submitted withdraw tx with hash: ${txHash}`);
+  lucid.selectWallet.fromSeed(adminSeed);
 };
 
 const abortHead = async () => {
   const hydra = new HydraHandler(lucid, aliceWsUrl);
   await hydra.abort();
-  await hydra.listen("HeadIsAborted");
+  await hydra.listen('HeadIsAborted');
   hydra.stop();
 };
 
 const trace = process.env.npm_config_trace;
 switch (trace) {
-  case "deposit": {
+  case 'deposit': {
     const wallet = process.env.npm_config_wallet;
+    const pathToTokensFile = process.env.npm_config_tokens_file;
     if (!wallet) {
-      throw new Error("Missing wallet. Provide one with --wallet");
+      throw new Error('Missing wallet. Provide one with --wallet');
+    }
+    let tokens: Assets | undefined;
+    if (!pathToTokensFile) {
+      logger.debug('No tokens file provided. Using only lovelace.');
+    } else {
+      tokens = JSONBig.parse(
+        await import('fs/promises').then((fs) =>
+          fs.readFile(pathToTokensFile, 'utf-8')
+        )
+      );
     }
     switch (wallet) {
-      case "admin":
-        await deposit(1);
+      case 'user1':
+        await deposit(1, tokens);
         break;
-      case "user":
-        await deposit(2);
+      case 'user2':
+        await deposit(2, tokens);
         break;
       default:
-        console.log("Invalid or missing wallet option");
+        logger.debug('Invalid or missing wallet option');
         break;
     }
     break;
   }
-  case "open":
+  case 'open':
     await openHead();
     break;
-  case "abort":
+  case 'abort':
     await abortHead();
     break;
-  case "snapshot":
+  case 'snapshot':
     await getSnapshot();
     break;
-  case "close":
-    await closeHead();
+  case 'close':
+    const id = process.env.npm_config_id;
+    await postEp(`${ownServerUrl}${API_ROUTES.CLOSE_HEAD}/?id=${id}`, {
+      peer_api_urls: [aliceApiUrl, bobApiUrl],
+    });
     break;
-  case "pay":
-    const amount = process.env.npm_config_amount;
+  case 'pay':
+    const pathToTokensFile = process.env.npm_config_tokens_file;
+    const user = process.env.npm_config_from;
     const mAddr = process.env.npm_config_merchant_address;
-    const fundsRef = process.env.npm_config_funds_ref;
-    const wallet = process.env.npm_config_wallet;
-    if (!amount) {
-      throw new Error("Missing amount. Provide with --amount");
-    }
     if (!mAddr) {
       throw new Error(
-        "Missing merchant address. Provide with --merchant-address"
+        'Missing merchant address. Provide with --merchant-address'
       );
     }
-    if (!fundsRef) {
-      throw new Error("Missing Funds UTxO Ref. Provide with --funds-ref");
+    if (!user) {
+      throw new Error(
+        'User not specified. Provide with --from. Options: user1, user2'
+      );
     }
-    if (!wallet) {
-      throw new Error("Missing wallet. Provide one with --wallet");
+    let parsedTokens: Assets = {};
+    if (!pathToTokensFile) {
+      logger.debug('No tokens file provided. Using only lovelace.');
+    } else {
+      parsedTokens = JSONBig.parse(
+        await import('fs/promises').then((fs) =>
+          fs.readFile(pathToTokensFile, 'utf-8')
+        )
+      );
     }
-    const withWallet = wallet === "admin" ? 1 : 2;
-    await pay(BigInt(amount), mAddr, fundsRef, withWallet);
+    const withWallet = user === 'user1' ? 1 : 2;
+    const userAddr = withWallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
+    await pay(parsedTokens, userAddr, mAddr, withWallet);
     break;
-  case "fanout":
+  case 'fanout':
     await fanout();
     break;
-  case "withdraw":
-    const txId = process.env.npm_config_fanout;
-    if (!txId) {
-      throw new Error("Missing txid. Provide one with --fanout");
+  case 'withdraw':
+    const from = process.env.npm_config_from;
+    if (!from) {
+      throw new Error('Missing from. Provide one with --from');
     }
-    await withdraw(txId);
+    const wallet = from === 'user1' ? 1 : 2;
+    const addr = wallet === 1 ? env.USER_ADDRESS : env.USER_ADDRESS_2;
+    const seed = wallet === 1 ? env.USER_SEED : env.USER_SEED_2;
+    await withdraw(addr, seed);
+    break;
+  case 'paymany':
+    const hydra = new HydraHandler(lucid, aliceWsUrl);
+    const utxos = await hydra.getSnapshot();
+    utxos
+      .filter((utxo) => {
+        const dat = utxo.datum;
+        if (!dat) {
+          return false;
+        }
+        if (utxo.address == env.ADMIN_ADDRESS) {
+          return false;
+        }
+        const type = Data.from<FundsDatumT>(dat, FundsDatum).funds_type;
+        return type != 'Merchant';
+      })
+      .forEach(async () => {
+        await pay(
+          { ['lovelace']: 2000000n },
+          env.USER_ADDRESS_2,
+          env.USER_ADDRESS,
+          2
+        );
+        await hydra.listen('TxValid');
+      });
+    console.dir('Many payments done', { depth: null });
+    await hydra.stop();
     break;
   default:
-    console.log("Invalid or missing trace option");
+    logger.debug('Invalid or missing trace option');
     break;
 }

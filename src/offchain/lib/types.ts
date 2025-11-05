@@ -1,4 +1,4 @@
-import { Data } from "@lucid-evolution/lucid";
+import { Data } from '@lucid-evolution/lucid';
 
 /**
  * Common Types
@@ -10,7 +10,6 @@ const CredentialSchema = Data.Enum([
   Data.Object({ Script_cred: Data.Object({ Key: Data.Bytes() }) }),
 ]);
 type CredentialT = Data.Static<typeof CredentialSchema>;
-const Credential = CredentialSchema as unknown as CredentialT;
 const AddressSchema = Data.Object({
   payment_credential: CredentialSchema,
   stake_credential: Data.Nullable(
@@ -26,7 +25,6 @@ const OutputRefSchema = Data.Object({
   output_index: Data.Integer(),
 });
 type OutputRefT = Data.Static<typeof OutputRefSchema>;
-const OutputRef = OutputRefSchema as unknown as OutputRefT;
 
 /**
  *  Contract types
@@ -35,7 +33,7 @@ const FundsTypeSchema = Data.Enum([
   Data.Object({
     User: Data.Object({ public_key: Data.Bytes() }),
   }),
-  Data.Literal("Merchant"),
+  Data.Literal('Merchant'),
 ]);
 type FundsTypeT = Data.Static<typeof FundsTypeSchema>;
 const FundsType = FundsTypeSchema as unknown as FundsTypeT;
@@ -48,8 +46,13 @@ const FundsDatumSchema = Data.Object({
 type FundsDatumT = Data.Static<typeof FundsDatumSchema>;
 const FundsDatum = FundsDatumSchema as unknown as FundsDatumT;
 
+const MapAssets = Data.Map(
+  Data.Bytes(),
+  Data.Map(Data.Bytes(), Data.Integer())
+);
+type MapAssetsT = Data.Static<typeof MapAssets>;
 const PayInfoSchema = Data.Object({
-  amount: Data.Integer(),
+  amount: Data.Map(Data.Bytes(), Data.Map(Data.Bytes(), Data.Integer())),
   merchant_addr: AddressSchema,
   ref: OutputRefSchema,
 });
@@ -58,66 +61,68 @@ const PayInfo = PayInfoSchema as unknown as PayInfoT;
 const WithdrawInfoSchema = Data.Object({
   ref: OutputRefSchema,
 });
+
 type WithdrawInfoT = Data.Static<typeof WithdrawInfoSchema>;
 const WithdrawInfo = WithdrawInfoSchema as unknown as WithdrawInfoT;
 const FundsRedeemerSchema = Data.Enum([
-  Data.Literal("AddFunds"),
-  Data.Literal("Commit"),
-  Data.Literal("Merge"),
+  Data.Literal('AddFunds'),
+  Data.Literal('Commit'),
+  Data.Literal('PartialCommit'),
+  Data.Literal('Merge'),
   Data.Object({ Pay: Data.Object({ info: PayInfoSchema, sig: Data.Bytes() }) }),
   Data.Object({
     UserWithdraw: Data.Object({ info: WithdrawInfoSchema, sig: Data.Bytes() }),
   }),
-  Data.Literal("MerchantWithdraw"),
+  Data.Literal('MerchantWithdraw'),
 ]);
 type FundsRedeemerT = Data.Static<typeof FundsRedeemerSchema>;
 const FundsRedeemer = FundsRedeemerSchema as unknown as FundsRedeemerT;
 namespace Spend {
-  export const AddFunds = Data.to<FundsRedeemerT>("AddFunds", FundsRedeemer);
-  export const Commit = Data.to<FundsRedeemerT>("Commit", FundsRedeemer);
-  export const Merge = Data.to<FundsRedeemerT>("Merge", FundsRedeemer);
+  export const AddFunds = Data.to<FundsRedeemerT>('AddFunds', FundsRedeemer);
+  export const Commit = Data.to<FundsRedeemerT>('Commit', FundsRedeemer);
+  export const Merge = Data.to<FundsRedeemerT>('Merge', FundsRedeemer);
   export const Pay = (info: PayInfoT, sig: string) =>
     Data.to<FundsRedeemerT>({ Pay: { info, sig } }, FundsRedeemer);
   export const UserWithdraw = (info: WithdrawInfoT, sig: string) =>
     Data.to<FundsRedeemerT>({ UserWithdraw: { info, sig } }, FundsRedeemer);
   export const MerchantWithdraw = Data.to<FundsRedeemerT>(
-    "MerchantWithdraw",
+    'MerchantWithdraw',
     FundsRedeemer
   );
 }
 
 const CombinedActionSchema = Data.Enum([
-  Data.Literal("CombinedCommit"),
-  Data.Literal("CombinedMerge"),
-  Data.Literal("CombinedWithdraw"),
+  Data.Literal('CombinedCommit'),
+  Data.Literal('CombinedMerge'),
+  Data.Literal('CombinedWithdraw'),
 ]);
 type CombinedActionT = Data.Static<typeof CombinedActionSchema>;
 const CombinedAction = CombinedActionSchema as unknown as CombinedActionT;
 namespace Combined {
   export const CombinedCommit = Data.to<CombinedActionT>(
-    "CombinedCommit",
+    'CombinedCommit',
     CombinedAction
   );
   export const CombinedMerge = Data.to<CombinedActionT>(
-    "CombinedMerge",
+    'CombinedMerge',
     CombinedAction
   );
   export const CombinedWithdraw = Data.to<CombinedActionT>(
-    "CombinedWithdraw",
+    'CombinedWithdraw',
     CombinedAction
   );
 }
 
 const MintRedeemerSchema = Data.Enum([
   Data.Object({ Mint: Data.Object({ ref: OutputRefSchema }) }),
-  Data.Literal("Burn"),
+  Data.Literal('Burn'),
 ]);
 type MintRedeemerT = Data.Static<typeof MintRedeemerSchema>;
 const MintRedeemer = MintRedeemerSchema as unknown as MintRedeemerT;
 namespace Mint {
   export const Mint = (ref: OutputRefT) =>
     Data.to<MintRedeemerT>({ Mint: { ref } }, MintRedeemer);
-  export const Burn = Data.to<MintRedeemerT>("Burn", MintRedeemer);
+  export const Burn = Data.to<MintRedeemerT>('Burn', MintRedeemer);
 }
 
 export {
@@ -135,6 +140,8 @@ export {
   FundsDatumT,
   FundsRedeemer,
   FundsRedeemerT,
+  MapAssets,
+  MapAssetsT,
   MintRedeemer,
   MintRedeemerT,
   Mint,

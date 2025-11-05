@@ -1,6 +1,7 @@
 use aiken/crypto.{Signature, VerificationKey}
 use cardano/address.{Address}
 use cardano/transaction.{OutputReference}
+use cardano/assets.{AssetName, PolicyId}
 
 pub type FundsType {
   User { public_key: VerificationKey }
@@ -17,6 +18,7 @@ pub type FundsDatum {
 pub type FundsRedeemer {
   AddFunds
   Commit
+  PartialCommit
   Merge
   Pay { info: PayInfo, sig: Signature }
   UserWithdraw { info: WithdrawInfo, sig: Signature }
@@ -24,7 +26,7 @@ pub type FundsRedeemer {
 }
 
 pub type PayInfo {
-  amount: Int,
+  amount: Pairs<PolicyId, Pairs<AssetName, Int>>,
   merchant_addr: Address,
   ref: OutputReference,
 }
@@ -37,6 +39,7 @@ pub type CombinedFundsActions {
   CombinedCommit
   CombinedMerge
   CombinedWithdraw
+  CombinedPartialCommit
 }
 
 pub type MintRedeemer {

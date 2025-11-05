@@ -1,4 +1,4 @@
-import { UTxO } from "@lucid-evolution/lucid";
+import { Assets, UTxO } from '@lucid-evolution/lucid';
 
 /**
  * Tx Builders params
@@ -7,17 +7,20 @@ import { UTxO } from "@lucid-evolution/lucid";
 type DepositParams = {
   userAddress: string;
   publicKey: string;
-  amountToDeposit: bigint;
+  amountsToDeposit: Assets;
   walletUtxos: UTxO[];
   validatorRef: UTxO;
   fundsUtxo?: UTxO;
 };
 
+type Withdraw = {
+  fundUtxo: UTxO;
+  signature?: string;
+};
 type WithdrawParams = {
-  address: string;
-  kind: "user" | "merchant";
-  fundsUtxos: UTxO[];
-  signature: string;
+  kind: 'user' | 'merchant';
+  withdraws: Withdraw[];
+  address?: string;
   adminKey?: string;
   hydraKey?: string;
   validatorRef?: UTxO;
@@ -26,9 +29,8 @@ type WithdrawParams = {
 
 type PayMerchantParams = {
   adminCollateral: UTxO;
-  userAddress: string;
   merchantAddress: string;
-  amountToPay: bigint;
+  assets: Assets;
   userFundsUtxo: UTxO;
   signature: string;
   adminKey: string;

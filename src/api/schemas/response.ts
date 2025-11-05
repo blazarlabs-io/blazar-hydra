@@ -1,13 +1,15 @@
-import { OutRef } from "@lucid-evolution/lucid";
+import { Assets, OutRef } from '@lucid-evolution/lucid';
 
 type QueryFundsResponse = {
-  adaInL1: bigint;
-  adaInL2: bigint;
+  fundsInL1: OutRef[];
+  totalInL1: Assets;
+  fundsInL2: OutRef[];
+  totalInL2: Assets;
 };
 
 type TxBuiltResponse = {
   cborHex: string;
   fundsUtxoRef: OutRef | null;
-}
+};
 
-export {  TxBuiltResponse, QueryFundsResponse };
+export { TxBuiltResponse, QueryFundsResponse };

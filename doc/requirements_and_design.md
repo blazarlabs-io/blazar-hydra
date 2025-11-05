@@ -8,6 +8,8 @@ Users want to spend their ADAs in the real world, but the Cardano transaction se
 
 To circumvent those limitations, we use a Hydra head where users can make payments that settle faster and cheaper. This head is managed by Blazar labs. Users can deposit their funds from L1 into the head, make payments to merchants and withdraw any remaining funds back to the L1.
 
+The current version supports payments in any combination of CNTs.
+
 The system will handle user requests, building transactions and querying the user balances for both the L1 and L2 chains. This solution involves opening and closing a new Hydra Head each day, to allow users to deposit funds into the system. This limitation can be lifted in a v2 of the protocol once [Incremental Commits](https://github.com/cardano-scaling/hydra/issues/199) are implemented. Incremental Decommits are available, so users and merchants can withdraw their funds at any time, although this feature is not part of the designed MVP. Merchant funds are aggregated into a single UTxO during the lifespan of the Hydra head and paid to their address at the end of each day. User funds not withdrawn will be committed into the new Hydra head. We also include a "merging" step, where multiple user deposits UTxOs can be merged into one to increase the amount of users that can fit into a single head.
 
 The complete proposed flow looks like this:
@@ -24,9 +26,9 @@ The complete proposed flow looks like this:
 
 ## Use cases
 
-### Use case: Deposit ADA
+### Use case: Deposit assets
 
-Context: A User has ADAs and wants to start using the protocol
+Context: A User has any native assets and wants to start using the protocol
 
 - The backend receives a request with the user address, funds to deposit and user verification key (1)
 - The backend queries the user UTxOs (2)
@@ -61,7 +63,7 @@ Context: A User or Merchant wants to know how much funds they have in the protoc
 - The backend receives a request with the user or merchant address (1)
 - The backend queries L2 and gets the funds UTxO (2)
 - The backend queries L1 and gets a list of user deposit UTxOs (3)
-- The backend returns the UTxOs that are pending deposit and ready to use
+- The backend returns the total assets in L1 and L2, along with the UTxOs in each layer (4)
 
 ![OpenHeadDiagram](img/diagram-query-funds.png)
 
@@ -69,9 +71,10 @@ Context: A User or Merchant wants to know how much funds they have in the protoc
 
 Context: A User wants to use their available funds to pay a Merchant
 
-- The backend receives a request with the user UTxO ref, merchant address, payment amount and user signature (1)
-- The backend builds an L2 transaction that spends the user funds UTxO and creates a Merchant UTxO (2)
-- The backend sends the transaction to the hydra-node (3)
+- The backend receives a request with the user address, merchant address, payment amounts and user signature (1)
+- The backend queries the User Funds UTxOs in the L2 (2)
+- The backend builds an L2 transaction that spends the user funds UTxO and creates a Merchant UTxO (3)
+- The backend sends the transaction to the hydra-node (4)
 - The hydra node submits the transaction
 - The backend returns a success or error message
 
@@ -79,7 +82,7 @@ Context: A User wants to use their available funds to pay a Merchant
 
 ### Use case: Withdraw User funds
 
-Context: A User wants to withdraw ADAs from the protocol
+Context: A User wants to withdraw assets from the protocol
 
 - The backend receives a request with the user UTxO ref and signature (1)
 - The backend builds an L1 transaction that spends the user funds UTxO and creates a new UTxO at the user address (2)
@@ -151,6 +154,7 @@ Another way to support more users is to use Incremental Commits when they become
 ### Value
 
 - minAda ADA
+- any native asset/s
 - validation_token
 
 ## Transactions
@@ -196,9 +200,7 @@ For the **AddFunds** redeemer, the validations are the following:
 - Address doesn't change
 - Validation token is present in the input
 - Validation token is present in the output
-- Lovelace amount in the value increases by at least N (N can be a parameter or decided later, to discourage DDOS attack)
-- Value doesn't include any other AssetClass
-- Output doesn't include reference scripts
+- Added quantities of all assets are positive
 
 For the **Commit** redeemer, the validations are the following:
 
@@ -217,10 +219,10 @@ For the **Pay** redeemer, the validations are the following:
 - If present, the Merchant Funds input has the validation token
 - If present, the Merchant Funds input is being consumed with the AddFunds redeemer
 - The first output is the Merchant Funds output
-- The amount of lovelaces of the Merchant Funds output is the same as the amount specified in the Pay redeemer plus the Merchant Funds input (If present)
+- The amount of assets of the Merchant Funds output is the same as the amounts specified in the Pay redeemer plus the Merchant Funds input (If present)
 - The Merchant Funds output has the validation token
 - The second output is the Remaining User Funds UTxO
-- It must have at least the original amount of lovelaces minus the amount specified in the redeemer
+- It must have at least the original amount of assets minus the amounts specified in the redeemer
 - Remaining User Funds datum must be the same as User Funds UTxO
 - Remaining User Funds address must be the same as User Funds UTxO
 - If there's no Merchant Funds input, a new validation token must be minted
@@ -254,7 +256,7 @@ For the **Merge** redeemer the validations are the following:
 - There's more than one script input
 - There's only one output that has a token from our policy
 - The datum of the output is the same as all the inputs
-- The output has the sum of all lovelaces of the inputs
+- The output has the sum of all assets of the inputs
 - The output has one validation token
 - All other validation tokens are burnt
 
@@ -262,9 +264,12 @@ For the **Withdraw** redeemer the validations are the following:
 
 - For each script input check that:
   - There's an output whose address is the same as the address stored in the datum of the input
-  - The value contains at least the amount of lovelaces that were in the input
-  - The value doesn't contain any other tokens
-  - The validation_token must be burnt
+  - The value contains at least the amount of assets specified in the redeemer
+  - If there's leftover lovelaces, the next output must be the User Funds output
+  - If present, the User Funds output must have at least the leftover lovelaces and the validation token
+  - If present, the User Funds output must not have any other tokens
+  - If present, the User Funds output must have the same datum as the input
+  - If there's no leftover lovelaces, the validation_token must be burnt
 
 ### Minting Policy
 
@@ -276,13 +281,6 @@ The validations are the following when **minting**:
 - The minted token is paid to the script address
 - The token name is the same as the hashed UTxO ref passed by redeemer
 - The UTxO ref passed by redeemer is being consumed
-- The value where the validation token is being paid only contains the token and lovelaces
-- The payment part of the address stored in the datum is not a script hash
-- The locked deposit field of the datum is not greater than the amount of lovelaces in the value
-- The output doesn't contain a reference script
-- If the output has User funds type, the public key stored is being used to sign the transaction
-- If the output has User funds type, the locked deposit is greater than 0
-- If the output has Merchant funds type, the locked deposit is greater or equal to 0
 
 And the following when **burning**:
 

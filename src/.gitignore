@@ -1,4 +1,8 @@
 node_modules/
 build/
 .env
-
+**/*.db
+**/*.txt
+app.log
+.cursor
+*.log

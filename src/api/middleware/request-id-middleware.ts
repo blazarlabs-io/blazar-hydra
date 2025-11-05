@@ -10,13 +10,13 @@ export function generateRequestId() {
 
 // Context
 let currentContext: AsyncLocalStorage<unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function context<T = any>(): AsyncLocalStorage<T> {
   if (currentContext === undefined) {
     currentContext = new AsyncLocalStorage<T>();
   }
   return currentContext as AsyncLocalStorage<T>;
 }
-
 
 /**
  * This is an express middleware that:
@@ -28,7 +28,7 @@ function context<T = any>(): AsyncLocalStorage<T> {
 export function addRequestId(
   req: IncomingMessage,
   res: ServerResponse,
-  next: () => void,
+  next: () => void
 ) {
   let requestId = req.headers[REQUEST_ID_HEADER];
 
@@ -51,4 +51,4 @@ export function addRequestId(
   context().run({ requestId }, next);
 }
 
-export { context, addRequestId as addRequestIdExpressMiddleware }
+export { context, addRequestId as addRequestIdExpressMiddleware };

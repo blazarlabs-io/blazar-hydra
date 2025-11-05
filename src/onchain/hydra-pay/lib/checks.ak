@@ -1,15 +1,15 @@
 use aiken/cbor.{serialise}
 use aiken/collection/dict.{empty, size, to_pairs}
-use aiken/collection/list.{head, length}
+use aiken/collection/list.{all, length}
 use aiken/collection/pairs
 use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash, blake2b_224,
   verify_ed25519_signature,
 }
-use cardano/address.{Address, Credential, Script, from_script, VerificationKey}
+use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
 use cardano/assets.{
-  PolicyId, ada_asset_name, ada_policy_id, flatten, from_asset, from_lovelace,
-  lovelace_of, match, quantity_of, tokens, without_lovelace,
+  PolicyId, add, flatten, from_asset, from_asset_list, lovelace_of, match, merge,
+  negate, quantity_of, restricted_to, tokens, zero,
 }
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
@@ -17,8 +17,9 @@ use cardano/transaction.{
 }
 use config.{add_funds_min_lovelace}
 use types.{
-  AddFunds, CombinedCommit, CombinedMerge, CombinedWithdraw, FundsDatum,
-  HydraCommit, Merchant, PayInfo, User, WithdrawInfo,
+  AddFunds, CombinedCommit, CombinedMerge, CombinedPartialCommit,
+  CombinedWithdraw, FundsDatum, HydraCommit, Merchant, PayInfo, User,
+  WithdrawInfo,
 }
 use utils.{
   check_withdraw_is_present, is_verification_credential,
@@ -41,16 +42,15 @@ pub fn validate_add_funds(own_input: Input, tx: Transaction) {
     reference_script: o_ref_script,
   } = script_output
 
+  let added_value = i_value |> negate() |> merge(o_value)
+
   and {
     // Validation token is present in the input
     ( tokens(i_value, own_hash) |> size() ) == 1,
-    // Output value is equal to the input value, except for lovelaces that must
-    // increase by at least add_funds_min_lovelace
-    match(
-      o_value,
-      i_value,
-      fn(o_l, i_l) { o_l >= i_l + add_funds_min_lovelace },
-    ),
+    // Lovelaces added must increase by at least add_funds_min_lovelace
+    lovelace_of(added_value) >= add_funds_min_lovelace,
+    // No assets can be taken out
+    added_value |> flatten() |> all(fn((_, _, qty)) { qty >= 0 }),
     // Address doesn't change
     o_address == i_address,
     // Datum doesn't change
@@ -113,7 +113,7 @@ pub fn validate_pay(
 
   let (m_i_funds, m_i_datum) =
     when own_inputs is {
-      [_user_input] -> (0, None)
+      [_user_input] -> (zero, None)
       // At most, one other input at the script address is present.
       // This input is considered the Merchant Funds input
       [input1, input2] -> {
@@ -148,7 +148,7 @@ pub fn validate_pay(
             // The Merchant Funds input has the Merchant funds_type
             (m_dat_f_type == Merchant)?,
           }
-        (lovelace_of(m_i_value), Some(m_i_dat_data))
+        (m_i_value, Some(m_i_dat_data))
       }
 
       _ -> fail
@@ -188,7 +188,17 @@ pub fn validate_pay(
       }
     }
 
-  let expected_merchant_funds = m_i_funds + red_amount
+  let expected_merchant_funds =
+    if m_i_funds == zero {
+      let new_control_token = {
+        let expected_token_name = output_reference_to_bytestring(u_i_ref)
+        from_asset(own_hash, expected_token_name, 1)
+      }
+      // Min ada?
+      merge(new_control_token, from_asset_list(red_amount))
+    } else {
+      merge(m_i_funds, from_asset_list(red_amount))
+    }
 
   // If there's no Merchant Funds input, a new validation token must be minted
   let mint_correct =
@@ -217,17 +227,12 @@ pub fn validate_pay(
     (u_o_addr.payment_credential == Script(own_hash))?,
     // The amount of lovelaces of the Merchant Funds output is the same as the
     // amount specified in the Pay redeemer plus the Merchant Funds input (If present)
-    (lovelace_of(m_o_value) >= expected_merchant_funds)?,
-    // The User Funds output must have at least the original amount of lovelaces
-    // minus the amount specified in the redeemer and be greater than or equal
-    // to the locked deposit specified in the datum
-    match(
-      u_o_value,
-      u_i_value,
-      fn(o_lov, i_lov) {
-        o_lov >= i_lov - red_amount && o_lov >= i_dat_locked_deposit
-      },
-    )?,
+    match(m_o_value, expected_merchant_funds, >=)?,
+    // The User Funds output value must be equal to the input value minus the payed assets,
+    // and a greater or equal amount of lovelace
+    match(u_o_value, merge(u_i_value, negate(from_asset_list(red_amount))), >=)?,
+    // The User Funds output must have at least the locked lovelace deposit specified in the datum
+    (lovelace_of(u_o_value) >= i_dat_locked_deposit)?,
     merchant_correct_datum?,
     // Remaining User Funds datum must be the same as User Funds UTxO
     (u_o_datum == u_i_datum)?,
@@ -239,7 +244,8 @@ pub fn validate_pay(
 }
 
 pub fn validate_withdraw(
-  red_opt_info: Option<(WithdrawInfo, Signature)>,
+  red_info: WithdrawInfo,
+  red_sig: Signature,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
@@ -248,7 +254,6 @@ pub fn validate_withdraw(
   let authorized =
     when datum.funds_type is {
       User { public_key } -> {
-        expect Some((red_info, red_sig)) = red_opt_info
         let WithdrawInfo { ref } = red_info
         let msg = serialise(red_info)
         and {
@@ -257,12 +262,73 @@ pub fn validate_withdraw(
         }
       }
 
-      Merchant -> True
+      Merchant -> False
     }
 
   and {
     check_withdraw_is_present(own_input, CombinedWithdraw, tx)?,
     authorized?,
+  }
+}
+
+pub fn validate_merchant_withdraw(
+  i_datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
+) {
+  let Transaction { outputs, mint, .. } = tx
+
+  expect Input {
+    output_reference: i_ref,
+    output: Output {
+      address: Address { payment_credential: Script(own_hash), .. },
+      value: i_value,
+      ..
+    },
+  } = own_input
+
+  expect [validation_token_name] = tokens(i_value, own_hash) |> dict.keys()
+
+  expect Some(validation_token_mint_amount) =
+    tokens(mint, own_hash) |> dict.get(validation_token_name)
+
+  expect FundsDatum { addr: dat_addr, funds_type: Merchant, .. } = i_datum
+
+  let valid_merch_output =
+    list.any(
+      outputs,
+      fn(o) {
+        let Output {
+          address: o_addr,
+          value: o_value,
+          datum: o_datum,
+          reference_script: o_ref_script,
+        } = o
+
+        when o_datum is {
+          InlineDatum(o_dat_data) -> {
+            let expected_datum = i_ref
+            let expected_datum_data: Data = expected_datum
+
+            // Merchant should receive all tokens, except the validation token
+            let expected_value =
+              add(i_value, own_hash, validation_token_name, -1)
+
+            and {
+              (o_addr == dat_addr)?,
+              match(o_value, expected_value, >=)?,
+              (o_dat_data == expected_datum_data)?,
+              (o_ref_script == None)?,
+            }
+          }
+          _ -> False
+        }
+      },
+    )
+
+  and {
+    validation_token_mint_amount == -1,
+    valid_merch_output?,
   }
 }
 
@@ -321,12 +387,12 @@ pub fn validate_minting(
     list.any(tx.inputs, fn(i) { i.output_reference == ref })?,
     // The script output has the correct address
     (o_address == from_script(own_policy))?,
-    // The script value only has lovelaces and the minted token
-    (without_lovelace(o_value) == from_asset(own_policy, token_name, 1))?,
+    // The script value has the minted token
+    (quantity_of(o_value, own_policy, expected_token_name) == 1)?,
     // Make sure the address stored in the datum can sign messages for the rest of the operations
     is_verification_credential(dat_addr.payment_credential)?,
     // The locked_deposit is not greater than the amount of lovelaces in the value
-    (dat_locked_deposit < lovelace_of(o_value))?,
+    (dat_locked_deposit <= lovelace_of(o_value))?,
     // No ref script to avoid paying excessive fees
     (o_ref_script == None)?,
     // Validations change depending on the funds_type
@@ -393,12 +459,19 @@ pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
       fn(i) { i.output.address.payment_credential == Script(own_hash) },
     )
 
-  // Calculate funds to be merged
-  let sum_of_lovelace =
-    list.foldl(own_inputs, 0, fn(i, acc) { acc + lovelace_of(i.output.value) })
+  // Get first input to copy over datum and control token
+  expect [first_input, ..rest_i] = own_inputs
 
-  // Get first input to copy over datum
-  expect Some(first_input) = head(own_inputs)
+  // Calculate funds to be merged
+  let sum_of_values =
+    list.foldl(rest_i, zero, fn(i, acc) { merge(acc, i.output.value) })
+
+  let control_tokens = restricted_to(sum_of_values, [own_hash])
+
+  let sum_without_control_token = merge(sum_of_values, negate(control_tokens))
+
+  let expected_output_value =
+    merge(sum_without_control_token, first_input.output.value)
 
   // Only one output allowed to have a token of ours
   expect [
@@ -410,9 +483,6 @@ pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
     },
   ] = list.filter(outputs, fn(o) { tokens(o.value, own_hash) != empty })
 
-  // This output should have adas and only one of our tokens
-  expect [(fst_pol, fst_an, fst_qty), (snd_pol, _snd_tn, 1)] = flatten(o_value)
-
   and {
     // All inputs must have the same datum
     list.all(own_inputs, fn(i) { i.output.datum == first_input.output.datum }),
@@ -420,10 +490,8 @@ pub fn validate_combined_merge(own_hash: ScriptHash, tx: Transaction) {
     length(own_inputs) > 1,
     // Output must be paid to our script
     o_addr.payment_credential == Script(own_hash),
-    // Make sure that the output value contains enough ada and one token
-    (fst_pol, fst_an) == (ada_policy_id, ada_asset_name),
-    fst_qty >= sum_of_lovelace,
-    snd_pol == own_hash,
+    // Make sure that the output value contains the expected tokens
+    match(o_value, expected_output_value, >=),
     // Make sure datum is copied over
     o_datum == first_input.output.datum,
     // No ref script to avoid paying excessive fees
@@ -471,7 +539,10 @@ fn recursive_withdraw_checks(
         reference_script: o_ref_script,
       } = o
 
-      let expected_value = from_lovelace(lovelace_of(i_value))
+      expect [Pair(validation_token_name, 1)] =
+        tokens(i_value, own_hash) |> to_pairs()
+
+      let expected_value = add(i_value, own_hash, validation_token_name, -1)
 
       and {
         // Output address must match address stored in datum
@@ -488,4 +559,24 @@ fn recursive_withdraw_checks(
     }
     _ -> False?
   }
+}
+
+pub fn validate_partial_commit(
+  datum: FundsDatum,
+  own_input: Input,
+  tx: Transaction,
+) {
+  expect User { public_key: _public_key } = datum.funds_type
+
+  check_withdraw_is_present(own_input, CombinedPartialCommit, tx)
+}
+
+pub fn validate_combined_partial_commit(
+  _own_hash: ScriptHash,
+  admin_key: VerificationKeyHash,
+  _hydra_script: Credential,
+  tx: Transaction,
+) {
+  // Must be authorized by the admin
+  list.any(tx.extra_signatories, fn(sig) { sig == admin_key })?
 }

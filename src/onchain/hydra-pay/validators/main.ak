@@ -6,13 +6,15 @@ use cardano/certificate.{Certificate}
 use cardano/transaction.{OutputReference, Transaction}
 use checks.{
   validate_add_funds, validate_burning, validate_combined_commit,
-  validate_combined_merge, validate_combined_withdraw, validate_commit,
-  validate_merge, validate_minting, validate_pay, validate_withdraw,
+  validate_combined_merge, validate_combined_partial_commit,
+  validate_combined_withdraw, validate_commit, validate_merchant_withdraw,
+  validate_merge, validate_minting, validate_partial_commit, validate_pay,
+  validate_withdraw,
 }
 use types.{
   AddFunds, Burn, CombinedCommit, CombinedFundsActions, CombinedMerge,
-  CombinedWithdraw, Commit, FundsDatum, FundsRedeemer, MerchantWithdraw, Merge,
-  Mint, MintRedeemer, Pay, UserWithdraw,
+  CombinedPartialCommit, CombinedWithdraw, Commit, FundsDatum, FundsRedeemer,
+  MerchantWithdraw, Merge, Mint, MintRedeemer, PartialCommit, Pay, UserWithdraw,
 }
 
 validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
@@ -32,8 +34,9 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
       Merge -> validate_merge(own_input, tx)
       Pay { info, sig } -> validate_pay(info, sig, datum, own_input, tx)
       UserWithdraw { info, sig } ->
-        validate_withdraw(Some((info, sig)), datum, own_input, tx)
-      MerchantWithdraw -> validate_withdraw(None, datum, own_input, tx)
+        validate_withdraw(info, sig, datum, own_input, tx)
+      MerchantWithdraw -> validate_merchant_withdraw(datum, own_input, tx)
+      PartialCommit -> validate_partial_commit(datum, own_input, tx)
     }
   }
 
@@ -52,6 +55,8 @@ validator main(admin_key: VerificationKeyHash, hydra_script: Credential) {
         validate_combined_commit(own_hash, admin_key, hydra_script, tx)
       CombinedMerge -> validate_combined_merge(own_hash, tx)
       CombinedWithdraw -> validate_combined_withdraw(own_hash, tx)
+      CombinedPartialCommit ->
+        validate_combined_partial_commit(own_hash, admin_key, hydra_script, tx)
     }
   }
 

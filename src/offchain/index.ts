@@ -4,5 +4,7 @@ export * from './handlers/pay-merchant';
 export * from './handlers/query-funds';
 export * from './handlers/withdraw';
 export * from './handlers/deposit';
+export * from './handlers/incremental-commit';
+export * from './handlers/incremental-decommit';
 export * from './lib/types';
 export * from './validator/handle';

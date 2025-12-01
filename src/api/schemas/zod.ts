@@ -160,10 +160,43 @@ const ManageHeadZodSchema = z.object({
   peer_api_urls: z.array(z.string()),
 });
 
+const IncrementalCommitZodSchema = z.object({
+  user_address: addressSchema,
+  public_key: z
+    .string()
+    .regex(/^[0-9a-fA-F]/, 'Public key must be a hex string')
+    .optional(),
+  amount: z.array(z.tuple([z.string(), z.bigint()])),
+  funds_utxo_ref: z
+    .object({
+      hash: z
+        .string()
+        .length(64, 'Transaction hash must be 64 characters long.')
+        .regex(/^[0-9a-fA-F]/, 'Transaction hash must be a hex string.'),
+      index: z.bigint(),
+    })
+    .optional(),
+});
+
+const IncrementalDecommitZodSchema = z.object({
+  address: addressSchema,
+  owner: z.enum(['user', 'merchant']),
+  funds_utxo_ref: z.object({
+    hash: z
+      .string()
+      .length(64, 'Transaction hash must be 64 characters long.')
+      .regex(/^[0-9a-fA-F]/, 'Transaction hash must be a hex string.'),
+    index: z.bigint(),
+  }),
+  signature: z.string().optional(),
+});
+
 export {
   Layer,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
+  IncrementalCommitZodSchema,
+  IncrementalDecommitZodSchema,
 };

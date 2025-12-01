@@ -5,6 +5,8 @@ import {
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
+  IncrementalCommitZodSchema,
+  IncrementalDecommitZodSchema,
 } from '../schemas/zod';
 import {
   finalizeCloseHead,
@@ -15,6 +17,8 @@ import {
   handlePay,
   handleQueryFunds,
   handleWithdraw,
+  handleIncrementalCommit,
+  handleIncrementalDecommit,
 } from '../../offchain';
 import { LucidEvolution } from '@lucid-evolution/lucid';
 import { JSONBig } from './server';
@@ -228,6 +232,72 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
         logger.error(
           `${STATUS.UNKNOWN_ERROR}: ${e}`,
           `${API_ROUTES.CLOSE_HEAD}`
+        );
+      }
+    }
+  });
+
+  // Incremental Commit Route
+  expressApp.post(API_ROUTES.INCREMENTAL_COMMIT, async (req, res) => {
+    try {
+      const incrementalCommitSchema = IncrementalCommitZodSchema.parse(req.body);
+      const _res = await handleIncrementalCommit(lucid, incrementalCommitSchema);
+      res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
+      logger.info(`${STATUS.OK}`, `${API_ROUTES.INCREMENTAL_COMMIT}`);
+    } catch (e) {
+      if (e instanceof Error) {
+        res
+          .status(STATUS.INTERNAL_SERVER_ERROR)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e.message}` });
+        logger.error(
+          `${STATUS.INTERNAL_SERVER_ERROR}: ${e.message}`,
+          `${API_ROUTES.INCREMENTAL_COMMIT}`
+        );
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+        res
+          .status(STATUS.BAD_REQUEST)
+          .json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
+        logger.error(`${STATUS.BAD_REQUEST}: ${e}`, `${API_ROUTES.INCREMENTAL_COMMIT}`);
+      } else {
+        res
+          .status(STATUS.UNKNOWN_ERROR)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        logger.error(
+          `${STATUS.UNKNOWN_ERROR}: ${e}`,
+          `${API_ROUTES.INCREMENTAL_COMMIT}`
+        );
+      }
+    }
+  });
+
+  // Incremental Decommit Route
+  expressApp.post(API_ROUTES.INCREMENTAL_DECOMMIT, async (req, res) => {
+    try {
+      const incrementalDecommitSchema = IncrementalDecommitZodSchema.parse(req.body);
+      const _res = await handleIncrementalDecommit(lucid, incrementalDecommitSchema);
+      res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
+      logger.info(`${STATUS.OK}`, `${API_ROUTES.INCREMENTAL_DECOMMIT}`);
+    } catch (e) {
+      if (e instanceof Error) {
+        res
+          .status(STATUS.INTERNAL_SERVER_ERROR)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e.message}` });
+        logger.error(
+          `${STATUS.INTERNAL_SERVER_ERROR}: ${e.message}`,
+          `${API_ROUTES.INCREMENTAL_DECOMMIT}`
+        );
+      } else if (typeof e === 'string' && e.includes('InputsExhaustedError')) {
+        res
+          .status(STATUS.BAD_REQUEST)
+          .json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
+        logger.error(`${STATUS.BAD_REQUEST}: ${e}`, `${API_ROUTES.INCREMENTAL_DECOMMIT}`);
+      } else {
+        res
+          .status(STATUS.UNKNOWN_ERROR)
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        logger.error(
+          `${STATUS.UNKNOWN_ERROR}: ${e}`,
+          `${API_ROUTES.INCREMENTAL_DECOMMIT}`
         );
       }
     }

@@ -30,6 +30,23 @@ export namespace DBOps {
       });
   };
 
+  export const getActiveHead = async () => {
+    const activeHead = await prisma.process
+      .findFirst({
+        where: {
+          status: DBStatus.RUNNING,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+      .catch((error) => {
+        logger.error('DB Error while fetching active head: ' + error);
+        throw error;
+      });
+    return activeHead;
+  };
+
   export const cleanDB = async () => {
     await prisma.process.deleteMany().catch((error) => {
       logger.error('DB Error while cleaning up: ' + error);

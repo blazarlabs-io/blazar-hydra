@@ -52,10 +52,31 @@ type CommitFundsParams = {
   adminCollateral?: UTxO;
 };
 
+type IncrementalCommitParams = {
+  userAddress: string;
+  publicKey: string;
+  amountsToCommit: Assets;
+  walletUtxos: UTxO[];
+  validatorRef: UTxO;
+  fundsUtxo?: UTxO;
+};
+
+type IncrementalDecommitParams = {
+  address: string;
+  owner: 'user' | 'merchant';
+  fundUtxo: UTxO;
+  signature?: string;
+  adminKey?: string;
+  hydraKey?: string;
+  walletUtxos?: UTxO[];
+};
+
 export {
   CommitFundsParams,
   DepositParams,
   MergeFundsParams,
   PayMerchantParams,
   WithdrawParams,
+  IncrementalCommitParams,
+  IncrementalDecommitParams,
 };

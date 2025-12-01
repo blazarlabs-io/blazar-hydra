@@ -5,6 +5,8 @@ const API_ROUTES = {
   QUERY_FUNDS: '/query-funds',
   OPEN_HEAD: '/open-head',
   CLOSE_HEAD: '/close-head',
+  INCREMENTAL_COMMIT: '/incremental-commit',
+  INCREMENTAL_DECOMMIT: '/incremental-decommit',
 };
 
 export { API_ROUTES };

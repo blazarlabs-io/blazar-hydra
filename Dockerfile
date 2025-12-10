@@ -63,6 +63,14 @@ RUN npm install tsx --save-prod && npm cache clean --force
 # Create directory for database
 RUN mkdir -p ./prisma/prisma
 
+# Create log directory and helper script for viewing logs
+RUN mkdir -p /var/log/app && \
+    echo '#!/bin/sh' > /usr/local/bin/view-logs && \
+    echo 'tail -f /var/log/app/app.log' >> /usr/local/bin/view-logs && \
+    chmod +x /usr/local/bin/view-logs && \
+    echo 'alias logs="tail -f /var/log/app/app.log"' >> /root/.profile && \
+    echo 'alias logs-follow="tail -f /var/log/app/app.log"' >> /root/.profile
+
 # Configure SSH server
 RUN mkdir -p /var/run/sshd && \
     ssh-keygen -A && \
@@ -80,4 +88,5 @@ EXPOSE 3000 2222
 #   CMD node -e "require('http').get('http://localhost:${PORT || 3000}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
 # Start SSH server and initialize database schema and start dev server
-CMD ["sh", "-c", "/usr/sbin/sshd -D & npx prisma db push --accept-data-loss && npm run dev"]
+# Redirect all output (stdout and stderr) to log file while also showing in container logs
+CMD ["sh", "-c", "/usr/sbin/sshd -D & npx prisma db push --accept-data-loss && npm run dev 2>&1 | tee /var/log/app/app.log"]

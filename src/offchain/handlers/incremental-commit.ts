@@ -91,10 +91,10 @@ async function handleIncrementalCommit(
     publicKey && publicKey.length > 0 ? publicKey : '0'.repeat(64);
 
   // Step 2: Build deposit transaction (same as regular deposit)
-  const depositParams: IncrementalCommitParams = {
+  const depositParams = {
     userAddress,
     publicKey: nonEmptyPubKey,
-    amountsToCommit,
+    amountsToDeposit: amountsToCommit,
     walletUtxos,
     validatorRef,
     fundsUtxo,
@@ -119,7 +119,7 @@ async function handleIncrementalCommit(
   // Step 5: Get the deposited UTXO from L1
   const depositedUtxo = await localLucid
     .utxosByOutRef([
-      { txHash: newFundsUtxo.hash, outputIndex: Number(newFundsUtxo.index) }
+      { txHash: newFundsUtxo.txHash, outputIndex: newFundsUtxo.outputIndex }
     ])
     .then(utxos => utxos[0]);
 

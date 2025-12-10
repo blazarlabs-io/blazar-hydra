@@ -95,7 +95,7 @@ async function handleIncrementalDecommit(
   }
 
   // Validate owner type
-  const isUserUtxo = datum.funds_type === 'User';
+  const isUserUtxo = typeof datum.funds_type === 'object' && 'User' in datum.funds_type;
   const isMerchantUtxo = datum.funds_type === 'Merchant';
 
   if (owner === 'user' && !isUserUtxo) {

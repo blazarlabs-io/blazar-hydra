@@ -14,6 +14,7 @@ datasource db {
 }
 
 model Process {
-  id     String   @id @default(uuid())
-  status String
+  id        String   @id @default(uuid())
+  status    String
+  createdAt DateTime @default(now())
 }

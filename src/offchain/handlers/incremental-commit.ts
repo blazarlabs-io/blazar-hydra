@@ -113,18 +113,33 @@ async function handleIncrementalCommit(
   await signed.submit();
   logger.info(`Deposit transaction ${tx.toHash()} submitted to L1 successfully`);
 
-  // Step 4: Wait for L1 confirmation
-  await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds for L1 confirmation
-
-  // Step 5: Get the deposited UTXO from L1
-  const depositedUtxo = await localLucid
-    .utxosByOutRef([
+  // Step 4: Wait for L1 confirmation and fetch the deposited UTXO
+  logger.info('Waiting for L1 confirmation...');
+  let depositedUtxo: UTxO | undefined;
+  const maxRetries = 12; // 12 retries = 60 seconds total
+  const retryDelay = 10000; // 10 seconds between retries
+  
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise(resolve => setTimeout(resolve, retryDelay));
+    
+    logger.debug(`Attempting to fetch deposited UTXO (attempt ${i + 1}/${maxRetries})...`);
+    const utxos = await localLucid.utxosByOutRef([
       { txHash: newFundsUtxo.txHash, outputIndex: newFundsUtxo.outputIndex }
-    ])
-    .then(utxos => utxos[0]);
+    ]);
+    
+    if (utxos && utxos.length > 0) {
+      depositedUtxo = utxos[0];
+      logger.info(`Found deposited UTXO on L1 after ${(i + 1) * retryDelay / 1000} seconds`);
+      break;
+    }
+    
+    if (i < maxRetries - 1) {
+      logger.debug(`UTXO not found yet, retrying in ${retryDelay / 1000} seconds...`);
+    }
+  }
 
   if (!depositedUtxo) {
-    throw new Error('Could not find deposited UTXO on L1');
+    throw new Error(`Could not find deposited UTXO on L1 after ${maxRetries * retryDelay / 1000} seconds. Transaction may not be confirmed yet. TX: ${newFundsUtxo.txHash}`);
   }
 
   // Step 6: Send incremental commit to Hydra node

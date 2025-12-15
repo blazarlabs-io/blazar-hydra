@@ -36,15 +36,40 @@ export namespace DBOps {
         where: {
           status: DBStatus.RUNNING,
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
       })
       .catch((error) => {
         logger.error('DB Error while fetching active head: ' + error);
         throw error;
       });
     return activeHead;
+  };
+
+  export const getAllHeads = async () => {
+    const heads = await prisma.process
+      .findMany()
+      .catch((error) => {
+        logger.error('DB Error while fetching all heads: ' + error);
+        throw error;
+      });
+    return heads;
+  };
+
+  export const getHeadsByStatus = async (status: string) => {
+    const heads = await prisma.process
+      .findMany({
+        where: {
+          status,
+        },
+      })
+      .catch((error) => {
+        logger.error(`DB Error while fetching heads with status ${status}: ${error}`);
+        throw error;
+      });
+    return heads;
+  };
+
+  export const getOpenHeads = async () => {
+    return getHeadsByStatus(DBStatus.RUNNING);
   };
 
   export const cleanDB = async () => {

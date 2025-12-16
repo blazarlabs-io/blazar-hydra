@@ -1,6 +1,7 @@
 import { IncrementalCommitSchema } from '../../shared';
 import { IncrementalCommitParams } from '../lib/params';
 import { deposit } from '../tx-builders/deposit';
+import { buildIncrementalCommitBlueprint } from '../tx-builders/commit-funds';
 import {
   addAssets,
   LucidEvolution,
@@ -24,9 +25,14 @@ import { DBStatus } from '../../shared/prisma-schemas';
  * 1. Validate head is OPEN (RUNNING status)
  * 2. Build deposit transaction to L1 smart contract
  * 3. Submit transaction to L1
- * 4. Build commit transaction
- * 5. Send commit to Hydra node via HTTP API
- * 6. Wait for commit confirmation
+ * 4. Wait for L1 confirmation and fetch deposited UTXO
+ * 5. Build blueprint transaction with script witness and redeemers
+ * 6. Send commit to Hydra node via HTTP API (with blueprint)
+ * 7. Wait for commit confirmation
+ * 
+ * Note: The blueprint transaction is required because the deposited UTXO is locked
+ * at a script address. Hydra needs the blueprint to know how to properly spend
+ * the script UTXO (with correct redeemers and reference inputs).
  * 
  * @param lucid - LucidEvolution instance for blockchain interaction
  * @param params - Parameters for incremental commit (user address, amount, etc.)
@@ -142,16 +148,26 @@ async function handleIncrementalCommit(
     throw new Error(`Could not find deposited UTXO on L1 after ${maxRetries * retryDelay / 1000} seconds. Transaction may not be confirmed yet. TX: ${newFundsUtxo.txHash}`);
   }
 
+  // Step 5: Build blueprint transaction for spending the script-locked UTXO
+  logger.info('Building incremental commit blueprint transaction...');
+  const blueprintTx = await buildIncrementalCommitBlueprint(localLucid, {
+    adminAddress,
+    depositedUtxo,
+    validatorRefUtxo: validatorRef,
+  });
+  logger.debug('Blueprint transaction built successfully');
+
   // Step 6: Send incremental commit to Hydra node
   logger.info('Sending incremental commit to Hydra node...');
   const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
   
   try {
-    // Hydra's incremental commit uses the same /commit endpoint but with head already open
+    // Hydra's incremental commit uses the /commit endpoint with a blueprint tx
+    // The blueprint contains the script witness and redeemers needed to spend from the script address
     const commitTxId = await hydra.sendCommit(
       `${env.ADMIN_NODE_API_URL}/commit`,
       [depositedUtxo],
-      undefined // No blueprint tx for incremental commits
+      blueprintTx // Blueprint tx with script witness and redeemers
     );
 
     logger.info(`Incremental commit transaction submitted to Hydra! tx id: ${commitTxId}`);

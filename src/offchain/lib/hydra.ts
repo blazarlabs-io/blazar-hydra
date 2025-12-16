@@ -402,8 +402,9 @@ function hydraUtxoToLucidUtxo(hash: string, idx: number, output: any): UTxO {
 
 /**
  * Converts the redeemers of a transaction witness set from a list to a map.
+ * If no redeemers exist (e.g., incremental commits), returns the original transaction.
  * @param tx Transaction CBOR
- * @returns {CBORHex} Transaction CBOR with redeemers as a map
+ * @returns {CBORHex} Transaction CBOR with redeemers as a map, or original if no redeemers
  */
 function setRedeemersAsMap(tx: CBORHex): CBORHex {
   const cmlTx = CML.Transaction.from_cbor_hex(tx);
@@ -412,8 +413,10 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
   const witnessSet = cmlTx.witness_set();
 
   const redeemersList = witnessSet.redeemers()?.as_arr_legacy_redeemer();
+  // If no redeemers, return original transaction (common for incremental commits)
   if (!redeemersList) {
-    throw new Error('Could not find redeemers list');
+    logger.debug('No redeemers found in transaction, returning original CBOR');
+    return tx;
   }
   const redeemersMap = CML.MapRedeemerKeyToRedeemerVal.new(); //CML.Redeemers.map_redeemer_key_to_redeemer_val();
   for (let i = 0; i < redeemersList.len(); i++) {

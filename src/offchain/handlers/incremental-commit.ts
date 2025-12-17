@@ -148,12 +148,30 @@ async function handleIncrementalCommit(
     throw new Error(`Could not find deposited UTXO on L1 after ${maxRetries * retryDelay / 1000} seconds. Transaction may not be confirmed yet. TX: ${newFundsUtxo.txHash}`);
   }
 
-  // Step 5: Build blueprint transaction for spending the script-locked UTXO
+  // Step 5: Check if the reference script UTXO still exists on L1
+  // During initial head opening, the reference script UTXO is committed to the head.
+  // For incremental commits, we need to verify it's still available on L1.
+  logger.info('Checking reference script UTXO availability...');
+  const [currentValidatorRef] = await localLucid.utxosByOutRef([
+    { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+  ]);
+  
+  if (!currentValidatorRef) {
+    logger.debug('Reference script UTXO not found on L1 - it may have been committed to the head');
+    logger.debug(`Looking for UTXO: ${env.VALIDATOR_REF}#0`);
+  } else {
+    logger.debug(`Reference script UTXO found on L1: ${currentValidatorRef.txHash}#${currentValidatorRef.outputIndex}`);
+  }
+
+  // Step 6: Build blueprint transaction for spending the script-locked UTXO
+  // Note: We use inline script (useRefInput: false) because the reference script UTXO
+  // was committed to the head during initialization and no longer exists on L1.
   logger.info('Building incremental commit blueprint transaction...');
   const blueprintTx = await buildIncrementalCommitBlueprint(localLucid, {
     adminAddress,
     depositedUtxo,
     validatorRefUtxo: validatorRef,
+    useRefInput: false, // Script is inline since ref UTXO is in the head
   });
   logger.debug('Blueprint transaction built successfully');
 
@@ -164,10 +182,13 @@ async function handleIncrementalCommit(
   try {
     // Hydra's incremental commit uses the /commit endpoint with a blueprint tx
     // The blueprint contains the script witness and redeemers needed to spend from the script address
+    // IMPORTANT: For incremental commits, we must NOT include the reference script UTXO
+    // because it was already committed to the head during initialization.
     const commitTxId = await hydra.sendCommit(
       `${env.ADMIN_NODE_API_URL}/commit`,
       [depositedUtxo],
-      blueprintTx // Blueprint tx with script witness and redeemers
+      blueprintTx,
+      { includeRefScript: false } // Don't include ref script - it's already in the head
     );
 
     logger.info(`Incremental commit transaction submitted to Hydra! tx id: ${commitTxId}`);

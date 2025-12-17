@@ -18,12 +18,22 @@ type IncrementalCommitBlueprintParams = {
   adminAddress: string;
   depositedUtxo: UTxO;
   validatorRefUtxo: UTxO;
+  /** 
+   * Whether to use the validator as a reference input (true) or include the script inline (false).
+   * Set to false when the reference script UTXO has been committed to the head and no longer exists on L1.
+   * Defaults to false for incremental commits.
+   */
+  useRefInput?: boolean;
 };
 
 /**
  * Builds a blueprint transaction for incremental commit to an OPEN Hydra head.
  * This blueprint is required when committing script-locked UTxOs because Hydra needs
  * to know how to spend them (with proper redeemers and script references).
+ * 
+ * For incremental commits, the reference script UTXO may have been committed to the head
+ * during initialization. In this case, we include the script inline in the witness set
+ * instead of as a reference input.
  * 
  * @param lucid - The LucidEvolution instance to use for building the transaction.
  * @param params - The parameters including deposited UTXO and validator reference.
@@ -33,7 +43,7 @@ async function buildIncrementalCommitBlueprint(
   lucid: LucidEvolution,
   params: IncrementalCommitBlueprintParams
 ): Promise<CBORHex> {
-  const { adminAddress, depositedUtxo, validatorRefUtxo } = params;
+  const { adminAddress, depositedUtxo, validatorRefUtxo, useRefInput = false } = params;
   
   const validator = validatorRefUtxo.scriptRef;
   if (!validator) {
@@ -102,11 +112,22 @@ async function buildIncrementalCommitBlueprint(
     )
   );
   
-  // Add the validator as reference input
-  const referenceInputs = CML.TransactionInputList.new();
-  const validatorInput = utxoToCore(validatorRefUtxo).input();
-  referenceInputs.add(validatorInput);
-  txBody.set_reference_inputs(referenceInputs);
+  // Add the validator script - either as reference input or inline
+  if (useRefInput) {
+    // Use reference input (only if the ref script UTXO is still on L1)
+    const referenceInputs = CML.TransactionInputList.new();
+    const validatorInput = utxoToCore(validatorRefUtxo).input();
+    referenceInputs.add(validatorInput);
+    txBody.set_reference_inputs(referenceInputs);
+  } else {
+    // Include the script inline in the witness set
+    // This is necessary when the ref script UTXO was committed to the head
+    const plutusScripts = CML.PlutusV3ScriptList.new();
+    const scriptCbor = validator.script;
+    const plutusScript = CML.PlutusV3Script.from_cbor_hex(scriptCbor);
+    plutusScripts.add(plutusScript);
+    txWitnessSet.set_plutus_v3_scripts(plutusScripts);
+  }
   
   // Add redeemers to witness set
   const redeemers = CML.Redeemers.new_map_redeemer_key_to_redeemer_val(conwayRedeemers);

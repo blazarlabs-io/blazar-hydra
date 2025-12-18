@@ -24,12 +24,23 @@ type IncrementalCommitBlueprintParams = {
    * Defaults to false for incremental commits.
    */
   useRefInput?: boolean;
+  /**
+   * Whether to include the withdrawal/combined validation logic.
+   * Set to false for incremental commits (deposits) because the CombinedCommit redeemer
+   * expects a Hydra head input which doesn't exist in deposit transactions.
+   * Defaults to false for incremental commits.
+   */
+  includeCombinedWithdrawal?: boolean;
 };
 
 /**
  * Builds a blueprint transaction for incremental commit to an OPEN Hydra head.
  * This blueprint is required when committing script-locked UTxOs because Hydra needs
  * to know how to spend them (with proper redeemers and script references).
+ * 
+ * IMPORTANT: For incremental commits (deposits), we do NOT include the withdrawal/combined
+ * validation because the CombinedCommit redeemer expects a Hydra head input in the transaction.
+ * However, Hydra's deposit mechanism doesn't include the head UTXO as an input.
  * 
  * For incremental commits, the reference script UTXO may have been committed to the head
  * during initialization. In this case, we include the script inline in the witness set
@@ -43,7 +54,13 @@ async function buildIncrementalCommitBlueprint(
   lucid: LucidEvolution,
   params: IncrementalCommitBlueprintParams
 ): Promise<CBORHex> {
-  const { adminAddress, depositedUtxo, validatorRefUtxo, useRefInput = false } = params;
+  const { 
+    adminAddress, 
+    depositedUtxo, 
+    validatorRefUtxo, 
+    useRefInput = false,
+    includeCombinedWithdrawal = false  // Default to false for incremental commits
+  } = params;
   
   const validator = validatorRefUtxo.scriptRef;
   if (!validator) {
@@ -74,17 +91,6 @@ async function buildIncrementalCommitBlueprint(
   signers.add(signer);
   txBody.set_required_signers(signers);
   
-  // Add withdrawal (required by the validator's combined logic)
-  const rewAddress = CML.RewardAddress.from_address(
-    CML.Address.from_bech32(rewardAddress)
-  );
-  if (!rewAddress) {
-    throw new Error('Could not build reward address from script');
-  }
-  const withdrawMap = CML.MapRewardAccountToCoin.new();
-  withdrawMap.insert(rewAddress, 0n);
-  txBody.set_withdrawals(withdrawMap);
-  
   // Create witness set with redeemers
   const txWitnessSet = CML.TransactionWitnessSet.new();
   const conwayRedeemers = CML.MapRedeemerKeyToRedeemerVal.new();
@@ -103,14 +109,28 @@ async function buildIncrementalCommitBlueprint(
     }
   });
   
-  // Add withdraw redeemer for combined validation
-  conwayRedeemers.insert(
-    CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
-    CML.RedeemerVal.new(
-      CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
-      CML.ExUnits.new(0n, 0n)
-    )
-  );
+  // Only include withdrawal/combined logic for initial commits (not for incremental)
+  // The CombinedCommit redeemer expects a Hydra head input which doesn't exist in deposit txs
+  if (includeCombinedWithdrawal) {
+    const rewAddress = CML.RewardAddress.from_address(
+      CML.Address.from_bech32(rewardAddress)
+    );
+    if (!rewAddress) {
+      throw new Error('Could not build reward address from script');
+    }
+    const withdrawMap = CML.MapRewardAccountToCoin.new();
+    withdrawMap.insert(rewAddress, 0n);
+    txBody.set_withdrawals(withdrawMap);
+    
+    // Add withdraw redeemer for combined validation
+    conwayRedeemers.insert(
+      CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
+      CML.RedeemerVal.new(
+        CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
+        CML.ExUnits.new(0n, 0n)
+      )
+    );
+  }
   
   // Add the validator script - either as reference input or inline
   if (useRefInput) {

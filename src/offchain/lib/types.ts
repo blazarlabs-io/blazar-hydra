@@ -80,6 +80,9 @@ const FundsRedeemer = FundsRedeemerSchema as unknown as FundsRedeemerT;
 namespace Spend {
   export const AddFunds = Data.to<FundsRedeemerT>('AddFunds', FundsRedeemer);
   export const Commit = Data.to<FundsRedeemerT>('Commit', FundsRedeemer);
+  // PartialCommit may be used for incremental commits (deposits) that don't require
+  // the full CombinedCommit validation with Hydra head input check
+  export const PartialCommit = Data.to<FundsRedeemerT>('PartialCommit', FundsRedeemer);
   export const Merge = Data.to<FundsRedeemerT>('Merge', FundsRedeemer);
   export const Pay = (info: PayInfoT, sig: string) =>
     Data.to<FundsRedeemerT>({ Pay: { info, sig } }, FundsRedeemer);

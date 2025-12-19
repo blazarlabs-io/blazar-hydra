@@ -96,11 +96,15 @@ async function buildIncrementalCommitBlueprint(
   const conwayRedeemers = CML.MapRedeemerKeyToRedeemerVal.new();
   
   // Add spend redeemers for script UTxOs
+  // For incremental commits without combined withdrawal, try PartialCommit redeemer
+  // which may have different validation that doesn't require the withdrawal check
+  const spendRedeemer = includeCombinedWithdrawal ? Spend.Commit : Spend.PartialCommit;
+  
   sortedInputs.forEach((inp, idx) => {
     if (inp.address === scriptAddress) {
       const tag = CML.RedeemerTag.Spend;
       const index = BigInt(idx);
-      const data = CML.PlutusData.from_cbor_hex(Spend.Commit);
+      const data = CML.PlutusData.from_cbor_hex(spendRedeemer);
       const units = CML.ExUnits.new(0n, 0n);
       conwayRedeemers.insert(
         CML.RedeemerKey.new(tag, index),

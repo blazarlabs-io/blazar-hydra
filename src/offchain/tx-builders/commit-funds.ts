@@ -25,12 +25,13 @@ type IncrementalCommitBlueprintParams = {
    */
   useRefInput?: boolean;
   /**
-   * Whether to include the withdrawal/combined validation logic.
-   * Set to false for incremental commits (deposits) because the CombinedCommit redeemer
-   * expects a Hydra head input which doesn't exist in deposit transactions.
-   * Defaults to false for incremental commits.
+   * Whether this is an incremental commit (deposit to OPEN head) or initial commit.
+   * For incremental commits, uses PartialCommit + CombinedPartialCommit redeemers which
+   * only require admin signature (no Hydra head input check).
+   * For initial commits, uses Commit + CombinedCommit redeemers which check Hydra head input.
+   * Defaults to true for incremental commits.
    */
-  includeCombinedWithdrawal?: boolean;
+  isIncrementalCommit?: boolean;
 };
 
 /**
@@ -38,9 +39,13 @@ type IncrementalCommitBlueprintParams = {
  * This blueprint is required when committing script-locked UTxOs because Hydra needs
  * to know how to spend them (with proper redeemers and script references).
  * 
- * IMPORTANT: For incremental commits (deposits), we do NOT include the withdrawal/combined
- * validation because the CombinedCommit redeemer expects a Hydra head input in the transaction.
- * However, Hydra's deposit mechanism doesn't include the head UTXO as an input.
+ * For incremental commits (deposits to OPEN head):
+ * - Uses PartialCommit spend redeemer + CombinedPartialCommit withdrawal redeemer
+ * - CombinedPartialCommit only requires admin signature (no Hydra head input check)
+ * 
+ * For initial commits (during head opening):
+ * - Uses Commit spend redeemer + CombinedCommit withdrawal redeemer
+ * - CombinedCommit requires Hydra head input in the transaction
  * 
  * For incremental commits, the reference script UTXO may have been committed to the head
  * during initialization. In this case, we include the script inline in the witness set
@@ -59,7 +64,7 @@ async function buildIncrementalCommitBlueprint(
     depositedUtxo, 
     validatorRefUtxo, 
     useRefInput = false,
-    includeCombinedWithdrawal = false  // Default to false for incremental commits
+    isIncrementalCommit = true  // Default to true for incremental commits
   } = params;
   
   const validator = validatorRefUtxo.scriptRef;
@@ -96,9 +101,9 @@ async function buildIncrementalCommitBlueprint(
   const conwayRedeemers = CML.MapRedeemerKeyToRedeemerVal.new();
   
   // Add spend redeemers for script UTxOs
-  // For incremental commits without combined withdrawal, try PartialCommit redeemer
-  // which may have different validation that doesn't require the withdrawal check
-  const spendRedeemer = includeCombinedWithdrawal ? Spend.Commit : Spend.PartialCommit;
+  // For incremental commits, use PartialCommit (requires CombinedPartialCommit withdrawal)
+  // For initial commits, use Commit (requires CombinedCommit withdrawal with Hydra head input)
+  const spendRedeemer = isIncrementalCommit ? Spend.PartialCommit : Spend.Commit;
   
   sortedInputs.forEach((inp, idx) => {
     if (inp.address === scriptAddress) {
@@ -113,28 +118,31 @@ async function buildIncrementalCommitBlueprint(
     }
   });
   
-  // Only include withdrawal/combined logic for initial commits (not for incremental)
-  // The CombinedCommit redeemer expects a Hydra head input which doesn't exist in deposit txs
-  if (includeCombinedWithdrawal) {
-    const rewAddress = CML.RewardAddress.from_address(
-      CML.Address.from_bech32(rewardAddress)
-    );
-    if (!rewAddress) {
-      throw new Error('Could not build reward address from script');
-    }
-    const withdrawMap = CML.MapRewardAccountToCoin.new();
-    withdrawMap.insert(rewAddress, 0n);
-    txBody.set_withdrawals(withdrawMap);
-    
-    // Add withdraw redeemer for combined validation
-    conwayRedeemers.insert(
-      CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
-      CML.RedeemerVal.new(
-        CML.PlutusData.from_cbor_hex(Combined.CombinedCommit),
-        CML.ExUnits.new(0n, 0n)
-      )
-    );
+  // Add withdrawal - ALWAYS required by the on-chain script for both Commit and PartialCommit
+  // The on-chain validator calls check_withdraw_is_present() which expects a withdrawal redeemer
+  const rewAddress = CML.RewardAddress.from_address(
+    CML.Address.from_bech32(rewardAddress)
+  );
+  if (!rewAddress) {
+    throw new Error('Could not build reward address from script');
   }
+  const withdrawMap = CML.MapRewardAccountToCoin.new();
+  withdrawMap.insert(rewAddress, 0n);
+  txBody.set_withdrawals(withdrawMap);
+  
+  // Add withdraw redeemer - use CombinedPartialCommit for incremental commits (only checks admin sig)
+  // or CombinedCommit for initial commits (checks Hydra head input)
+  const withdrawRedeemer = isIncrementalCommit 
+    ? Combined.CombinedPartialCommit 
+    : Combined.CombinedCommit;
+  
+  conwayRedeemers.insert(
+    CML.RedeemerKey.new(CML.RedeemerTag.Reward, 0n),
+    CML.RedeemerVal.new(
+      CML.PlutusData.from_cbor_hex(withdrawRedeemer),
+      CML.ExUnits.new(0n, 0n)
+    )
+  );
   
   // Add the validator script - either as reference input or inline
   if (useRefInput) {

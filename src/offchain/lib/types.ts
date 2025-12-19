@@ -98,6 +98,7 @@ const CombinedActionSchema = Data.Enum([
   Data.Literal('CombinedCommit'),
   Data.Literal('CombinedMerge'),
   Data.Literal('CombinedWithdraw'),
+  Data.Literal('CombinedPartialCommit'),
 ]);
 type CombinedActionT = Data.Static<typeof CombinedActionSchema>;
 const CombinedAction = CombinedActionSchema as unknown as CombinedActionT;
@@ -112,6 +113,10 @@ namespace Combined {
   );
   export const CombinedWithdraw = Data.to<CombinedActionT>(
     'CombinedWithdraw',
+    CombinedAction
+  );
+  export const CombinedPartialCommit = Data.to<CombinedActionT>(
+    'CombinedPartialCommit',
     CombinedAction
   );
 }

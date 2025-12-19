@@ -166,16 +166,15 @@ async function handleIncrementalCommit(
   // Step 6: Build blueprint transaction for spending the script-locked UTXO
   // Note 1: We use inline script (useRefInput: false) because the reference script UTXO
   //         was committed to the head during initialization and no longer exists on L1.
-  // Note 2: We do NOT include combined withdrawal (includeCombinedWithdrawal: false) because
-  //         the CombinedCommit redeemer expects a Hydra head input in the transaction, but
-  //         Hydra's deposit mechanism for incremental commits doesn't include the head UTXO.
+  // Note 2: We use isIncrementalCommit: true which uses PartialCommit + CombinedPartialCommit
+  //         redeemers. CombinedPartialCommit only requires admin signature (no Hydra head input check).
   logger.info('Building incremental commit blueprint transaction...');
   const blueprintTx = await buildIncrementalCommitBlueprint(localLucid, {
     adminAddress,
     depositedUtxo,
     validatorRefUtxo: validatorRef,
     useRefInput: false, // Script is inline since ref UTXO is in the head
-    includeCombinedWithdrawal: false, // No combined validation for deposits (no Hydra head input)
+    isIncrementalCommit: true, // Use PartialCommit + CombinedPartialCommit (no Hydra head input required)
   });
   logger.debug('Blueprint transaction built successfully');
 

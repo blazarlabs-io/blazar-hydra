@@ -1,6 +1,5 @@
 import {
   Address,
-  Data,
   LucidEvolution,
   OutRef,
   selectUTxOs,
@@ -12,13 +11,11 @@ import { ManageHeadSchema } from '../../shared';
 import { HydraHandler } from '../lib/hydra';
 import { env } from '../../config';
 import {
-  dataAddressToBech32,
   getNetworkFromLucid,
   getValidator,
   waitForUtxosUpdate,
 } from '../lib/utils';
 import _ from 'lodash';
-import { FundsDatum, FundsDatumT } from '../lib/types';
 import { mergeFunds } from '../tx-builders/merge-funds';
 import { commitFunds } from '../tx-builders/commit-funds';
 import { CommitFundsParams } from '../lib/params';
@@ -94,17 +91,14 @@ async function finalizeOpenHead(
       .utxosAt(scriptAddress)
       .then((utxos) => utxos.slice(0, maxScriptUtxos));
 
-    // Step 3: Collect deposits and merge them for each user
-    const usersDeposits: Map<string, UTxO[]> = collectUsersDeposits(
-      localLucid,
-      scriptUtxos
-    );
+    // Step 3: Collect deposits and merge them (grouped by datum)
+    const depositsByDatum: Map<string, UTxO[]> = collectDeposits(scriptUtxos);
     const utxosToCommit: UTxO[] = await mergeDeposits(
       processId,
       localLucid,
       adminAddress,
       validatorRef,
-      usersDeposits
+      depositsByDatum
     );
 
     // Step 4: Commit the funds to the hydra head
@@ -141,32 +135,32 @@ async function finalizeOpenHead(
 }
 
 /**
- * Returns a Map with user address as keys and a list of their deposit UTxOs as values.
+ * Returns a Map with datum as keys and a list of UTxOs with that datum as values.
+ * This groups UTxOs by their full datum (not just address) because the validator
+ * requires all inputs in a merge to have exactly the same datum.
  */
-function collectUsersDeposits(
-  localLucid: LucidEvolution,
-  scriptUtxos: UTxO[]
-): Map<string, UTxO[]> {
-  const userToDepositsMap = new Map<string, UTxO[]>();
+function collectDeposits(scriptUtxos: UTxO[]): Map<string, UTxO[]> {
+  const datumToDepositsMap = new Map<string, UTxO[]>();
   for (const utxo of scriptUtxos) {
-    const { addr } = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
-    const userAddress = dataAddressToBech32(localLucid, addr);
-    if (!userToDepositsMap.has(userAddress)) {
-      userToDepositsMap.set(userAddress, []);
+    // Use the full datum as the grouping key since the validator requires
+    // all merged inputs to have exactly the same datum
+    const datumKey = utxo.datum!;
+    if (!datumToDepositsMap.has(datumKey)) {
+      datumToDepositsMap.set(datumKey, []);
     }
-    userToDepositsMap.get(userAddress)!.push(utxo);
+    datumToDepositsMap.get(datumKey)!.push(utxo);
   }
-  return userToDepositsMap;
+  return datumToDepositsMap;
 }
 
 /**
- * Merges user deposits into a single UTxO per user, and returns the list of UTxOs for all users.
+ * Merges deposits with matching datums into single UTxOs, and returns the list of merged UTxOs.
  * This is necessary to reduce the number of UTxOs that will be committed in the next step.
- * @param thisProcessId DB process Id of this Open head operation
+ * @param processId DB process Id of this Open head operation
  * @param localLucid Lucid instance
  * @param adminAddress Admin bech32 address
  * @param validatorRef Validator script UTxO reference
- * @param usersDeposits Map of user address to list of deposit UTxOs
+ * @param depositsByDatum Map of datum to list of deposit UTxOs with that datum
  * @returns
  */
 async function mergeDeposits(
@@ -174,22 +168,22 @@ async function mergeDeposits(
   localLucid: LucidEvolution,
   adminAddress: string,
   validatorRef: UTxO,
-  usersDeposits: Map<string, UTxO[]>
+  depositsByDatum: Map<string, UTxO[]>
 ): Promise<UTxO[]> {
   const mergeTxs: string[] = [];
   const fundsRefs: OutRef[] = [];
   let currentAdminUtxos = await localLucid.utxosAt(adminAddress).then((utxos) =>
     selectUTxOs(utxos, {
-      ['lovelace']: BigInt(usersDeposits.size * 1_000_000 + 10_000_000),
+      ['lovelace']: BigInt(depositsByDatum.size * 1_000_000 + 10_000_000),
     })
   );
   if (currentAdminUtxos.length === 0) {
     throw new Error('Insufficient admin funds');
   }
   logger.info('Preparing merge transactions...');
-  for (const [, deposits] of usersDeposits) {
+  for (const [, deposits] of depositsByDatum) {
     if (deposits.length === 1) {
-      // User has only one funds utxo, no need for a merge transaction
+      // Only one UTxO with this datum, no need to merge
       const { txHash, outputIndex } = deposits[0];
       fundsRefs.push({ txHash, outputIndex });
       continue;

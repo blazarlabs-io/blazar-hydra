@@ -3,6 +3,7 @@ import {
   LucidEvolution,
   OutRef,
   selectUTxOs,
+  sortUTxOs,
   Transaction,
   UTxO,
   validatorToAddress,
@@ -223,6 +224,21 @@ async function mergeDeposits(
  * @param adminAddress Admin bech32 address
  * @param validatorRef Validator script UTxO reference
  */
+function pickAdminCollateral(utxos: UTxO[]): UTxO | undefined {
+  const minLovelace = 10_000_000n;
+  const lovelaceOf = (u: UTxO) => u.assets['lovelace'] ?? 0n;
+  const isAdaOnly = (u: UTxO) =>
+    Object.keys(u.assets).length === 1 && 'lovelace' in u.assets;
+
+  const withEnoughAda = utxos.filter((u) => lovelaceOf(u) >= minLovelace);
+  const adaOnly = withEnoughAda.filter(isAdaOnly);
+  const pool = adaOnly.length > 0 ? adaOnly : withEnoughAda;
+  if (pool.length === 0) {
+    return undefined;
+  }
+  return sortUTxOs(pool, 'Canonical')[0];
+}
+
 async function commitUtxos(
   processId: string,
   hydra: HydraHandler,
@@ -234,15 +250,10 @@ async function commitUtxos(
 ) {
   const adminCollateral = await lucid
     .utxosAt(adminAddress)
-    .then((utxos) =>
-      selectUTxOs(utxos, { ['lovelace']: 10_000_000n }).filter(
-        (utxo) => Object.entries(utxo.assets).length === 1
-      )
-    )
-    .then((utxos) => utxos.pop());
+    .then((utxos) => pickAdminCollateral(utxos));
   if (!adminCollateral) {
     throw new Error(
-      'No admin collateral found. Make sure to have a UTxO with just lovelace at the admin address.'
+      'No admin collateral found. Ensure the admin wallet has at least one UTxO with at least 10 ADA (10_000_000 lovelace). Prefer a pure ADA UTxO; mixed UTxOs are used only if no pure ADA UTxO qualifies.'
     );
   }
   const utxosPerPeer = 1 + fundUtxosToCommit.length / peerUrls.length;

@@ -163,52 +163,31 @@ async function handleIncrementalCommit(
     logger.debug(`Reference script UTXO found on L1: ${currentValidatorRef.txHash}#${currentValidatorRef.outputIndex}`);
   }
 
-  // Step 6: Build blueprint transaction for spending the script-locked UTXO
-  // Note 1: We use inline script (useRefInput: false) because the reference script UTXO
-  //         was committed to the head during initialization and no longer exists on L1.
-  // Note 2: We use isIncrementalCommit: true which uses PartialCommit + CombinedPartialCommit
-  //         redeemers. CombinedPartialCommit only requires admin signature (no Hydra head input check).
-  logger.info('Building incremental commit blueprint transaction...');
-  const blueprintTx = await buildIncrementalCommitBlueprint(localLucid, {
-    adminAddress,
-    depositedUtxo,
-    validatorRefUtxo: validatorRef,
-    useRefInput: false, // Script is inline since ref UTXO is in the head
-    isIncrementalCommit: true, // Use PartialCommit + CombinedPartialCommit (no Hydra head input required)
-  });
-  logger.debug('Blueprint transaction built successfully');
-
   // Step 6: Send incremental commit to Hydra node
   logger.info('Sending incremental commit to Hydra node...');
   const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
-  
+
   try {
-    // Hydra's incremental commit uses the /commit endpoint with a blueprint tx
-    // The blueprint contains the script witness and redeemers needed to spend from the script address
-    // IMPORTANT: For incremental commits, we must NOT include the reference script UTXO
-    // because it was already committed to the head during initialization.
-    const commitTxId = await hydra.sendCommit(
+    logger.info('Building incremental commit blueprint transaction...');
+    const blueprintTx = await buildIncrementalCommitBlueprint(localLucid, {
+      adminAddress,
+      depositedUtxo,
+      validatorRefUtxo: validatorRef,
+    });
+    logger.debug('Blueprint transaction built successfully');
+
+    const depositTxId = await hydra.commit(
       `${env.ADMIN_NODE_API_URL}/commit`,
       [depositedUtxo],
-      blueprintTx,
-      { includeRefScript: false } // Don't include ref script - it's already in the head
+      blueprintTx
     );
 
-    logger.info(`Incremental commit transaction submitted to Hydra! tx id: ${commitTxId}`);
-
-    // Wait for commit confirmation
-    let commitTag = '';
-    logger.debug('Waiting for incremental commit to be confirmed by the hydra node');
-    while (commitTag !== 'Committed') {
-      commitTag = await hydra.listen('Committed');
-    }
-
-    logger.info(`Incremental commit completed successfully for user ${userAddress}`);
+    logger.info(`Incremental commit finalized for ${userAddress} (deposit ${depositTxId})`);
     await hydra.stop();
 
-    return { 
-      cborHex: tx.toCBOR(), 
-      fundsUtxoRef: newFundsUtxo 
+    return {
+      cborHex: tx.toCBOR(),
+      fundsUtxoRef: newFundsUtxo,
     };
   } catch (error) {
     logger.error(`Error during incremental commit: ${error}`);

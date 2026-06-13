@@ -60,4 +60,24 @@ describe('waitForTag', () => {
     await vi.advanceTimersByTimeAsync(1001);
     await assertion;
   });
+
+  it('clears onmessage after resolve', async () => {
+    const c = fakeConn();
+    const p = waitForTag(c, 'HeadIsOpen');
+    c.emit({ tag: 'HeadIsOpen' });
+    await p;
+    expect(c.onmessage).toBeNull();
+  });
+
+  it('rejects and stops the timer if onMessage throws', async () => {
+    const c = fakeConn();
+    const p = waitForTag(c, 'HeadIsOpen', {
+      onMessage: () => {
+        throw new Error('boom');
+      },
+    });
+    c.emit({ tag: 'HeadIsOpen' });
+    await expect(p).rejects.toThrow('boom');
+    expect(c.onmessage).toBeNull();
+  });
 });

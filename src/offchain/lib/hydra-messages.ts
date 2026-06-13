@@ -30,6 +30,7 @@ export class HydraTerminalError extends Error {
  * Ignores every other message; rejects on a configured terminal tag or timeout.
  * Replaces the legacy listen()/waitForMessage() which resolved on the first
  * message of ANY tag.
+ * Only one outstanding wait per connection is supported: a new waitForTag() call replaces the previous onmessage handler.
  */
 export function waitForTag(
   conn: MessageConn,
@@ -55,15 +56,23 @@ export function waitForTag(
       } catch {
         return; // ignore non-JSON frames
       }
-      onMessage?.(data);
-      if (data.tag === tag && (!match || match(data))) {
+      try {
+        onMessage?.(data);
+        if (data.tag === tag && (!match || match(data))) {
+          done();
+          resolve(data);
+        } else if (data.tag === tag) {
+          // tag matched but the predicate rejected — keep waiting
+          logger.debug(`Tag '${tag}' matched but predicate rejected; continuing`);
+        } else if (terminalTags.includes(data.tag)) {
+          done();
+          reject(new HydraTerminalError(data.tag, data));
+        } else {
+          logger.debug(`Ignoring ${data.tag} while waiting for ${tag}`);
+        }
+      } catch (err) {
         done();
-        resolve(data);
-      } else if (terminalTags.includes(data.tag)) {
-        done();
-        reject(new HydraTerminalError(data.tag, data));
-      } else {
-        logger.debug(`Ignoring ${data.tag} while waiting for ${tag}`);
+        reject(err);
       }
     };
   });

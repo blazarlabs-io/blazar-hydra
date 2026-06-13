@@ -222,8 +222,10 @@ funds correctly settled on L1 after close.
 
 ## 10. Risks & open questions
 
-- 🔴→🟡 **HydraHeadV2 commit-blueprint compatibility** — must pass E2E; low
-  probability of requiring on-chain change, but it is the migration's risk pivot.
+- 🔴 **HydraHeadV2 commit-blueprint compatibility (key risk)** — must pass E2E;
+  low probability of requiring an on-chain change, but it is the migration's risk
+  pivot. (Separately, the reference-script-in-L2 concern #5 was investigated and
+  downgraded to a non-issue: L2 txs attach the script inline — see §3 invariant.)
 - `--incremental-ops` flag name/existence — single-source claim; confirm against
   the 2.2.0 binary.
 - Exact ordering/payloads of `CommitRecorded/Approved/Finalized` — `waitFor` keys

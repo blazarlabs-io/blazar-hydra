@@ -11,15 +11,7 @@ import {
 import blake2b from 'blake2b';
 import { env } from '../../config';
 import { logger } from '../../shared/logger';
-
-const ERROR_TAGS = [
-  'PeerHandshakeFailure',
-  'TxInvalid',
-  'InvalidInput',
-  'PostTxOnChainFailed',
-  'CommandFailed',
-  'DecommitInvalid',
-];
+import { waitForTag, MessageConn } from './hydra-messages';
 
 /**
  * Listen and send messages to a Hydra node.
@@ -53,6 +45,15 @@ class HydraHandler {
     }
   }
 
+  /**
+   * The ws connection viewed as a MessageConn for waitForTag. A cast is needed
+   * because ws.WebSocket.onmessage is typed against the full MessageEvent, which
+   * is not structurally assignable to MessageConn's minimal { data } shape.
+   */
+  private get msgConn(): MessageConn {
+    return this.connection as unknown as MessageConn;
+  }
+
   private setupEventHandlers() {
     this.connection.onopen = () => {
       logger.debug('WebSocket connection opened.');
@@ -69,51 +70,6 @@ class HydraHandler {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private waitForMessage(tag: string, timeout = 10000): Promise<any> {
-    return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        resolve(`Timeout waiting for tag: ${tag}`);
-      }, timeout);
-
-      this.connection.onmessage = (msg: Websocket.MessageEvent) => {
-        const data = JSON.parse(msg.data.toString());
-        if (data.tag === tag) {
-          logger.debug(`Received ${tag}`);
-          clearTimeout(timeoutId);
-          resolve(data);
-        } else if (ERROR_TAGS.includes(data.tag)) {
-          logger.error(`Received ${data.tag}`);
-        } else {
-          logger.debug(`Received ${data.tag} while waiting for ${tag}`);
-        }
-      };
-    });
-  }
-
-  /**
-   * Listens for a specific tag from the Hydra node's WebSocket.
-   *
-   * @param tag - The tag to listen for in incoming messages.
-   * @returns  the tag when it is received from the Hydra node.
-   */
-  public async listen(tag: string): Promise<string> {
-    return new Promise((resolve) => {
-      this.connection.onopen = () => {
-        logger.debug(`Awaiting for ${tag} events...`);
-      };
-      this.connection.onmessage = async (msg: Websocket.MessageEvent) => {
-        const data = JSON.parse(msg.data.toString());
-        if (ERROR_TAGS.includes(data.tag)) {
-          logger.error(`Received: ${data.tag}`);
-          resolve(data.tag);
-        }
-        logger.debug(`Received: ${data.tag}`);
-        resolve(data.tag);
-      };
-    });
-  }
-
   /**
    * Closes the WebSocket connection to the Hydra node.
    * @returns A promise that resolves when the connection is closed.
@@ -125,29 +81,15 @@ class HydraHandler {
     });
   }
 
-  /**
-   * Sends an "Init" message to the Hydra node to start a new head.
-   * @returns  the tag "HeadIsInitializing" once the head is initialized.
-   */
-  async init(): Promise<string> {
+  /** Sends Init; the head opens directly (empty). Resolves with the HeadIsOpen output. */
+  async init(): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
     await this.ensureConnectionReady();
-    logger.debug('Sending init command...');
+    logger.debug('Sending Init; awaiting HeadIsOpen...');
     this.connection.send(JSON.stringify({ tag: 'Init' }));
-    return this.listen('HeadIsInitializing');
-  }
-
-  /**
-   * Sends an "Abort" message to the Hydra node to abort the initialization of a Hydra head.
-   * @returns  the tag "HeadIsAborted" if the head was aborted successfully.
-   */
-  async abort(): Promise<void> {
-    await this.ensureConnectionReady();
-    logger.debug('Aborting head opening...');
-    this.connection.send(JSON.stringify({ tag: 'Abort' }));
-    return new Promise(async (resolve) => {
-      const tag = await this.listen('HeadIsAborted');
-      resolve(tag);
-    }).then(() => this.stop());
+    return waitForTag(this.msgConn, 'HeadIsOpen', {
+      timeout: 120_000,
+      terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
+    });
   }
 
   /**
@@ -255,10 +197,10 @@ class HydraHandler {
     this.connection.send(
       JSON.stringify({
         tag: 'NewTx',
-        transaction: { cborHex: tx, description: '', type: 'Tx BabbageEra' },
+        transaction: { cborHex: tx, description: '', type: 'Tx ConwayEra' },
       })
     );
-    return this.listen('TxValid');
+    return waitForTag(this.msgConn, 'TxValid', { terminalTags: ['TxInvalid'] });
   }
 
   /**
@@ -294,7 +236,7 @@ class HydraHandler {
       const payload = {
         cborHex: tx,
         description: '',
-        type: 'Tx BabbageEra',
+        type: 'Tx ConwayEra',
       };
       const response = await axios.post(apiUrl, payload);
       return response.data;
@@ -310,9 +252,8 @@ class HydraHandler {
    */
   async close(): Promise<string> {
     await this.ensureConnectionReady();
-    logger.debug('Closing head...');
     this.connection.send(JSON.stringify({ tag: 'Close' }));
-    const data = await this.waitForMessage('HeadIsClosed', 30_000);
+    const data = await waitForTag(this.msgConn, 'HeadIsClosed', { timeout: 60_000 });
     return data.tag;
   }
 
@@ -322,9 +263,9 @@ class HydraHandler {
    */
   async fanout(): Promise<string> {
     await this.ensureConnectionReady();
-    logger.debug('Sending fanout command...');
     this.connection.send(JSON.stringify({ tag: 'Fanout' }));
-    return this.listen('HeadIsFinalized');
+    const data = await waitForTag(this.msgConn, 'HeadIsFinalized', { timeout: 120_000 });
+    return data.tag;
   }
 }
 

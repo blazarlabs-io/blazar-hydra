@@ -3,7 +3,6 @@ import {
   LucidEvolution,
   OutRef,
   selectUTxOs,
-  sortUTxOs,
   Transaction,
   UTxO,
   validatorToAddress,
@@ -18,53 +17,55 @@ import {
 } from '../lib/utils';
 import _ from 'lodash';
 import { mergeFunds } from '../tx-builders/merge-funds';
-import { commitFunds } from '../tx-builders/commit-funds';
-import { CommitFundsParams } from '../lib/params';
+import { buildIncrementalCommitBlueprint } from '../tx-builders/commit-funds';
 import { DBStatus } from '../../shared/prisma-schemas';
 import { DBOps } from '../../prisma/db-ops';
 import { logger } from '../../shared/logger';
 
-const MAX_UTXOS_PER_COMMIT = 10;
-
 /**
- * Sends the Init request to the hydra node and waits for the HeadIsInitialized confirmation tag.
- * Adds a new process to the database with status INITIALIZING and returns the process ID.
+ * Sends the Init request to the hydra node and waits for HeadIsOpen.
+ * In Hydra 2.x "directly open heads", Init opens an EMPTY head immediately.
+ * Adds a new process to the database and returns the process ID.
  */
 async function handleOpenHead(
   lucid: LucidEvolution
 ): Promise<{ operationId: string }> {
   const { ADMIN_NODE_WS_URL: wsUrl } = env;
+  const localLucid = _.cloneDeep(lucid);
+  localLucid.selectWallet.fromSeed(env.SEED);
+  const hydra = new HydraHandler(localLucid, wsUrl);
   try {
-    const localLucid = _.cloneDeep(lucid);
-    localLucid.selectWallet.fromSeed(env.SEED);
-
-    // Step 1: Initialize the head
-    logger.debug('Initializing head...');
-    const hydra = new HydraHandler(localLucid, wsUrl);
-    let initTag = await hydra.init();
-    if (initTag !== 'HeadIsInitializing') {
-      logger.error(
-        `Found tag: ${initTag}. Expected: HeadIsInitializing. Retrying...`
-      );
-      initTag = await hydra.listen('HeadIsInitializing');
-    }
+    logger.debug('Opening head (directly open in Hydra 2.x)...');
+    await hydra.init(); // resolves on HeadIsOpen (empty head)
     const processId = await DBOps.newHead();
     await hydra.stop();
     return { operationId: processId };
   } catch (error) {
-    logger.error('Error while initializing head');
-    const hydra = new HydraHandler(lucid, env.ADMIN_NODE_WS_URL);
-    await hydra.abort();
-    await hydra.listen('HeadIsAborted');
+    logger.error('Error while opening head');
     await hydra.stop();
     throw error;
   }
 }
 
+/** Deposit one batch of script-locked UTxOs into the OPEN head via /commit blueprint. */
+async function commitFundsToHead(
+  hydra: HydraHandler,
+  lucid: LucidEvolution,
+  fundUtxo: UTxO,
+  validatorRef: UTxO
+): Promise<string> {
+  const blueprint = await buildIncrementalCommitBlueprint(lucid, {
+    adminAddress: await lucid.wallet().address(),
+    depositedUtxo: fundUtxo,
+    validatorRefUtxo: validatorRef,
+  });
+  return hydra.commit(`${env.ADMIN_NODE_API_URL}/commit`, [fundUtxo], blueprint);
+}
+
 /**
  * Finalizes the open head process by collecting user deposits, merging them, and committing to the hydra head.
  * @param lucid Lucid instance
- * @param params Parameters for managing the head
+ * @param params Parameters for managing the head (peer urls unused in 2.x — deposits + snapshot approval)
  * @param processId DB process Id of this Open head operation
  */
 async function finalizeOpenHead(
@@ -72,64 +73,35 @@ async function finalizeOpenHead(
   params: ManageHeadSchema,
   processId: string
 ) {
+  // peer urls unused in 2.x (deposits + snapshot approval)
+  void params;
   const localLucid = _.cloneDeep(lucid);
   localLucid.selectWallet.fromSeed(env.SEED);
   const network = getNetworkFromLucid(localLucid);
-  const { peer_api_urls: peerUrls } = params;
   const { VALIDATOR_REF: vRef } = env;
+  const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
   try {
-    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
     const adminAddress = await localLucid.wallet().address();
-
-    // Step 2: Lookup deposit UTxOs in L1
-    const [validatorRef] = await localLucid.utxosByOutRef([
-      { txHash: vRef, outputIndex: 0 },
-    ]);
+    const [validatorRef] = await localLucid.utxosByOutRef([{ txHash: vRef, outputIndex: 0 }]);
     const validator = getValidator(validatorRef);
     const scriptAddress = validatorToAddress(network, validator);
-    const maxScriptUtxos = MAX_UTXOS_PER_COMMIT * peerUrls.length;
-    const scriptUtxos = await localLucid
-      .utxosAt(scriptAddress)
-      .then((utxos) => utxos.slice(0, maxScriptUtxos));
+    const scriptUtxos = await localLucid.utxosAt(scriptAddress);
 
-    // Step 3: Collect deposits and merge them (grouped by datum)
-    const depositsByDatum: Map<string, UTxO[]> = collectDeposits(scriptUtxos);
-    const utxosToCommit: UTxO[] = await mergeDeposits(
-      processId,
-      localLucid,
-      adminAddress,
-      validatorRef,
-      depositsByDatum
+    const depositsByDatum = collectDeposits(scriptUtxos);
+    const utxosToCommit = await mergeDeposits(
+      processId, localLucid, adminAddress, validatorRef, depositsByDatum
     );
 
-    // Step 4: Commit the funds to the hydra head
-    await commitUtxos(
-      processId,
-      hydra,
-      localLucid,
-      utxosToCommit,
-      peerUrls,
-      adminAddress,
-      validatorRef
-    );
-
-    await DBOps.updateHeadStatus(processId, DBStatus.AWAITING);
-    let openHeadTag = '';
-    while (openHeadTag !== 'HeadIsOpen') {
-      logger.info('Head not opened yet');
-      openHeadTag = await hydra.listen('HeadIsOpen');
+    await DBOps.updateHeadStatus(processId, DBStatus.COMMITTING);
+    for (const fundUtxo of utxosToCommit) {
+      const depositTxId = await commitFundsToHead(hydra, localLucid, fundUtxo, validatorRef);
+      logger.info(`Committed fund UTxO into head (deposit ${depositTxId})`);
     }
     await DBOps.updateHeadStatus(processId, DBStatus.RUNNING);
-
     await hydra.stop();
-    return;
   } catch (error) {
-    logger.error('Error while opening head, aborting...');
-    console.error(error);
+    logger.error('Error while funding head');
     await DBOps.updateHeadStatus(processId, DBStatus.FAILED);
-    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
-    await hydra.abort();
-    await hydra.listen('HeadIsAborted');
     await hydra.stop();
     throw error;
   }
@@ -210,89 +182,6 @@ async function mergeDeposits(
     await submitMergeTxs(localLucid, adminAddress, mergeTxs);
   }
   return await localLucid.utxosByOutRef(fundsRefs);
-}
-
-/**
- * Commits the UTxOs to the hydra head by sending commit transactions to each peer.
- * Each peer will submit a commit transaction with a portion of the UTxOs.
- * The last peer will also include the admin collateral UTxO.
- * @param processId DB process Id of this Open head operation
- * @param hydra HydraHandler instance
- * @param lucid Lucid instance
- * @param utxosToCommit List of UTxOs to commit
- * @param peerUrls List of peer URLs to send the commit transactions to
- * @param adminAddress Admin bech32 address
- * @param validatorRef Validator script UTxO reference
- */
-function pickAdminCollateral(utxos: UTxO[]): UTxO | undefined {
-  const minLovelace = 10_000_000n;
-  const lovelaceOf = (u: UTxO) => u.assets['lovelace'] ?? 0n;
-  const isAdaOnly = (u: UTxO) =>
-    Object.keys(u.assets).length === 1 && 'lovelace' in u.assets;
-
-  const withEnoughAda = utxos.filter((u) => lovelaceOf(u) >= minLovelace);
-  const adaOnly = withEnoughAda.filter(isAdaOnly);
-  const pool = adaOnly.length > 0 ? adaOnly : withEnoughAda;
-  if (pool.length === 0) {
-    return undefined;
-  }
-  return sortUTxOs(pool, 'Canonical')[0];
-}
-
-async function commitUtxos(
-  processId: string,
-  hydra: HydraHandler,
-  lucid: LucidEvolution,
-  fundUtxosToCommit: UTxO[],
-  peerUrls: string[],
-  adminAddress: string,
-  validatorRef: UTxO
-) {
-  const adminCollateral = await lucid
-    .utxosAt(adminAddress)
-    .then((utxos) => pickAdminCollateral(utxos));
-  if (!adminCollateral) {
-    throw new Error(
-      'No admin collateral found. Ensure the admin wallet has at least one UTxO with at least 10 ADA (10_000_000 lovelace). Prefer a pure ADA UTxO; mixed UTxOs are used only if no pure ADA UTxO qualifies.'
-    );
-  }
-  const utxosPerPeer = 1 + fundUtxosToCommit.length / peerUrls.length;
-  await DBOps.updateHeadStatus(processId, DBStatus.COMMITTING);
-
-  for (let i = 0; i < peerUrls.length; i++) {
-    const peerUrl = peerUrls[i];
-    const thisPeerUtxos = fundUtxosToCommit.slice(0, utxosPerPeer);
-    logger.debug(
-      `Committing ${thisPeerUtxos.length} fund UTxOs to peer ${peerUrl}`
-    );
-    fundUtxosToCommit.splice(0, utxosPerPeer);
-
-    const params: CommitFundsParams = {
-      adminAddress,
-      userFundUtxos: thisPeerUtxos,
-      validatorRefUtxo: validatorRef,
-    };
-    const isLastCommit = i === peerUrls.length - 1;
-
-    // Add admin collateral to the last commit tx
-    if (isLastCommit) {
-      params['adminCollateral'] = adminCollateral;
-    }
-    const commitUtxos = isLastCommit
-      ? [...thisPeerUtxos, adminCollateral]
-      : thisPeerUtxos;
-
-    const { tx } = await commitFunds(lucid, params);
-    const peerCommitTxId = await hydra.sendCommit(peerUrl, commitUtxos, tx);
-
-    logger.debug(`Commit transaction submitted! tx id: ${peerCommitTxId}`);
-    let commitTag = '';
-    logger.debug('Waiting for last commit to be confirmed by the hydra node');
-    while (commitTag !== 'Committed') {
-      commitTag = await hydra.listen('Committed');
-    }
-  }
-  logger.info('All funds committed successfully');
 }
 
 /**

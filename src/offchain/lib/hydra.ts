@@ -11,7 +11,7 @@ import {
 import blake2b from 'blake2b';
 import { env } from '../../config';
 import { logger } from '../../shared/logger';
-import { waitForTag, MessageConn } from './hydra-messages';
+import { waitForTag, MessageConn, HydraTerminalError } from './hydra-messages';
 
 /**
  * Listen and send messages to a Hydra node.
@@ -86,10 +86,21 @@ class HydraHandler {
     await this.ensureConnectionReady();
     logger.debug('Sending Init; awaiting HeadIsOpen...');
     this.connection.send(JSON.stringify({ tag: 'Init' }));
-    return waitForTag(this.msgConn, 'HeadIsOpen', {
-      timeout: 120_000,
-      terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
-    });
+    try {
+      return await waitForTag(this.msgConn, 'HeadIsOpen', {
+        timeout: 120_000,
+        terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
+      });
+    } catch (err) {
+      // Init on an already-open head returns CommandFailed; treat it as a no-op.
+      if (err instanceof HydraTerminalError && err.tag === 'CommandFailed') {
+        logger.info(
+          'Init returned CommandFailed (head already open) — treating as no-op'
+        );
+        return err.payload;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -101,6 +112,7 @@ class HydraHandler {
     utxos: UTxO[],
     blueprint?: CBORHex
   ): Promise<string> {
+    let depositTxId: string | undefined;
     try {
       const formatUtxos = (us: UTxO[]) =>
         us.reduce(
@@ -131,7 +143,7 @@ class HydraHandler {
         .sign.withWallet()
         .complete()
         .then((tx) => setRedeemersAsMap(tx.toCBOR()));
-      const depositTxId = await this.lucid.wallet().submitTx(signedTx);
+      depositTxId = await this.lucid.wallet().submitTx(signedTx);
       logger.info(`Deposit tx submitted to L1: ${depositTxId}; awaiting CommitFinalized...`);
 
       await waitForTag(this.msgConn, 'CommitFinalized', {
@@ -146,6 +158,26 @@ class HydraHandler {
       });
       return depositTxId;
     } catch (error) {
+      // On deposit-deadline expiry, best-effort recover the deposited UTxO on L1
+      // (DELETE /commits/{txid}) so funds aren't stuck in the Hydra deposit.
+      // NOTE: the DepositExpired->our-deposit correlation must be validated in E2E.
+      if (
+        error instanceof HydraTerminalError &&
+        error.tag === 'DepositExpired' &&
+        depositTxId
+      ) {
+        logger.error(
+          `Deposit ${depositTxId} expired before finalization; attempting recover...`
+        );
+        try {
+          await this.recover(`${env.ADMIN_NODE_API_URL}/commits`, depositTxId);
+          logger.info(`Recovered expired deposit ${depositTxId} on L1`);
+        } catch (recErr) {
+          logger.error(
+            `Recover of ${depositTxId} failed: ${recErr instanceof Error ? recErr.message : String(recErr)}`
+          );
+        }
+      }
       if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
         const statusCode = error.response?.status;

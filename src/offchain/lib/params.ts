@@ -45,13 +45,6 @@ type MergeFundsParams = {
   validatorRef: UTxO;
 };
 
-type CommitFundsParams = {
-  adminAddress: string;
-  userFundUtxos: UTxO[];
-  validatorRefUtxo: UTxO;
-  adminCollateral?: UTxO;
-};
-
 type IncrementalCommitParams = {
   userAddress: string;
   publicKey: string;
@@ -72,7 +65,6 @@ type IncrementalDecommitParams = {
 };
 
 export {
-  CommitFundsParams,
   DepositParams,
   MergeFundsParams,
   PayMerchantParams,

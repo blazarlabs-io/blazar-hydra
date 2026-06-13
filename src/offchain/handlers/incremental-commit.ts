@@ -148,22 +148,8 @@ async function handleIncrementalCommit(
     throw new Error(`Could not find deposited UTXO on L1 after ${maxRetries * retryDelay / 1000} seconds. Transaction may not be confirmed yet. TX: ${newFundsUtxo.txHash}`);
   }
 
-  // Step 5: Check if the reference script UTXO still exists on L1
-  // During initial head opening, the reference script UTXO is committed to the head.
-  // For incremental commits, we need to verify it's still available on L1.
-  logger.info('Checking reference script UTXO availability...');
-  const [currentValidatorRef] = await localLucid.utxosByOutRef([
-    { txHash: env.VALIDATOR_REF, outputIndex: 0 },
-  ]);
-  
-  if (!currentValidatorRef) {
-    logger.debug('Reference script UTXO not found on L1 - it may have been committed to the head');
-    logger.debug(`Looking for UTXO: ${env.VALIDATOR_REF}#0`);
-  } else {
-    logger.debug(`Reference script UTXO found on L1: ${currentValidatorRef.txHash}#${currentValidatorRef.outputIndex}`);
-  }
-
-  // Step 6: Send incremental commit to Hydra node
+  // Send incremental commit to Hydra node (VALIDATOR_REF stays on L1 and is used
+  // as a reference input by the blueprint; in 2.x it is never moved into the head).
   logger.info('Sending incremental commit to Hydra node...');
   const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
 

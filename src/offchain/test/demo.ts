@@ -254,10 +254,10 @@ const withdraw = async (address: Address, seed: string) => {
 };
 
 const abortHead = async () => {
+  // abort() was removed in Hydra 2.x — closing the connection is a no-op placeholder
   const hydra = new HydraHandler(lucid, aliceWsUrl);
-  await hydra.abort();
-  await hydra.listen('HeadIsAborted');
-  hydra.stop();
+  await hydra.stop();
+  throw new Error('abort is not supported in Hydra 2.x');
 };
 
 const trace = process.env.npm_config_trace;
@@ -370,7 +370,6 @@ switch (trace) {
           env.USER_ADDRESS!,
           2
         );
-        await hydra.listen('TxValid');
       });
     console.dir('Many payments done', { depth: null });
     await hydra.stop();

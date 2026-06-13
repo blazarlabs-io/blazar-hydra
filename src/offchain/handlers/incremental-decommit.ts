@@ -168,17 +168,8 @@ async function handleIncrementalDecommit(
     logger.info('Incremental decommit request sent to Hydra node');
 
     // Wait for decommit finalization
-    let decommitTag = '';
     logger.debug('Waiting for incremental decommit to be finalized by the hydra node');
-    
-    while (decommitTag !== 'DecommitFinalized') {
-      decommitTag = await hydra.listen('DecommitFinalized');
-      
-      if (decommitTag === 'DecommitInvalid') {
-        await hydra.stop();
-        throw new Error('Incremental decommit rejected by Hydra node');
-      }
-    }
+    await hydra.awaitDecommit();
 
     logger.info(`Incremental decommit completed successfully for ${owner} ${address}`);
     logger.info('Funds will be available on L1 after transaction confirmation');

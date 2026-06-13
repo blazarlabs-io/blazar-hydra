@@ -4,7 +4,7 @@ import { waitForTag, HydraTerminalError, MessageConn } from './hydra-messages';
 afterEach(() => vi.useRealTimers());
 
 function fakeConn(): MessageConn & { emit: (m: unknown) => void } {
-  const conn: any = { onmessage: null };
+  const conn: any = { onmessage: null }; // eslint-disable-line @typescript-eslint/no-explicit-any
   conn.emit = (m: unknown) =>
     conn.onmessage?.({ data: typeof m === 'string' ? m : JSON.stringify(m) });
   return conn;

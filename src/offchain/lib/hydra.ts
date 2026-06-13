@@ -249,6 +249,19 @@ class HydraHandler {
     const data = await waitForTag(this.msgConn, 'HeadIsFinalized', { timeout: 120_000 });
     return data.tag;
   }
+
+  /** Await the terminal of a decommit started via decommit(). */
+  async awaitDecommit(): Promise<void> {
+    await waitForTag(this.msgConn, 'DecommitFinalized', {
+      timeout: 120_000,
+      terminalTags: ['DecommitInvalid'],
+    });
+  }
+
+  /** Await ReadyToFanout after a Close. */
+  async awaitReadyToFanout(): Promise<void> {
+    await waitForTag(this.msgConn, 'ReadyToFanout', { timeout: 120_000 });
+  }
 }
 
 type HydraUtxo = {

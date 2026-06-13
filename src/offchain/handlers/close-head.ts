@@ -84,15 +84,10 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
       ])) as string;
     }
     logger.info('Waiting for fanout tag...');
-    while (currentExpectedTag !== 'ReadyToFanout') {
-      currentExpectedTag = await hydra.listen('ReadyToFanout');
-    }
+    await hydra.awaitReadyToFanout();
 
     // Step 3: Fanout
-    currentExpectedTag = await hydra.fanout();
-    while (currentExpectedTag !== 'HeadIsFinalized') {
-      currentExpectedTag = await hydra.listen('HeadIsFinalized');
-    }
+    await hydra.fanout();
     logger.info(`Head ${processId} is finalized.`);
     await prisma.process.delete({ where: { id: processId } });
     await hydra.stop();
@@ -116,7 +111,6 @@ async function withdrawMerchantUtxos(
   hydraKey: string,
   merchantUtxos: UTxO[]
 ) {
-  let currentExpectedTag = '';
   if (merchantUtxos.length !== 0) {
     const roundsOfDecommit = Math.ceil(
       merchantUtxos.length / MAX_UTXOS_PER_DECOMMIT
@@ -148,13 +142,7 @@ async function withdrawMerchantUtxos(
         .complete()
         .then((tx) => tx.toCBOR());
       await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
-      currentExpectedTag = 'NotDecommitFinalized';
-      while (currentExpectedTag !== 'DecommitFinalized') {
-        currentExpectedTag = await hydra.listen('DecommitFinalized');
-        if (currentExpectedTag === 'DecommitInvalid') {
-          throw new Error('Decommit rejected by Hydra node');
-        }
-      }
+      await hydra.awaitDecommit();
       logger.info('Decommit finalized.');
     }
   }

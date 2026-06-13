@@ -93,90 +93,66 @@ class HydraHandler {
   }
 
   /**
-   * Sends a commit transaction to the Hydra node.
-   * @param apiUrl - The URL of the Hydra API endpoint.
-   * @param utxos - An array of the UTxOs to commit.
-   * @param blueprint - The CBOR-encoded transaction blueprint (optional).
-   * @param options - Additional options for the commit.
-   * @param options.includeRefScript - Whether to include the reference script UTXO in the commit.
-   *        Set to true for initial commits (head opening), false for incremental commits.
-   *        Defaults to true for backward compatibility.
-   * @returns the transaction hash once the commit is successful.
+   * Draft a deposit/commit tx via POST {apiUrl} (/commit), sign + submit it to L1,
+   * then await CommitFinalized for that deposit. Returns the deposit txId.
    */
-  async sendCommit(
+  async commit(
     apiUrl: string,
     utxos: UTxO[],
-    blueprint?: CBORHex,
-    options: { includeRefScript?: boolean } = {}
+    blueprint?: CBORHex
   ): Promise<string> {
-    // Default to including ref script for backward compatibility with initial commits
-    const includeRefScript = options.includeRefScript ?? true;
-    
     try {
-      const formatUtxos = (utxos: UTxO[]) =>
-        utxos.reduce(
-          (acc, utxo) => {
-            acc[`${utxo.txHash}#${utxo.outputIndex}`] =
-              lucidUtxoToHydraUtxo(utxo);
+      const formatUtxos = (us: UTxO[]) =>
+        us.reduce(
+          (acc, u) => {
+            acc[`${u.txHash}#${u.outputIndex}`] = lucidUtxoToHydraUtxo(u);
             return acc;
           },
-          {} as Record<string, any> //eslint-disable-line
+          {} as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
         );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payload: { blueprintTx?: any; utxo?: any } = {};
-
       if (utxos.length > 0) {
         if (blueprint) {
-          // We are commiting fund utxos, we include the blueprint transaction
-          payload['blueprintTx'] = {
-            cborHex: blueprint,
-            description: '',
-            type: 'Tx ConwayEra',
-          };
-
-          // Only include the reference script UTXO for initial commits (head opening).
-          // For incremental commits, the reference script is already in the head,
-          // so we should NOT try to commit it again.
-          if (includeRefScript) {
-            const [referenceScriptUtxo] = await this.lucid.utxosByOutRef([
-              { txHash: env.VALIDATOR_REF, outputIndex: 0 },
-            ]);
-            if (referenceScriptUtxo) {
-              utxos.push(referenceScriptUtxo);
-            } else {
-              logger.debug('Reference script UTXO not found on L1 - it may have been committed to the head already');
-            }
-          }
+          payload['blueprintTx'] = { cborHex: blueprint, description: '', type: 'Tx ConwayEra' };
           payload['utxo'] = formatUtxos(utxos);
         } else {
-          // We just commit the utxos without a blueprint transaction
           payload = formatUtxos(utxos);
         }
       }
 
-      logger.debug(`Sending commit request to ${apiUrl} with ${utxos.length} UTxOs, includeRefScript=${includeRefScript}`);
+      logger.debug(`Sending commit request to ${apiUrl} with ${utxos.length} UTxOs`);
       const response = await axios.post(apiUrl, payload);
-      const txWitnessed = response.data.cborHex;
+      const draft = response.data.cborHex;
       this.lucid.selectWallet.fromSeed(env.SEED);
       const signedTx = await this.lucid
-        .fromTx(txWitnessed)
+        .fromTx(draft)
         .sign.withWallet()
         .complete()
         .then((tx) => setRedeemersAsMap(tx.toCBOR()));
-      const txHash = await this.lucid.wallet().submitTx(signedTx);
-      return txHash;
+      const depositTxId = await this.lucid.wallet().submitTx(signedTx);
+      logger.info(`Deposit tx submitted to L1: ${depositTxId}; awaiting CommitFinalized...`);
+
+      await waitForTag(this.msgConn, 'CommitFinalized', {
+        timeout: 1_300_000, // > deposit-period (1200s) so the deadline can pass
+        match: (m) => m.depositTxId === depositTxId,
+        terminalTags: ['DepositExpired'],
+        onMessage: (m) => {
+          if (['CommitRecorded', 'CommitApproved'].includes(m.tag)) {
+            logger.debug(`Commit progress: ${m.tag}`);
+          }
+        },
+      });
+      return depositTxId;
     } catch (error) {
-      // Extract detailed error information from Axios errors
       if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
         const statusCode = error.response?.status;
-        const errorDetails = responseData 
+        const errorDetails = responseData
           ? JSON.stringify(responseData, null, 2)
           : error.message;
-        logger.error(
-          `Hydra commit request failed with status ${statusCode}: ${errorDetails}`
-        );
+        logger.error(`Hydra commit request failed with status ${statusCode}: ${errorDetails}`);
       } else {
         logger.error(
           `There was an error sending the commit transaction: ${error instanceof Error ? error.message : String(error)}`
@@ -184,6 +160,12 @@ class HydraHandler {
       }
       throw error;
     }
+  }
+
+  /** Recover an un-finalized deposit (DELETE {apiUrl}/{depositTxId}); awaits CommitRecovered. */
+  async recover(apiUrl: string, depositTxId: string): Promise<void> {
+    await axios.delete(`${apiUrl}/${depositTxId}`);
+    await waitForTag(this.msgConn, 'CommitRecovered', { timeout: 120_000 });
   }
 
   /**

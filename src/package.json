@@ -8,7 +8,8 @@
     "build": "tsc",
     "dev": "tsx watch ./api/index.ts",
     "start": "NODE_OPTIONS='--experimental-specifier-resolution=node' node ./build/api/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "demo": "tsx offchain/test/demo.ts",
     "ws": "tsx offchain/test/websocket.ts",
     "deploy": "tsx offchain/handlers/deploy-validator.ts",
@@ -28,7 +29,8 @@
     "@types/node": "^22.7.8",
     "@types/ws": "^8.5.12",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7"
+    "typescript": "^5.7",
+    "vitest": "^3.2.6"
   },
   "dependencies": {
     "@eslint/js": "^9.28.0",

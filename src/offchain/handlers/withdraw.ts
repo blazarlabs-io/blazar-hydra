@@ -1,110 +1,99 @@
 import { Layer, WithdrawSchema } from '../../shared';
-import { withdraw } from '../tx-builders/withdraw-user';
-import {
-  getAddressDetails,
-  LucidEvolution,
-  selectUTxOs,
-} from '@lucid-evolution/lucid';
-import { WithdrawParams } from '../lib/params';
+import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
+import { getAddressDetails, LucidEvolution } from '@lucid-evolution/lucid';
 import _ from 'lodash';
 import { env } from '../../config';
 import { TxBuiltResponse } from '../../api/schemas/response';
 import { logger } from '../../shared/logger';
+import { HydraHandler } from '../lib/hydra';
 
+/**
+ * Withdraws funds from the Hydra head back to L1. A withdraw spends UTxOs that live
+ * in L2 (the head snapshot), so the tx MUST be applied on L2 and submitted to the
+ * hydra-node /decommit endpoint (which produces the L1 payout) — NOT submitted to L1
+ * directly. Submitting to L1 fails with BadInputsUTxO because the input only exists in L2.
+ */
 async function handleWithdraw(
   lucid: LucidEvolution,
   params: WithdrawSchema
 ): Promise<TxBuiltResponse> {
   const localLucid = _.cloneDeep(lucid);
   const { address, owner, funds_utxos, network_layer } = params;
-  const { SEED: adminSeed, HYDRA_KEY: hydraKey, VALIDATOR_REF: vRef } = env;
+  const { SEED: adminSeed, HYDRA_KEY: hydraKey } = env;
 
-  lucid.selectWallet.fromSeed(adminSeed);
-  const adminAddress = await lucid.wallet().address();
+  // A withdraw always settles L2 -> L1 via decommit.
+  if (owner === 'merchant' && network_layer === Layer.L1) {
+    throw new Error('Merchant cannot withdraw from L1');
+  }
+  if (owner === 'user' && network_layer === Layer.L2) {
+    throw new Error('User cannot withdraw from L2');
+  }
+
+  localLucid.selectWallet.fromSeed(adminSeed);
+  const adminAddress = await localLucid.wallet().address();
   const adminKey = getAddressDetails(adminAddress).paymentCredential?.hash;
   if (!adminKey) {
     throw new Error('Admin address does not have a valid payment credential');
   }
 
-  // Lookup funds and validator UTxOs
-  const fundsRefs = funds_utxos.map(({ ref }) => ({
-    txHash: ref.hash,
-    outputIndex: Number(ref.index),
-  }));
-  const fundsUtxos = await localLucid.utxosByOutRef(fundsRefs);
-  if (fundsUtxos.length === 0) {
-    throw new Error(`Funds utxos not found in ${network_layer}`);
+  const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
+  try {
+    // Funds + admin-collateral UTxOs live in L2 (the head snapshot), not on L1.
+    const utxosInL2 = await hydra.getSnapshot();
+    const fundsRefs = funds_utxos.map(({ ref }) => ({
+      txHash: ref.hash,
+      outputIndex: Number(ref.index),
+    }));
+    const fundsUtxos = utxosInL2.filter((u) =>
+      fundsRefs.some(
+        (r) => r.txHash === u.txHash && r.outputIndex === u.outputIndex
+      )
+    );
+    if (fundsUtxos.length === 0) {
+      throw new Error('Funds utxos not found in L2 snapshot');
+    }
+    const walletUtxos = utxosInL2.filter((u) => u.address === adminAddress);
+    if (walletUtxos.length === 0) {
+      throw new Error('No admin collateral UTxO found in L2');
+    }
+
+    const withdraws = fundsUtxos.map((fundUtxo) => {
+      const signature = funds_utxos.find(
+        (u) =>
+          u.ref.hash === fundUtxo.txHash &&
+          Number(u.ref.index) === fundUtxo.outputIndex
+      )?.signature;
+      return { fundUtxo, signature };
+    });
+
+    // Build the L2 withdraw tx and submit it to the hydra-node /decommit endpoint.
+    const { tx } = await withdrawMerchant(localLucid, {
+      kind: owner,
+      withdraws,
+      adminKey,
+      hydraKey,
+      walletUtxos,
+    });
+
+    localLucid.selectWallet.fromSeed(adminSeed);
+    const signedTx = await localLucid
+      .fromTx(tx.toCBOR())
+      .sign.withWallet()
+      .complete()
+      .then((t) => t.toCBOR());
+
+    logger.info(`Submitting withdraw (decommit) for ${owner} ${address}...`);
+    await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
+    await hydra.awaitDecommit();
+    logger.info(`Withdraw decommit finalized for ${owner} ${address}`);
+    await hydra.stop();
+
+    return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
+  } catch (error) {
+    logger.error(`Error during withdraw for ${owner} ${address}`);
+    await hydra.stop();
+    throw error;
   }
-  const [validatorRef] = await localLucid.utxosByOutRef([
-    { txHash: vRef, outputIndex: 0 },
-  ]);
-
-  // Prepare tx builder parameters
-  let withdrawParams: WithdrawParams = {
-    address,
-    kind: owner,
-    withdraws: [],
-  };
-  switch (owner) {
-    case 'merchant':
-      if (network_layer === Layer.L1) {
-        throw new Error('Merchant cannot withdraw from L1');
-      }
-      withdrawParams = {
-        ...withdrawParams,
-        adminKey,
-        hydraKey,
-        withdraws: fundsUtxos.map((utxo) => {
-          return { fundUtxo: utxo };
-        }),
-      };
-      break;
-
-    case 'user':
-      if (network_layer === Layer.L2) {
-        throw new Error('User cannot withdraw from L2');
-      }
-      const walletUtxos = await localLucid
-        .utxosAt(adminAddress)
-        .then((utxos) => selectUTxOs(utxos, { lovelace: 10_000_000n }));
-      const zipFundsAndSignatures = fundsUtxos.map((utxo) => {
-        const signature = funds_utxos.find(
-          (u) =>
-            u.ref.hash === utxo.txHash &&
-            Number(u.ref.index) === utxo.outputIndex
-        )?.signature;
-        /**
-         * COMMENTED BLOCK: This is a temporary fix to handle the case where the signature is not provided.
-         */
-        // if (!signature) {
-        //   throw new Error(
-        //     `User signature not found for UTxO ${utxo.txHash}#${utxo.outputIndex}`
-        //   );
-        // }
-        return { fundUtxo: utxo, signature };
-      });
-      withdrawParams = {
-        ...withdrawParams,
-        validatorRef,
-        walletUtxos,
-        withdraws: zipFundsAndSignatures,
-      };
-      break;
-
-    default:
-      throw new Error('Unsupported owner and network layer combination');
-  }
-
-  // Build and return the transaction
-  const { tx } = await withdraw(localLucid, withdrawParams, adminAddress);
-
-  logger.info(`Submitting withdraw transaction with id ${tx.toHash()}`);
-  lucid.selectWallet.fromSeed(env.SEED);
-  const signed = await lucid.fromTx(tx.toCBOR()).sign.withWallet().complete();
-  await signed.submit();
-  logger.info(`Withdraw transaction ${tx.toHash()} submitted successfully`);
-
-  return { cborHex: tx.toCBOR(), fundsUtxoRef: null };
 }
 
 export { handleWithdraw };

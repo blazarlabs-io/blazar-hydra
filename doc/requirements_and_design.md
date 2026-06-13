@@ -10,7 +10,15 @@ To circumvent those limitations, we use a Hydra head where users can make paymen
 
 The current version supports payments in any combination of CNTs.
 
-The system will handle user requests, building transactions and querying the user balances for both the L1 and L2 chains. This solution involves opening and closing a new Hydra Head each day, to allow users to deposit funds into the system. This limitation can be lifted in a v2 of the protocol once [Incremental Commits](https://github.com/cardano-scaling/hydra/issues/199) are implemented. Incremental Decommits are available, so users and merchants can withdraw their funds at any time, although this feature is not part of the designed MVP. Merchant funds are aggregated into a single UTxO during the lifespan of the Hydra head and paid to their address at the end of each day. User funds not withdrawn will be committed into the new Hydra head. We also include a "merging" step, where multiple user deposits UTxOs can be merged into one to increase the amount of users that can fit into a single head.
+> **Hydra 2.x update.** This section described the original Hydra 1.x design, where a new
+> head was opened and closed each day so users could deposit. The implementation now runs on
+> **Hydra 2.x** with [Incremental Commits](https://github.com/cardano-scaling/hydra/issues/199),
+> which lifts that limitation: the head opens **empty** and funds are added to a **running**
+> head via deposits. See [`hydra-2x-migration.md`](./hydra-2x-migration.md) for the current
+> architecture and funding model. The use cases below remain conceptually accurate; the
+> open-head flow in particular is updated for 2.x.
+
+The system will handle user requests, building transactions and querying the user balances for both the L1 and L2 chains. The head opens empty and funds enter it as **deposits** (incremental commits), so users can add funds to a running head without waiting for the next daily cycle. Incremental Decommits let users and merchants withdraw their funds at any time. Merchant funds are aggregated into a single UTxO during the lifespan of the Hydra head and paid to their address when the head closes. User funds not withdrawn remain in the head. We also include a "merging" step, where multiple deposit UTxOs sharing the same user (datum) can be merged into one to increase the amount of users that fit into a single head.
 
 The complete proposed flow looks like this:
 
@@ -43,16 +51,23 @@ Context: A User has any native assets and wants to start using the protocol
 
 Context: An Admin wants to collect User deposits and open the hydra head
 
+> Updated for **Hydra 2.x**: the head opens **empty** (no commit phase / `CollectCom`), and
+> funds are added afterwards as deposits (incremental commits).
+
 - The backend receives a request to open the head
-- The backend sends a request to the hydra-node to initialize a head (1)
-- The hydra node builds and submits the Init transaction to the L1 (2&3)
-- The backend queries the L1 chain and gets a list of all pending user deposits (4)
-- The backend builds the merge transactions (5)
-- The backend submits the merge transactions to the cardano node and waits for the confirmation (6)
-- The backend builds a transaction consuming the user deposit UTxOs (7)
-- The backend sends a Commit request to the hydra-node using the built transactions as a blueprint (8)
-- The hydra node builds and submits the Commit transaction (9&10)
-- The hydra node builds and submits the CollectCom transaction
+- The backend sends `Init` to the hydra-node, which submits the Init transaction; the head
+  opens **empty** and emits `HeadIsOpen`. `/open-head` returns an `operationId` and the rest
+  runs asynchronously
+- The backend queries the L1 chain for all pending user deposits at the validator
+- The backend builds and submits the **merge** transactions (deposits sharing the same user
+  datum are merged into one UTxO)
+- For each fund UTxO, the backend sends a **deposit** to the hydra-node `POST /commit` using a
+  `PartialCommit` blueprint, signs and submits the deposit transaction to L1, and waits for
+  the deposit to finalize (`CommitRecorded → DepositActivated → CommitApproved →
+  CommitFinalized`)
+- The backend also deposits one pure-ADA **admin collateral** UTxO into L2 (needed by `/pay`
+  and `/withdraw`)
+- The head status becomes `RUNNING`
 
 ![OpenHeadDiagram](img/diagram-open-head.png)
 
@@ -110,7 +125,11 @@ Context: An Admin wants to close the hydra head for the day, preparing for the o
 
 ## Technical Details
 
-For the implementation we propose using Aiken (Latest version being V1.1.3) for the on-chain validators and typescript with the Blaze library for the off-chain code and backend. In terms of infrastructure a Cardano Node is needed for querying and submitting transactions to L1, and a collection of hydra nodes to manage the hydra head.
+For the implementation we use Aiken for the on-chain validators and TypeScript with
+**Lucid Evolution** for the off-chain code and backend. In terms of infrastructure a
+**cardano-node (11.0.1)** runs alongside the **hydra-node (2.2.0)**, which follows L1 through
+the node's local socket; the backend builds L1 transactions through Blockfrost (Lucid). See
+[`hydra-2x-migration.md`](./hydra-2x-migration.md) for the deployment architecture.
 
 ### Hydra limitations
 

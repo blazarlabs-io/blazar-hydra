@@ -70,6 +70,18 @@ async function commitFundsToHead(
 }
 
 /**
+ * Pick an admin-owned UTxO to commit into L2 as collateral for L2 txs (/pay, /withdraw).
+ * Prefers a pure-ADA UTxO with at least 10 ADA; falls back to any UTxO with >= 10 ADA.
+ */
+function pickAdminCollateral(utxos: UTxO[]): UTxO | undefined {
+  const MIN_LOVELACE = 10_000_000n;
+  const hasEnoughAda = (u: UTxO) => (u.assets['lovelace'] ?? 0n) >= MIN_LOVELACE;
+  const isPureAda = (u: UTxO) =>
+    Object.keys(u.assets).length === 1 && hasEnoughAda(u);
+  return utxos.find(isPureAda) ?? utxos.find(hasEnoughAda);
+}
+
+/**
  * Finalizes the open head process by collecting user deposits, merging them, and committing to the hydra head.
  * @param lucid Lucid instance
  * @param params Parameters for managing the head (peer urls unused in 2.x — deposits + snapshot approval)
@@ -104,6 +116,23 @@ async function finalizeOpenHead(
       const depositTxId = await commitFundsToHead(hydra, localLucid, fundUtxo, validatorRef);
       logger.info(`Committed fund UTxO into head (deposit ${depositTxId})`);
     }
+
+    // Commit a pure-ADA admin UTxO into L2 to serve as collateral for L2 txs
+    // (/pay, /withdraw). Hydra 1.x committed this at Init; the 2.x deposit-based
+    // flow must deposit it explicitly. Simple commit (no blueprint — not script-locked).
+    const adminUtxos = await localLucid.utxosAt(adminAddress);
+    const adminCollateral = pickAdminCollateral(adminUtxos);
+    if (!adminCollateral) {
+      throw new Error(
+        'No admin collateral found. Ensure the admin wallet has a pure-ADA UTxO of at least 10 ADA.'
+      );
+    }
+    const collateralDepositTxId = await hydra.commit(
+      `${env.ADMIN_NODE_API_URL}/commit`,
+      [adminCollateral]
+    );
+    logger.info(`Committed admin collateral into head (deposit ${collateralDepositTxId})`);
+
     await DBOps.updateHeadStatus(processId, DBStatus.RUNNING);
     await hydra.stop();
   } catch (error) {

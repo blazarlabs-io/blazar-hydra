@@ -24,7 +24,7 @@
 | `src/offchain/handlers/open-head.ts` | Open empty head + fund via shared `commitFundsToHead` | Modify |
 | `src/offchain/handlers/incremental-commit.ts` | Top-up via `hydra.commit()` | Modify |
 | `src/offchain/handlers/incremental-decommit.ts`, `close-head.ts` | Verify ConwayEra envelope path; no logic change | Verify |
-| `hydra-setup/docker-compose.yaml`, `docker-compose-digitalpcean.yaml` | node 11.0.1, hydra 2.2.0, tx-ids, flags | Modify (other repo) |
+| `hydra-setup/docker-compose.yaml` | node 11.0.1, hydra 2.2.0, tx-ids, flags | Modify (other repo) |
 
 ---
 
@@ -36,7 +36,6 @@
 
 **Files:**
 - Modify: `hydra-setup/docker-compose.yaml`
-- Modify: `hydra-setup/docker-compose-digitalpcean.yaml`
 
 - [ ] **Step 1: Confirm the `--incremental-ops` flag name against the real binary**
 
@@ -88,14 +87,13 @@ For each `hydra-node-N` service: set `image: ghcr.io/cardano-scaling/hydra-node:
 Run (from `hydra-setup/`):
 ```bash
 docker compose -f docker-compose.yaml config >/dev/null && echo OK
-docker compose -f docker-compose-digitalpcean.yaml config >/dev/null && echo OK
 ```
-Expected: `OK` twice, no YAML errors.
+Expected: `OK`, no YAML errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /Users/mg/Projects/CardanoProjects/hydra-pay-loadbalancer/hydra-setup add docker-compose.yaml docker-compose-digitalpcean.yaml
+git -C /Users/mg/Projects/CardanoProjects/hydra-pay-loadbalancer/hydra-setup add docker-compose.yaml
 git -C /Users/mg/Projects/CardanoProjects/hydra-pay-loadbalancer/hydra-setup commit -m "chore: pin node 11.0.1 + hydra-node 2.2.0 for PV11"
 ```
 

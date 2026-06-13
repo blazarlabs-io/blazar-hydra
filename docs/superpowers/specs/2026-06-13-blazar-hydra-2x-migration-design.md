@@ -30,8 +30,8 @@ adopting the 2.x API in blazar.
 
 - Infra: pin `cardano-node:11.0.1` (+ from-genesis resync), `hydra-node:2.2.0`,
   new preprod reference-script tx-ids, hydra-node flags, SQLite persistence,
-  regenerated protocol parameters — across both `docker-compose.yaml` and
-  `docker-compose-digitalpcean.yaml` (in the `hydra-setup` repo).
+  regenerated protocol parameters — in `docker-compose.yaml`
+  (in the `hydra-setup` repo).
 - Blazar client: the `HydraHandler` WS/HTTP client and the head-lifecycle
   handlers (`open-head`, `incremental-commit`, `incremental-decommit`,
   `close-head`) and the `commit-funds` tx-builder.

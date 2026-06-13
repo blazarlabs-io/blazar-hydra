@@ -76,19 +76,10 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     );
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
-    // Step 2: Send close command
-    let currentExpectedTag = '';
-    while (currentExpectedTag !== 'HeadIsClosed') {
-      currentExpectedTag = (await Promise.race([
-        new Promise((resolve) =>
-          setTimeout(() => {
-            logger.error('Close command not sent, retrying...');
-            resolve('IncorrectTag');
-          }, 40_000)
-        ),
-        hydra.close(),
-      ])) as string;
-    }
+    // Step 2: Send close command. close() sends Close and waits for HeadIsClosed
+    // (60s). The previous Promise.race(40s) loop fired before close()'s own wait,
+    // sending a duplicate Close and orphaning the first waitForTag handler.
+    await hydra.close();
     logger.info('Waiting for fanout tag...');
     await hydra.awaitReadyToFanout();
 

@@ -1,0 +1,130 @@
+services:
+  cardano-node:
+    image: ghcr.io/intersectmbo/cardano-node:11.0.1
+    container_name: cardano-node
+    environment:
+      - NETWORK=preprod
+    volumes:
+      - preprod-node-db:/data/db
+      - preprod-node-ipc:/ipc
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+
+  hydra-node-1:
+    image: ghcr.io/cardano-scaling/hydra-node:2.2.0
+    container_name: hydra-node-1
+    depends_on:
+      cardano-node:
+        condition: service_started
+    volumes:
+      - preprod-node-ipc:/devnet
+      - ./credentials:/devnet/credentials
+      - ./persistence:/devnet/persistence
+      - ./protocol-parameters.json:/devnet/protocol-parameters.json
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+    command:
+      [
+        "--node-id",
+        "1",
+        "--api-host",
+        "0.0.0.0",
+        "--listen",
+        "0.0.0.0:5001",
+        "--monitoring-port",
+        "6001",
+        "--api-port",
+        "4001",
+        "--hydra-scripts-tx-id",
+        "2c01bf787fff78ffe96fb0722e7a9549565ac25d11a76ffb07fd6e809ea00b03,395ecc511b7f05485165da08646ae3224ae0e3905a795bcee408a28eaf4696dd",
+        "--hydra-signing-key",
+        "/devnet/credentials/alice-hydra.sk",
+        # "--hydra-verification-key",
+        # "/devnet/credentials/bob-hydra.vk",
+        "--cardano-signing-key",
+        "/devnet/credentials/alice-node.sk",
+        # "--cardano-verification-key",
+        # "/devnet/credentials/bob-node.vk",
+        "--ledger-protocol-parameters",
+        "/devnet/protocol-parameters.json",
+        "--testnet-magic",
+        "1",
+        "--node-socket",
+        "/devnet/node.socket",
+        "--persistence-dir",
+        "/devnet/persistence/alice",
+        "--contestation-period",
+        "120s",
+        "--deposit-period",
+        "300s",
+      ]
+    networks:
+      hydra_net:
+        aliases:
+          - hydra-node-1
+    restart: always
+
+
+  blazar-hydra:
+    image: mariusgeorgescu/blazar-hydra:hydra2x
+    container_name: blazar-hydra
+    depends_on:
+      hydra-node-1:
+        condition: service_started
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    env_file:
+      - .env
+    environment:
+      # These can be overridden via command line or environment variables
+      - PORT=${PORT:-3000}
+      - PROVIDER_PROJECT_ID=${PROVIDER_PROJECT_ID}
+      - PROVIDER_URL=${PROVIDER_URL}
+      - NETWORK=${NETWORK}
+      - VALIDATOR_REF=${VALIDATOR_REF}
+      - HYDRA_KEY=${HYDRA_KEY}
+      - SEED=${SEED}
+      - ADMIN_NODE_WS_URL=ws://hydra-node-1:4001
+      - ADMIN_NODE_API_URL=http://hydra-node-1:4001
+      - USER_ADDRESS=${USER_ADDRESS:-}
+      - USER_SEED=${USER_SEED:-}
+      - USER_ADDRESS_2=${USER_ADDRESS_2:-}
+      - USER_SEED_2=${USER_SEED_2:-}
+      - LOGGER_LEVEL=${LOGGER_LEVEL:-info}
+      - DATABASE_URL=${DATABASE_URL:-file:./prisma/prisma/dev.db}
+    volumes:
+      # Persist database
+      - ./data-1b:/app/prisma/prisma
+    networks:
+      - hydra_net
+  #   restart: always
+
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports: ["80:80","443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [blazar-hydra]
+    networks: [hydra_net]
+
+
+
+networks:
+  hydra_net:
+    driver: bridge
+
+volumes:
+  preprod-node-db:
+  preprod-node-ipc:
+  caddy_data:
+  caddy_config:

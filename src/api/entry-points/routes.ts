@@ -209,7 +209,13 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
       res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`${STATUS.OK}`, `${API_ROUTES.CLOSE_HEAD}`);
       finalizeCloseHead(lucid, procId).catch((error) => {
-        logger.error(`Error finalizing close head: ${error}`);
+        logger.error(
+          `Error finalizing close head: ${
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : JSON.stringify(error)
+          }`
+        );
       });
     } catch (e) {
       if (e instanceof Error) {
@@ -226,11 +232,18 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
           .json({ error: `${ERRORS.BAD_REQUEST}: ${e}` });
         logger.error(`${STATUS.BAD_REQUEST}: ${e}`, `${API_ROUTES.CLOSE_HEAD}`);
       } else {
+        let msg: string;
+        try {
+          msg = typeof e === 'string' ? e : JSON.stringify(e);
+        } catch {
+          // e.g. circular structures (AxiosError) — JSON.stringify throws.
+          msg = String((e as { message?: unknown })?.message ?? e);
+        }
         res
           .status(STATUS.UNKNOWN_ERROR)
-          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+          .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${msg}` });
         logger.error(
-          `${STATUS.UNKNOWN_ERROR}: ${e}`,
+          `${STATUS.UNKNOWN_ERROR}: ${msg}`,
           `${API_ROUTES.CLOSE_HEAD}`
         );
       }

@@ -30,8 +30,8 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install OpenSSL and OpenSSH for Prisma and SSH server (Alpine Linux)
-RUN apk add --no-cache openssl openssl-dev openssh
+# Install OpenSSL for Prisma (Alpine Linux)
+RUN apk add --no-cache openssl openssl-dev
 
 # Copy package files
 COPY src/package*.json ./
@@ -71,22 +71,13 @@ RUN mkdir -p /var/log/app && \
     echo 'alias logs="tail -f /var/log/app/app.log"' >> /root/.profile && \
     echo 'alias logs-follow="tail -f /var/log/app/app.log"' >> /root/.profile
 
-# Configure SSH server
-RUN mkdir -p /var/run/sshd && \
-    ssh-keygen -A && \
-    echo "Port 2222" >> /etc/ssh/sshd_config && \
-    echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
-    echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config && \
-    echo "root:root" | chpasswd
-
 # Expose ports
-EXPOSE 3000 2222
+EXPOSE 3000
 
 # Optional: Add healthcheck if you have a /health endpoint
 # HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 #   CMD node -e "require('http').get('http://localhost:${PORT || 3000}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
-# Start SSH server and initialize database schema and start dev server
+# Initialize database schema and start dev server
 # Redirect all output (stdout and stderr) to log file while also showing in container logs
-CMD ["sh", "-c", "/usr/sbin/sshd -D & npx prisma db push --accept-data-loss && npm run dev 2>&1 | tee /var/log/app/app.log"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run dev 2>&1 | tee /var/log/app/app.log"]

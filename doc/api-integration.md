@@ -8,14 +8,20 @@ Several components are involved in this flow:
 
 * **The Webapp:** Your client-side application that will integrate with this API.
 * **This Server:** Exposes the API and manages the Hydra Head connection.
-* **An Indexer (e.g., Blockfrost):** Acts as middleware between Layer 1 (L1) and this server, providing necessary blockchain data.
-* **Hydra Nodes:** Act as validating nodes for transactions submitted to the Hydra Head.
-* **A Cardano Node:** Handles Layer 1 transaction submissions and queries as requested by the Hydra peer nodes.
+* **An Indexer (Blockfrost):** Used by this server (via Lucid) to query L1 and submit the
+  server's own L1 transactions (deposits, merges, deposit-commit transactions).
+* **Hydra Node (2.2.0):** Runs the Hydra Head and validates L2 transactions submitted to it.
+* **A Cardano Node (11.0.1):** Follows L1 and exposes a local socket that the hydra-node uses
+  to read the chain (`--node-socket`). Running a local node — rather than hydra-node's
+  Blockfrost mode — keeps the node's chain-follow drift low (see
+  [`hydra-2x-migration.md`](./hydra-2x-migration.md)).
 
 **Important Notes:**
 
-* This server is **not** responsible for managing the Hydra peer nodes or the Cardano node; these components must be managed externally.
-* This server **does not** directly connect to the Cardano node; its interaction with Layer 1 occurs solely through the Hydra peer nodes.
+* This server is **not** responsible for managing the hydra-node or the cardano-node; those
+  components are deployed and operated separately (see the deployment repo's `docker-compose`).
+* This server reaches **L1 directly through Blockfrost** (for building/submitting deposit and
+  merge transactions) and reaches **L2 through the hydra-node** WebSocket/HTTP API.
 
 ### Understanding a Hydra Head
 
@@ -23,12 +29,19 @@ When we refer to a "Hydra Head," we mean an off-chain system managed by Hydra pe
 
 ### Hydra Head Lifecycle
 
-Some of the most important stages in the lifecycle of a Hydra Head are:
+Some of the most important stages in the lifecycle of a Hydra Head (**Hydra 2.x**) are:
 
-* **Initialization:** The head is created.
-* **Commitment of UTxOs:** UTxOs are committed to the head. Each Hydra node must receive a commit transaction for the head to transition to an "Opened" state.
-* **Off-chain Transactions:** Once opened, transactions can be made inside the head without directly reflecting on the Cardano blockchain. These transactions update an off-chain ledger managed by the peer nodes.
-* **Closure:** When the head is to be closed, the final state of the ledger held by the peers is committed to the L1 smart contract. After potentially multiple transactions, the smart contract is closed, and the UTxOs from that ledger are replicated on L1.
+* **Initialization:** `Init` opens the head **immediately and empty** — there is no commit
+  phase and no `Abort` in 2.x.
+* **Funding (deposits):** Funds are added to the open head as **deposits** (incremental
+  commits). Each deposit settles through `CommitRecorded → DepositActivated → CommitApproved
+  → CommitFinalized`. This can happen on a running head at any time (`POST /incremental-commit`).
+* **Off-chain Transactions:** Transactions (e.g. merchant payments) run inside the head
+  without touching L1, updating the off-chain ledger managed by the node.
+* **Settlement (decommit):** Funds can leave the head back to L1 at any time via a **decommit**
+  (`POST /withdraw` / `incremental-decommit`).
+* **Closure:** On `Close`, the final ledger state is posted to L1; after the **contestation
+  period**, `Fanout` replicates the head's UTxOs on L1.
 
 ---
 

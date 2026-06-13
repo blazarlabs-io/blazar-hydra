@@ -1,5 +1,10 @@
 # ✅ Complete Incremental Commit & Decommit Guide
 
+> **Context:** Incremental commit/decommit is how funds enter and leave a head under
+> **Hydra 2.x**. For the overall architecture, funding model, and the protocol-parameter /
+> cost-model requirements, read [`hydra-2x-migration.md`](./hydra-2x-migration.md) first. The
+> "Quick Fix" section below refers to a specific past error and may not apply to your setup.
+
 ## 🚀 Quick Fix for Current Error
 
 Your error shows the **OLD code is still running**. Here's how to fix it:

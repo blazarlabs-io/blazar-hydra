@@ -214,7 +214,11 @@ class HydraHandler {
         transaction: { cborHex: tx, description: '', type: 'Tx ConwayEra' },
       })
     );
-    return waitForTag(this.msgConn, 'TxValid', { terminalTags: ['TxInvalid'] });
+    // waitForTag resolves with the full message object; callers expect the tag string.
+    const data = await waitForTag(this.msgConn, 'TxValid', {
+      terminalTags: ['TxInvalid'],
+    });
+    return data.tag;
   }
 
   /**
@@ -255,7 +259,15 @@ class HydraHandler {
       const response = await axios.post(apiUrl, payload);
       return response.data;
     } catch (error) {
-      logger.error(error as unknown as string);
+      if (axios.isAxiosError(error)) {
+        logger.error(
+          `Hydra /decommit rejected (status ${error.response?.status}): ${JSON.stringify(error.response?.data)}`
+        );
+      } else {
+        logger.error(
+          `Hydra /decommit error: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
       throw error;
     }
   }
@@ -290,9 +302,11 @@ class HydraHandler {
     });
   }
 
-  /** Await ReadyToFanout after a Close. */
+  /** Await ReadyToFanout after a Close. ReadyToFanout only fires once the
+   *  contestation deadline passes, so the timeout must exceed the contestation
+   *  period (currently 120s) with margin. */
   async awaitReadyToFanout(): Promise<void> {
-    await waitForTag(this.msgConn, 'ReadyToFanout', { timeout: 120_000 });
+    await waitForTag(this.msgConn, 'ReadyToFanout', { timeout: 660_000 });
   }
 }
 

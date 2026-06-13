@@ -70,7 +70,7 @@ async function handlePay(
   let merchantFundsUtxo: UTxO | undefined;
   if (merchant_funds_utxo) {
     const { hash: txHash, index: outputIndex } = merchant_funds_utxo;
-    const merchantFundsUtxo = utxosInL2.find((utxo) => {
+    merchantFundsUtxo = utxosInL2.find((utxo) => {
       return utxo.txHash === txHash && utxo.outputIndex === outputIndex;
     });
     if (!merchantFundsUtxo) {
@@ -79,12 +79,17 @@ async function handlePay(
   }
   if (!merchantFundsUtxo) {
     merchantFundsUtxo = utxosInL2.find((utxo) => {
-      if (!utxo.datum) return false;
-      const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
-      return (
-        datum.funds_type === 'Merchant' &&
-        dataAddressToBech32(lucid, datum.addr) === merchantAddress
-      );
+      if (utxo.address === adminAddress || !utxo.datum) return false;
+      try {
+        const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
+        return (
+          datum.funds_type === 'Merchant' &&
+          dataAddressToBech32(lucid, datum.addr) === merchantAddress
+        );
+      } catch {
+        // Not a Blazar FundsDatum (e.g. admin collateral or a non-fund UTxO) — skip it.
+        return false;
+      }
     });
   }
 

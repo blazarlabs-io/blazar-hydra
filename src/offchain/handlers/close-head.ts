@@ -54,11 +54,17 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     // Step 1: Withdraw Merchant utxos
     const fundUtxos = await hydra.getSnapshot();
     const merchantUtxos = fundUtxos.filter((utxo) => {
-      if (utxo.address !== adminAddress) {
-        const datum = Data.from<FundsDatumT>(utxo.datum!, FundsDatum);
+      if (utxo.address === adminAddress || !utxo.datum) return false;
+      try {
+        const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
         return datum.funds_type === 'Merchant';
+      } catch {
+        // Not a Blazar FundsDatum (e.g. a non-fund UTxO in the head) — skip it.
+        logger.debug(
+          `Skipping UTxO ${utxo.txHash}#${utxo.outputIndex} in close: datum is not a FundsDatum`
+        );
+        return false;
       }
-      return false;
     });
     await withdrawMerchantUtxos(
       hydra,

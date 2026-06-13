@@ -59,7 +59,14 @@ async function commitFundsToHead(
     depositedUtxo: fundUtxo,
     validatorRefUtxo: validatorRef,
   });
-  return hydra.commit(`${env.ADMIN_NODE_API_URL}/commit`, [fundUtxo], blueprint);
+  // The /commit utxo context must include the validator reference-script UTxO so
+  // Hydra can resolve the script the blueprint references (else: "missing script
+  // witness"). It is a reference input, not a spend input, so it is NOT committed.
+  return hydra.commit(
+    `${env.ADMIN_NODE_API_URL}/commit`,
+    [fundUtxo, validatorRef],
+    blueprint
+  );
 }
 
 /**

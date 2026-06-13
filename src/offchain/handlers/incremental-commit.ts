@@ -162,9 +162,12 @@ async function handleIncrementalCommit(
     });
     logger.debug('Blueprint transaction built successfully');
 
+    // Include the validator reference-script UTxO in the /commit utxo context so
+    // Hydra can resolve the script the blueprint references (reference input, not
+    // committed). Without it: "missing script witness".
     const depositTxId = await hydra.commit(
       `${env.ADMIN_NODE_API_URL}/commit`,
-      [depositedUtxo],
+      [depositedUtxo, validatorRef],
       blueprintTx
     );
 

@@ -169,7 +169,7 @@ async function handleIncrementalDecommit(
 
     // Wait for decommit finalization
     logger.debug('Waiting for incremental decommit to be finalized by the hydra node');
-    await hydra.awaitDecommit();
+    await hydra.awaitDecommit([fundUtxo]);
 
     logger.info(`Incremental decommit completed successfully for ${owner} ${address}`);
     logger.info('Funds will be available on L1 after transaction confirmation');

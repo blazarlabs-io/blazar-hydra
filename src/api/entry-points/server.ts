@@ -12,8 +12,16 @@ const JSONbig = JSONBig({
 const createServer = () => {
   const app: express.Application = express();
   const bigintMiddleware: RequestHandler = (req, res, next) => {
-    if (req.headers['content-type'] === 'application/json') {
-      req.body = req.body ? JSONbig.parse(req.body) : req.body;
+    // Only parse a non-empty body. After express.raw, req.body is a Buffer; an empty body is an
+    // empty Buffer, which is truthy, so the old `req.body ? parse : req.body` fed "" to
+    // JSONbig.parse and threw — surfacing as a default-Express `[object Object]` 500 on
+    // body-less POSTs like /close-head (which only reads req.query).
+    if (
+      req.headers['content-type'] === 'application/json' &&
+      req.body &&
+      req.body.length > 0
+    ) {
+      req.body = JSONbig.parse(req.body);
     }
     next();
   };

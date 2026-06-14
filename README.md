@@ -70,11 +70,13 @@ Dockerfile             Build for the blazar-hydra image
 ## Run with Docker
 
 [`docker-compose.yaml`](./docker-compose.yaml) brings up the full stack (cardano-node,
-hydra-node, this API, caddy). It expects these **deployment-specific files** alongside it
+hydra-node, this API, caddy). [`protocol-parameters.json`](./protocol-parameters.json) (the
+L2 ledger params) is included — but its **cost models must be regenerated to match the current
+network** (see [below](#protocol-parameters--cost-models-important)) or script transactions
+fail. You must also provide these **deployment-specific files** alongside the compose
 (not committed):
 
 - `.env` — see [Configuration](#configuration)
-- `protocol-parameters.json` — L2 ledger params with **current preprod cost models** (see below)
 - `credentials/` — the hydra/cardano signing keys
 - `Caddyfile` — reverse-proxy config
 
@@ -150,7 +152,13 @@ Full schemas and integration notes in [`doc/api-integration.md`](./doc/api-integ
 | `POST /incremental-commit` | Add funds to a running head |
 | `POST /withdraw` | Settle funds L2→L1 via decommit |
 | `POST /incremental-decommit` | Decommit a single funds UTxO L2→L1 |
-| `POST /close-head?id=` | Close the head and fan out all UTxOs to L1 |
+| `POST /close-head?id=` | Decommit merchant funds, `Close`, then `Fanout` the rest to L1 |
+
+> **Known limitation (hydra-node 2.2.0):** a head that has had an incremental decommit (any
+> `/withdraw`, and the merchant decommit in `/close-head`) cannot reach `Fanout` — the node re-runs
+> the Blazar validator on the already-settled UTxO and throws `FailedToConstructPartialFanoutTx`.
+> Funds are unaffected (the decommits settle them to L1); only head cleanup is blocked. See
+> [doc/hydra-2x-migration.md](doc/hydra-2x-migration.md#known-limitation-fanout-after-decommit).
 
 ## Tech stack
 

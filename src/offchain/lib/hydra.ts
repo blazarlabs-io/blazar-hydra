@@ -21,6 +21,9 @@ class HydraHandler {
   private lucid: LucidEvolution;
   private url: URL;
   private isReady: boolean = false;
+  private intentionalClose: boolean = false;
+  // The active waitForTag handler, re-applied to the socket after an auto-reconnect.
+  private activeMsgHandler: ((ev: { data: unknown }) => void) | null = null;
 
   /**
    * @constructor
@@ -51,7 +54,20 @@ class HydraHandler {
    * is not structurally assignable to MessageConn's minimal { data } shape.
    */
   private get msgConn(): MessageConn {
-    return this.connection as unknown as MessageConn;
+    // A stable view: waitForTag sets `onmessage` here, and the HydraHandler re-applies it to
+    // the live socket after an auto-reconnect, so a WS dropped mid-wait doesn't make the wait
+    // miss the event it is listening for.
+    const self = this; // eslint-disable-line @typescript-eslint/no-this-alias
+    return {
+      get onmessage() {
+        return self.activeMsgHandler;
+      },
+      set onmessage(handler) {
+        self.activeMsgHandler = handler;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        self.connection.onmessage = handler as any;
+      },
+    };
   }
 
   private setupEventHandlers() {
@@ -67,6 +83,20 @@ class HydraHandler {
     this.connection.onclose = () => {
       logger.debug('WebSocket connection closed.');
       this.isReady = false;
+      // Hydra can drop an idle WS mid-wait; reconnect so long-running waits (e.g. decommit or
+      // fanout finalization) don't miss the event they are listening for.
+      if (!this.intentionalClose) {
+        setTimeout(() => {
+          if (this.intentionalClose) return;
+          logger.debug('Reconnecting Hydra WebSocket...');
+          this.connection = new Websocket(this.url + '?history=no');
+          this.setupEventHandlers();
+          if (this.activeMsgHandler) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            this.connection.onmessage = this.activeMsgHandler as any;
+          }
+        }, 1000);
+      }
     };
   }
 
@@ -76,6 +106,7 @@ class HydraHandler {
    */
   public async stop(): Promise<void> {
     return new Promise((resolve) => {
+      this.intentionalClose = true;
       this.connection.close();
       resolve();
     });
@@ -279,7 +310,11 @@ class HydraHandler {
   async close(): Promise<string> {
     await this.ensureConnectionReady();
     this.connection.send(JSON.stringify({ tag: 'Close' }));
-    const data = await waitForTag(this.msgConn, 'HeadIsClosed', { timeout: 60_000 });
+    // HeadIsClosed fires once the Close tx is observed on L1; preprod block times make 60s too
+    // tight (it intermittently times out even though the close posts fine).
+    const data = await waitForTag(this.msgConn, 'HeadIsClosed', {
+      timeout: 300_000,
+    });
     return data.tag;
   }
 
@@ -290,16 +325,44 @@ class HydraHandler {
   async fanout(): Promise<string> {
     await this.ensureConnectionReady();
     this.connection.send(JSON.stringify({ tag: 'Fanout' }));
-    const data = await waitForTag(this.msgConn, 'HeadIsFinalized', { timeout: 120_000 });
+    // HeadIsFinalized fires once the Fanout tx is observed on L1; give it the same headroom as
+    // Close so a slow preprod block doesn't time the wait out.
+    const data = await waitForTag(this.msgConn, 'HeadIsFinalized', {
+      timeout: 300_000,
+    });
     return data.tag;
   }
 
-  /** Await the terminal of a decommit started via decommit(). */
-  async awaitDecommit(): Promise<void> {
-    await waitForTag(this.msgConn, 'DecommitFinalized', {
-      timeout: 120_000,
-      terminalTags: ['DecommitInvalid'],
-    });
+  /** Wait until a decommit started via decommit() has actually settled, by polling the L2
+   *  snapshot until the decommitted UTxOs are gone. This is WS-independent and specific to THIS
+   *  decommit. Matching the generic `DecommitFinalized` tag instead races with a concurrent
+   *  decommit (e.g. a prior /withdraw): the other decommit's late `DecommitFinalized` satisfies
+   *  the wait early, so Close is sent while this decommit is still pending — leaving a
+   *  `utxoToDecommit` in the closing snapshot, which makes Fanout fail with
+   *  `FailedToConstructPartialFanoutTx`. A decommit (decrement) only settles after the
+   *  contestation deadline + L1 observation, so the timeout must exceed the contestation period. */
+  async awaitDecommit(
+    decommittedRefs: { txHash: string; outputIndex: number }[],
+    timeout = 660_000
+  ): Promise<void> {
+    const keyOf = (txHash: string, outputIndex: number) =>
+      `${txHash}#${outputIndex}`;
+    const targets = new Set(
+      decommittedRefs.map((r) => keyOf(r.txHash, r.outputIndex))
+    );
+    if (targets.size === 0) return;
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const snapshot = await this.getSnapshot();
+      const stillPresent = snapshot.some((u) =>
+        targets.has(keyOf(u.txHash, u.outputIndex))
+      );
+      if (!stillPresent) return;
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    throw new Error(
+      'Timeout waiting for decommit to settle (UTxOs still in L2 snapshot)'
+    );
   }
 
   /** Await ReadyToFanout after a Close. ReadyToFanout only fires once the

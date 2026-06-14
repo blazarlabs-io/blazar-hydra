@@ -84,7 +84,7 @@ async function handleWithdraw(
 
     logger.info(`Submitting withdraw (decommit) for ${owner} ${address}...`);
     await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
-    await hydra.awaitDecommit();
+    await hydra.awaitDecommit(fundsUtxos);
     logger.info(`Withdraw decommit finalized for ${owner} ${address}`);
     await hydra.stop();
 

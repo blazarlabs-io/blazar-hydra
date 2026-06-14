@@ -71,14 +71,21 @@ async function commitFundsToHead(
 
 /**
  * Pick an admin-owned UTxO to commit into L2 as collateral for L2 txs (/pay, /withdraw).
- * Prefers a pure-ADA UTxO with at least 10 ADA; falls back to any UTxO with >= 10 ADA.
+ * Collateral MUST be pure ADA — the ledger rejects collateral that carries native assets
+ * (`CollateralContainsNonADA`). It must also be **small**: the committed UTxO is locked in the
+ * head for its lifetime (and only returns on a successful close/fanout), so committing a large
+ * change UTxO would strand most of the admin balance if the head can't be closed. We therefore
+ * require a pure-ADA UTxO in [10, 200] ADA; the caller creates a small one when none qualifies
+ * (a big balance UTxO does not).
  */
 function pickAdminCollateral(utxos: UTxO[]): UTxO | undefined {
   const MIN_LOVELACE = 10_000_000n;
-  const hasEnoughAda = (u: UTxO) => (u.assets['lovelace'] ?? 0n) >= MIN_LOVELACE;
-  const isPureAda = (u: UTxO) =>
-    Object.keys(u.assets).length === 1 && hasEnoughAda(u);
-  return utxos.find(isPureAda) ?? utxos.find(hasEnoughAda);
+  const MAX_LOVELACE = 200_000_000n;
+  return utxos.find((u) => {
+    if (Object.keys(u.assets).length !== 1) return false;
+    const ada = u.assets['lovelace'] ?? 0n;
+    return ada >= MIN_LOVELACE && ada <= MAX_LOVELACE;
+  });
 }
 
 /**
@@ -120,12 +127,29 @@ async function finalizeOpenHead(
     // Commit a pure-ADA admin UTxO into L2 to serve as collateral for L2 txs
     // (/pay, /withdraw). Hydra 1.x committed this at Init; the 2.x deposit-based
     // flow must deposit it explicitly. Simple commit (no blueprint — not script-locked).
-    const adminUtxos = await localLucid.utxosAt(adminAddress);
-    const adminCollateral = pickAdminCollateral(adminUtxos);
+    let adminUtxos = await localLucid.utxosAt(adminAddress);
+    let adminCollateral = pickAdminCollateral(adminUtxos);
     if (!adminCollateral) {
-      throw new Error(
-        'No admin collateral found. Ensure the admin wallet has a pure-ADA UTxO of at least 10 ADA.'
-      );
+      // No small pure-ADA UTxO to use as collateral — the admin balance is either all in
+      // token-bearing UTxOs or in a single large change UTxO. Create a small, pure-ADA UTxO by
+      // paying a fixed amount to the admin address; native tokens and the bulk of the balance
+      // fall through to the change output, leaving a clean lovelace-only UTxO to commit.
+      logger.info('No small pure-ADA admin collateral found; creating one on L1...');
+      const splitTx = await localLucid
+        .newTx()
+        .pay.ToAddress(adminAddress, { lovelace: 50_000_000n })
+        .complete();
+      const splitTxId = await splitTx.sign
+        .withWallet()
+        .complete()
+        .then((t) => t.submit());
+      logger.info(`Created pure-ADA admin collateral (tx ${splitTxId})`);
+      await waitForUtxosUpdate(localLucid, adminAddress, splitTxId);
+      adminUtxos = await localLucid.utxosAt(adminAddress);
+      adminCollateral = pickAdminCollateral(adminUtxos);
+      if (!adminCollateral) {
+        throw new Error('Failed to create a pure-ADA admin collateral UTxO');
+      }
     }
     const collateralDepositTxId = await hydra.commit(
       `${env.ADMIN_NODE_API_URL}/commit`,

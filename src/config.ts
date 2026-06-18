@@ -16,8 +16,8 @@ const envSchema = z
       )
       .transform((val) => Number.parseInt(val)),
     PROVIDER_TYPE: z.enum(['blockfrost', 'kupmios']).default('blockfrost'),
-    PROVIDER_PROJECT_ID: z.string(),
-    PROVIDER_URL: z.string(),
+    PROVIDER_PROJECT_ID: z.string().optional(),
+    PROVIDER_URL: z.string().optional(),
     KUPO_URL: z.string().optional(),
     OGMIOS_URL: z.string().optional(),
     NETWORK: z.string(),

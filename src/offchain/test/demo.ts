@@ -1,7 +1,6 @@
 import {
   Address,
   Assets,
-  Blockfrost,
   Data,
   getAddressDetails,
   Lucid,
@@ -12,6 +11,7 @@ import {
   validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { env } from '../../config';
+import { makeProvider } from '../lib/provider';
 import {
   assetsToDataPairs,
   bech32ToAddressType,
@@ -41,7 +41,7 @@ import { TxBuiltResponse } from '../../api/schemas/response';
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
-  new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
+  makeProvider(env),
   env.NETWORK as Network
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);

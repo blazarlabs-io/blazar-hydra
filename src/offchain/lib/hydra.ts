@@ -12,6 +12,7 @@ import blake2b from 'blake2b';
 import { env } from '../../config';
 import { logger } from '../../shared/logger';
 import { waitForTag, MessageConn, HydraTerminalError } from './hydra-messages';
+import { performInit } from './hydra-init';
 
 /**
  * Listen and send messages to a Hydra node.
@@ -112,26 +113,38 @@ class HydraHandler {
     });
   }
 
-  /** Sends Init; the head opens directly (empty). Resolves with the HeadIsOpen output. */
+  /**
+   * Authoritative open-head probe: GET /snapshot/utxo returns 200 iff a head is open.
+   * Any non-200 (incl. connection refused) is treated as "not open" so Init is attempted and
+   * fails loudly rather than being falsely skipped.
+   */
+  private async headIsOpen(): Promise<boolean> {
+    const apiURL = `${this.url.origin.replace('ws', 'http')}/snapshot/utxo`;
+    try {
+      const res = await axios.get(apiURL, { validateStatus: () => true });
+      return res.status === 200;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Sends Init; the head opens directly (empty). Idempotent: a no-op only when the node confirms a
+   * head is actually open (see performInit). Resolves with the HeadIsOpen payload (or undefined
+   * when Init was skipped because a head was already open).
+   */
   async init(): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
     await this.ensureConnectionReady();
-    logger.debug('Sending Init; awaiting HeadIsOpen...');
-    this.connection.send(JSON.stringify({ tag: 'Init' }));
-    try {
-      return await waitForTag(this.msgConn, 'HeadIsOpen', {
-        timeout: 120_000,
-        terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
-      });
-    } catch (err) {
-      // Init on an already-open head returns CommandFailed; treat it as a no-op.
-      if (err instanceof HydraTerminalError && err.tag === 'CommandFailed') {
-        logger.info(
-          'Init returned CommandFailed (head already open) — treating as no-op'
-        );
-        return err.payload;
-      }
-      throw err;
-    }
+    const result = await performInit({
+      headIsOpen: () => this.headIsOpen(),
+      sendInit: () => this.connection.send(JSON.stringify({ tag: 'Init' })),
+      awaitHeadIsOpen: () =>
+        waitForTag(this.msgConn, 'HeadIsOpen', {
+          timeout: 120_000,
+          terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
+        }),
+    });
+    return result.outcome === 'skipped-already-open' ? undefined : result.payload;
   }
 
   /**

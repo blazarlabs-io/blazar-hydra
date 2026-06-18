@@ -25,6 +25,16 @@ export class HydraTerminalError extends Error {
   }
 }
 
+/** Raised when Init is rejected (CommandFailed) and the head is not actually open. */
+export class HydraInitError extends Error {
+  constructor(
+    public readonly payload: any // eslint-disable-line @typescript-eslint/no-explicit-any
+  ) {
+    super('Init was rejected by the hydra-node (CommandFailed) and the head is not open');
+    this.name = 'HydraInitError';
+  }
+}
+
 /**
  * Resolve when a Hydra ServerOutput with `tag` (and optional `match`) arrives.
  * Ignores every other message; rejects on a configured terminal tag or timeout.

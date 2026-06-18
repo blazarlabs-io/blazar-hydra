@@ -24,6 +24,7 @@ import { LucidEvolution } from '@lucid-evolution/lucid';
 import { JSONBig } from './server';
 import { logger } from '../../shared/logger';
 import { prisma } from '../../config';
+import { ProcessNotFoundError, CloseInProgressError } from '../../shared/close-guards';
 
 enum ERRORS {
   ADDRESS_NOT_FOUND = "The provided address couldn't be found on the protocol",
@@ -36,6 +37,8 @@ enum ERRORS {
 enum STATUS {
   OK = 200,
   BAD_REQUEST = 400,
+  NOT_FOUND = 404,
+  CONFLICT = 409,
   INTERNAL_SERVER_ERROR = 500,
   UNKNOWN_ERROR = 520,
 }
@@ -218,7 +221,13 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
         );
       });
     } catch (e) {
-      if (e instanceof Error) {
+      if (e instanceof ProcessNotFoundError) {
+        res.status(STATUS.NOT_FOUND).json({ error: `Not Found: ${e.message}` });
+        logger.error(`${STATUS.NOT_FOUND}: ${e.message}`, `${API_ROUTES.CLOSE_HEAD}`);
+      } else if (e instanceof CloseInProgressError) {
+        res.status(STATUS.CONFLICT).json({ error: `Conflict: ${e.message}` });
+        logger.error(`${STATUS.CONFLICT}: ${e.message}`, `${API_ROUTES.CLOSE_HEAD}`);
+      } else if (e instanceof Error) {
         res
           .status(STATUS.INTERNAL_SERVER_ERROR)
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });

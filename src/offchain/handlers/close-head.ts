@@ -16,6 +16,7 @@ import { buildInputs, buildTxBody, setRequiredSigners } from '../lib/transaction
 import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
 import { logger } from '../../shared/logger';
+import { assertCloseable } from '../../shared/close-guards';
 
 const MAX_UTXOS_PER_DECOMMIT = 15;
 
@@ -24,6 +25,8 @@ const MAX_UTXOS_PER_DECOMMIT = 15;
  */
 async function handleCloseHead(processId: string): Promise<{ status: string }> {
   try {
+    const process = await prisma.process.findUnique({ where: { id: processId } });
+    assertCloseable(process, processId);
     await DBOps.updateHeadStatus(processId, DBStatus.DECOMMITING);
     return { status: DBStatus.DECOMMITING };
   } catch (error) {

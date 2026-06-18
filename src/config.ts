@@ -15,8 +15,11 @@ const envSchema = z
         }
       )
       .transform((val) => Number.parseInt(val)),
+    PROVIDER_TYPE: z.enum(['blockfrost', 'kupmios']).default('blockfrost'),
     PROVIDER_PROJECT_ID: z.string(),
     PROVIDER_URL: z.string(),
+    KUPO_URL: z.string().optional(),
+    OGMIOS_URL: z.string().optional(),
     NETWORK: z.string(),
     VALIDATOR_REF: z.string(),
     HYDRA_KEY: z.string(),
@@ -36,7 +39,20 @@ const envSchema = z
       .default('info')
       .transform((val) => val.toLowerCase()),
   })
-  .readonly();
+  .readonly()
+  .superRefine((env, ctx) => {
+    if (env.PROVIDER_TYPE === 'kupmios') {
+      if (!env.KUPO_URL)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['KUPO_URL'], message: 'KUPO_URL is required when PROVIDER_TYPE=kupmios' });
+      if (!env.OGMIOS_URL)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['OGMIOS_URL'], message: 'OGMIOS_URL is required when PROVIDER_TYPE=kupmios' });
+    } else {
+      if (!env.PROVIDER_URL)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['PROVIDER_URL'], message: 'PROVIDER_URL is required when PROVIDER_TYPE=blockfrost' });
+      if (!env.PROVIDER_PROJECT_ID)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['PROVIDER_PROJECT_ID'], message: 'PROVIDER_PROJECT_ID is required when PROVIDER_TYPE=blockfrost' });
+    }
+  });
 type EnvSchema = z.infer<typeof envSchema>;
 const env = envSchema.parse(process.env);
 

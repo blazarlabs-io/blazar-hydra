@@ -258,3 +258,22 @@ docker logs hydra-node-1 --since 2m 2>&1 | grep -iE "drift|NodeSynced"   # drift
 | Funding stuck in `COMMITTING` for many minutes | normal deposit settlement (`DP … 2·DP` per deposit) | lower `--deposit-period`; wait |
 | Close reaches `CLOSING`/`FAILED` (`Timeout waiting for HeadIsFinalized`); node logs `Fanout` `PostTxOnChainFailed: FailedToConstructPartialFanoutTx` + a Blazar-validator `Script evaluation error` | hydra-node 2.2.0 re-runs the Blazar validator on the settled `utxoToDecommit` during partial fanout (see Known limitation below) | **open** — node-side; everything up to and including `Close` works |
 | New `/open-head` fails: `Init → CommandFailed`, then commit `400 Head is not open` | a previous head is stuck `Closed`-but-not-finalized (fanout never succeeded) and blocks new heads | wipe the node head state: `docker compose stop hydra-node-1 && rm -rf ./persistence/alice && docker compose up -d hydra-node-1` |
+
+## Init idempotency (honest `Init`)
+
+`HydraHandler.init()` opens the head and is **idempotent**: it is a no-op only when the node
+confirms the head is **actually open**. Before sending `Init` it probes `GET /snapshot/utxo`
+(`200` ⇒ open) and skips `Init` if a head is already open. If `Init` returns `CommandFailed`, the
+node is re-probed — only a confirmed-open head is treated as a no-op; any other `CommandFailed`
+raises `HydraInitError` so a real Init rejection cannot masquerade as success. Consequently a `200`
+from `POST /open-head` now means the head genuinely opened (or already was), not merely that `Init`
+did not throw. Implemented as a pure `performInit(deps)` in `src/offchain/lib/hydra-init.ts`.
+
+## Known limitation: `/state` is not reconciled with the head
+
+`GET /state` returns only the Prisma `process.status` column, written imperatively by the
+open/close handlers. Nothing reconciles it against the hydra-node or L1 — there is no poller or
+health check — so `status` can diverge from the real head state (e.g. `FAILED` after a head opened
+but funding failed; `DECOMMITING` is just the value `POST /close-head` writes before any node
+interaction). **To determine the real head state, query the node (`GET <node>/snapshot/utxo`) and
+read the app/node logs — do not rely on `/state`.**

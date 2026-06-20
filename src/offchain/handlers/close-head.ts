@@ -83,11 +83,9 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     );
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
-    // A finalized decommit still leaves its (already-settled) utxoToDecommit in the confirmed
-    // snapshot. Closing on that snapshot makes hydra-node's partial fanout try to re-run the
-    // Blazar validator on the decommitted UTxO and fail (FailedToConstructPartialFanoutTx).
-    // Advance the head to a fresh snapshot (utxoToDecommit = Nothing) before closing.
-    await refreshSnapshotBeforeClose(hydra, localLucid, adminAddress, adminKey);
+    // Commit-bump (workaround for the 2.2.0 fanout-after-decommit limitation). Replaces the old
+    // L2 no-op refresh, which couldn't change the on-chain head version. EXPLORATORY.
+    await commitBumpBeforeClose(hydra, localLucid, adminAddress);
 
     // Step 2: Send close command. close() sends Close and waits for HeadIsClosed
     // (60s). The previous Promise.race(40s) loop fired before close()'s own wait,
@@ -166,6 +164,34 @@ async function withdrawMerchantUtxos(
       logger.info('Decommit finalized.');
     }
   }
+}
+
+/**
+ * On-chain version bump before Close: deposit one small pure-ADA admin UTxO via the head's /commit
+ * so the closing snapshot's utxoToDecommit clears to Nothing — a workaround for hydra-node 2.2.0's
+ * fanout-after-decommit failure (FailedToConstructPartialFanoutTx). Unlike an L2 no-op (which does
+ * NOT change the on-chain head version), a real commit advances it. EXPLORATORY: verify on-chain.
+ */
+async function commitBumpBeforeClose(
+  hydra: HydraHandler,
+  lucid: LucidEvolution,
+  adminAddress: string
+): Promise<void> {
+  const adminUtxos = await lucid.utxosAt(adminAddress);
+  const bumpUtxo = adminUtxos.find((u) => {
+    if (Object.keys(u.assets).length !== 1) return false;
+    const ada = u.assets['lovelace'] ?? 0n;
+    return ada >= 5_000_000n && ada <= 200_000_000n;
+  });
+  if (!bumpUtxo) {
+    logger.warning(
+      'commit-bump: no small pure-ADA admin UTxO available; skipping (fanout may still fail if a decommit occurred)'
+    );
+    return;
+  }
+  logger.info('commit-bump: depositing a small admin UTxO to advance the on-chain head version before close...');
+  const depositTxId = await hydra.commit(`${env.ADMIN_NODE_API_URL}/commit`, [bumpUtxo]);
+  logger.info(`commit-bump: deposit finalized (${depositTxId})`);
 }
 
 /**

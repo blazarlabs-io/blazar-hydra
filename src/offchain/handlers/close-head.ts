@@ -7,6 +7,7 @@ import {
   UTxO,
 } from '@lucid-evolution/lucid';
 import { HydraHandler } from '../lib/hydra';
+import { HydraTerminalError } from '../lib/hydra-messages';
 import _ from 'lodash';
 import { env, prisma } from '../../config';
 import { FundsDatum, FundsDatumT } from '../lib/types';
@@ -102,7 +103,15 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     await hydra.stop();
     return { status: DBStatus.CLOSED };
   } catch (error) {
-    logger.error('Error during close head');
+    if (error instanceof HydraTerminalError && error.tag === 'PostTxOnChainFailed') {
+      logger.error(
+        'Close: fanout was rejected (PostTxOnChainFailed) — most likely the hydra-node 2.2.0 ' +
+          'fanout-after-decommit limitation. The head is stuck Closed; run reset-head.sh on the ' +
+          'deployment host to return the node to Idle and open a new head.'
+      );
+    } else {
+      logger.error('Error during close head');
+    }
     // Reflect the failure in /state instead of leaving it stuck at DECOMMITING/CLOSING.
     await DBOps.updateHeadStatus(processId, DBStatus.FAILED).catch(() => {});
     throw error;

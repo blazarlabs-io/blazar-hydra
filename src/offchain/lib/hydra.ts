@@ -338,10 +338,13 @@ class HydraHandler {
   async fanout(): Promise<string> {
     await this.ensureConnectionReady();
     this.connection.send(JSON.stringify({ tag: 'Fanout' }));
-    // HeadIsFinalized fires once the Fanout tx is observed on L1; give it the same headroom as
-    // Close so a slow preprod block doesn't time the wait out.
+    // HeadIsFinalized fires once the Fanout tx is observed on L1. A PostTxOnChainFailed on fanout is
+    // deterministic (the node re-posts the same tx every block and fails identically) — most often
+    // the 2.2.0 fanout-after-decommit limitation — so treat it as terminal: fail in seconds instead
+    // of the 300s timeout.
     const data = await waitForTag(this.msgConn, 'HeadIsFinalized', {
       timeout: 300_000,
+      terminalTags: ['PostTxOnChainFailed'],
     });
     return data.tag;
   }

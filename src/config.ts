@@ -26,6 +26,7 @@ const envSchema = z
     SEED: z.string(),
     ADMIN_NODE_WS_URL: z.string(),
     ADMIN_NODE_API_URL: z.string(),
+    RESET_SIGNAL_DIR: z.string().default('/reset-signal'),
     USER_ADDRESS: z.string().optional(),
     USER_SEED: z.string().optional(),
     USER_ADDRESS_2: z.string().optional(),

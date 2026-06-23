@@ -34,3 +34,22 @@ export function assertCloseable(
     throw new CloseInProgressError(process.status);
   }
 }
+
+/** No RUNNING head — head-mutating L2 ops (/pay-merchant, /withdraw) are refused unless RUNNING. */
+export class NotRunningError extends Error {
+  constructor(public readonly status: string | null) {
+    super(`No RUNNING head (current: ${status ?? 'none'}); head mutation refused`);
+    this.name = 'NotRunningError';
+  }
+}
+
+/**
+ * Guard for head-mutating L2 ops. Pass the result of DBOps.getActiveHead(). Rejects unless a head
+ * is RUNNING, so a pay/withdraw cannot race a close's funds-empty assertion (during a close the
+ * status is DECOMMITING/CLOSING, not RUNNING).
+ */
+export function assertRunning(active: { status: string } | null): void {
+  if (!active || active.status !== DBStatus.RUNNING) {
+    throw new NotRunningError(active?.status ?? null);
+  }
+}

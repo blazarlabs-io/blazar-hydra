@@ -31,3 +31,18 @@ describe('assertCloseable', () => {
     expect(() => assertCloseable({ status: DBStatus.FAILED }, 'abc')).not.toThrow();
   });
 });
+
+import { assertRunning, NotRunningError } from './close-guards';
+
+describe('assertRunning', () => {
+  it('passes when a head is RUNNING', () => {
+    expect(() => assertRunning({ status: DBStatus.RUNNING })).not.toThrow();
+  });
+  it('throws NotRunningError when there is no active head', () => {
+    expect(() => assertRunning(null)).toThrow(NotRunningError);
+  });
+  it('throws NotRunningError mid-close (DECOMMITING/CLOSING)', () => {
+    expect(() => assertRunning({ status: DBStatus.DECOMMITING })).toThrow(NotRunningError);
+    expect(() => assertRunning({ status: DBStatus.CLOSING })).toThrow(NotRunningError);
+  });
+});

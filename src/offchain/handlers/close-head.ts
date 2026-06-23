@@ -11,6 +11,8 @@ import { env, prisma } from '../../config';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { WithdrawParams } from '../lib/params';
 import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
+import { assertFundsEmpty } from '../lib/funds';
+import { writeResetMarker } from '../lib/reset-signal';
 import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
 import { logger } from '../../shared/logger';
@@ -42,75 +44,75 @@ async function handleCloseHead(processId: string): Promise<{ status: string }> {
  * @returns
  */
 async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
+  const { HYDRA_KEY: hydraKey } = env;
+  const { ADMIN_NODE_WS_URL: wsUrl } = env;
+  const localLucid = _.cloneDeep(lucid);
+  localLucid.selectWallet.fromSeed(env.SEED);
+  const adminAddress = await localLucid.wallet().address();
+  const adminCredential = getAddressDetails(adminAddress).paymentCredential;
+  if (!adminCredential || !adminCredential.hash) {
+    throw new Error('Could not get admin key from address');
+  }
+  const adminKey = adminCredential.hash;
+  const hydra = new HydraHandler(localLucid, wsUrl);
   try {
-    const { HYDRA_KEY: hydraKey } = env;
-    const { ADMIN_NODE_WS_URL: wsUrl } = env;
-    const localLucid = _.cloneDeep(lucid);
-    localLucid.selectWallet.fromSeed(env.SEED);
-    const adminAddress = await localLucid.wallet().address();
-    const adminCredential = getAddressDetails(adminAddress).paymentCredential;
-    if (!adminCredential || !adminCredential.hash) {
-      throw new Error('Could not get admin key from address');
-    }
-    const adminKey = adminCredential.hash;
-    const hydra = new HydraHandler(localLucid, wsUrl);
-
-    // Step 1: Withdraw Merchant utxos
+    // Step 1: settle ALL funds out of the head (merchant + user). After this the head holds only
+    // the admin collateral, so a discard abandons nothing recoverable.
     const fundUtxos = await hydra.getSnapshot();
-    const merchantUtxos = fundUtxos.filter((utxo) => {
-      if (utxo.address === adminAddress || !utxo.datum) return false;
-      try {
-        const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
-        return datum.funds_type === 'Merchant';
-      } catch {
-        // Not a Blazar FundsDatum (e.g. a non-fund UTxO in the head) — skip it.
-        logger.debug(
-          `Skipping UTxO ${utxo.txHash}#${utxo.outputIndex} in close: datum is not a FundsDatum`
-        );
-        return false;
-      }
-    });
-    await withdrawMerchantUtxos(
-      hydra,
-      localLucid,
-      adminAddress,
-      adminKey,
-      hydraKey,
-      merchantUtxos
-    );
+    const classify = (type: 'Merchant' | 'User') =>
+      fundUtxos.filter((utxo) => {
+        if (utxo.address === adminAddress || !utxo.datum) return false;
+        try {
+          const datum = Data.from<FundsDatumT>(utxo.datum, FundsDatum);
+          return type === 'Merchant'
+            ? datum.funds_type === 'Merchant'
+            : datum.funds_type !== 'Merchant';
+        } catch {
+          logger.debug(`Skipping UTxO ${utxo.txHash}#${utxo.outputIndex} in close: not a FundsDatum`);
+          return false;
+        }
+      });
+    await withdrawMerchantUtxos(hydra, localLucid, adminAddress, adminKey, hydraKey, classify('Merchant'));
+    await withdrawUserUtxos(hydra, localLucid, adminAddress, adminKey, hydraKey, classify('User'));
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
-    // No pre-close snapshot refresh / commit-bump: an on-chain commit-bump was tried (to clear the
-    // closing snapshot's utxoToDecommit) and verified on-chain NOT to dodge the hydra-node 2.2.0
-    // fanout-after-decommit bug — fanout still fails. So a head that decommitted will fail Close
-    // (caught below, Part C) and is recovered via reset-head.sh. See doc/hydra-2x-migration.md.
+    // Step 2: PRIMARY funds-empty gate — BEFORE Close. If anything but admin collateral remains,
+    // abort: do not Close (so we never create a stuck Closed head holding funds).
+    assertFundsEmpty(await hydra.getSnapshot(), adminAddress);
 
-    // Step 2: Send close command. close() sends Close and waits for HeadIsClosed
-    // (60s). The previous Promise.race(40s) loop fired before close()'s own wait,
-    // sending a duplicate Close and orphaning the first waitForTag handler.
+    // Step 3: Close -> ReadyToFanout -> Fanout (Part C fast-fail kept).
     await hydra.close();
     logger.info('Waiting for fanout tag...');
     await hydra.awaitReadyToFanout();
-
-    // Step 3: Fanout
     await hydra.fanout();
     logger.info(`Head ${processId} is finalized.`);
     await prisma.process.delete({ where: { id: processId } });
     await hydra.stop();
     return { status: DBStatus.CLOSED };
   } catch (error) {
+    await DBOps.updateHeadStatus(processId, DBStatus.FAILED).catch(() => {});
     if (error instanceof HydraTerminalError && error.tag === 'PostTxOnChainFailed') {
-      logger.error(
-        'Close: fanout was rejected (PostTxOnChainFailed) — most likely the hydra-node 2.2.0 ' +
-          'fanout-after-decommit limitation. The head is stuck Closed; run reset-head.sh on the ' +
-          'deployment host to return the node to Idle and open a new head.'
-      );
+      // The deterministic fanout-after-decommit bug. Auto-reset ONLY if the head is funds-empty
+      // (last guard — re-query the snapshot). Otherwise leave FAILED for manual handling.
+      try {
+        assertFundsEmpty(await hydra.getSnapshot(), adminAddress);
+        const marker = await writeResetMarker(env.RESET_SIGNAL_DIR, processId, 'fanout-after-decommit');
+        logger.error(
+          `Close: fanout rejected (PostTxOnChainFailed) — fanout-after-decommit. Head is funds-empty; ` +
+            `wrote reset marker ${marker}; hydra-reset will reset the node to Idle.`
+        );
+      } catch (guardErr) {
+        logger.error(
+          `Close: fanout rejected but head is NOT funds-empty (${guardErr}) — NOT auto-resetting; ` +
+            `manual intervention required.`
+        );
+      }
     } else {
       logger.error('Error during close head');
     }
-    // Reflect the failure in /state instead of leaving it stuck at DECOMMITING/CLOSING.
-    await DBOps.updateHeadStatus(processId, DBStatus.FAILED).catch(() => {});
     throw error;
+  } finally {
+    await hydra.stop().catch(() => {});
   }
 }
 
@@ -161,6 +163,42 @@ async function withdrawMerchantUtxos(
       await hydra.awaitDecommit(thisRoundUtxos);
       logger.info('Decommit finalized.');
     }
+  }
+}
+
+/**
+ * Decommits all USER fund UTxOs out of the head (admin-authorized: validate_withdraw checks the
+ * admin_key, not the redeemer sig, so an empty per-fund signature is fine). Mirrors
+ * withdrawMerchantUtxos. Re-queries admin collateral from the live snapshot for each round.
+ */
+async function withdrawUserUtxos(
+  hydra: HydraHandler,
+  lucid: LucidEvolution,
+  adminAddress: string,
+  adminKey: string,
+  hydraKey: string,
+  userUtxos: UTxO[]
+) {
+  if (userUtxos.length === 0) return;
+  const rounds = Math.ceil(userUtxos.length / MAX_UTXOS_PER_DECOMMIT);
+  logger.info(`${rounds} rounds of user decommit (${userUtxos.length} user utxos)`);
+  for (let i = 0; i < rounds; i++) {
+    const thisRound = userUtxos.slice(0, MAX_UTXOS_PER_DECOMMIT);
+    userUtxos.splice(0, MAX_UTXOS_PER_DECOMMIT);
+    const utxosInL2 = await hydra.getSnapshot();
+    const walletUtxos = utxosInL2.filter((u) => u.address === adminAddress);
+    const withdrawParams: WithdrawParams = {
+      kind: 'user',
+      withdraws: thisRound.map((u) => ({ fundUtxo: u, signature: '' })),
+      adminKey,
+      hydraKey,
+      walletUtxos,
+    };
+    const { tx } = await withdrawMerchant(lucid, withdrawParams);
+    const signedTx = await tx.sign.withWallet().complete().then((t) => t.toCBOR());
+    await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
+    await hydra.awaitDecommit(thisRound);
+    logger.info(`User decommit ${i + 1}/${rounds} finalized.`);
   }
 }
 

@@ -215,13 +215,17 @@ the node-built fanout tx, so script evaluation fails at every chunk size and the
 `HeadIsFinalized` never emitted). `FailedToConstructPartialFanoutTx` is **new in 2.2.0** (the
 partial-fanout rewrite).
 
-**Why the client-side `refreshSnapshotBeforeClose` no-op does not fix it.** Advancing to a fresh
-snapshot via an L2 tx keeps `snapshotVersion == version` (an L2 tx doesn't bump the on-chain head
-version), so the version gate still includes the `utxoToDecommit`. There is no client-side way to
-make the two versions differ, so this needs a **hydra-node fix** (don't re-run the script for an
-already-settled decommit at fanout) or a **validator redesign** (a spend path the node's fanout tx
-can satisfy). Tracked upstream: file against `cardano-scaling/hydra` with the closed datum + the
-two decrement txs (no existing issue names the symbol as of 2026-06-14).
+**Why no client-side workaround fixes it (both tried).** (1) An L2 no-op (`refreshSnapshotBeforeClose`)
+keeps `snapshotVersion == version` (an L2 tx doesn't bump the on-chain head version), so the gate still
+includes the `utxoToDecommit`. (2) An **on-chain commit-bump** — depositing a small admin UTxO via
+`/commit` right before `Close` to advance the on-chain version — was implemented and **tested on-chain
+(2026-06-23)**: the commit reached `CommitFinalized` (the on-chain version *did* advance), yet `Fanout`
+**still** threw `PostTxOnChainFailed: FailedToConstructPartialFanoutTx` and the head stayed `Closed`.
+So advancing the on-chain version does **not** clear the settled decommit from the fanout gate. Both
+client-side seams were reverted. This needs a **hydra-node fix** (don't re-run the script for an
+already-settled decommit at fanout) or a **validator redesign** (a spend path the node's fanout tx can
+satisfy). Tracked upstream: file against `cardano-scaling/hydra` with the closed datum + the decrement
+txs (no existing issue names the symbol as of 2026-06-14).
 
 **Operational impact / workaround.** All user and merchant funds settle correctly (the decommits
 are what move them to L1); only head cleanup is affected. To unblock new heads after a stuck close:

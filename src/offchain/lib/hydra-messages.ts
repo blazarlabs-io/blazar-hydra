@@ -11,6 +11,12 @@ export interface WaitOptions {
   terminalTags?: string[];
   /** optional extra predicate the matching message must satisfy. */
   match?: (msg: any) => boolean; // eslint-disable-line @typescript-eslint/no-explicit-any
+  /**
+   * optional predicate gating terminal tags: when set, a terminal tag only rejects if it
+   * ALSO satisfies this predicate. Use it to correlate terminals to a specific deposit/tx
+   * (e.g. a DepositExpired for an unrelated/stale deposit must not abort our wait).
+   */
+  terminalMatch?: (msg: any) => boolean; // eslint-disable-line @typescript-eslint/no-explicit-any
   /** observe every parsed message (e.g. progress logging). */
   onMessage?: (msg: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
@@ -47,7 +53,7 @@ export function waitForTag(
   tag: string,
   opts: WaitOptions = {}
 ): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
-  const { timeout = 60_000, terminalTags = [], match, onMessage } = opts;
+  const { timeout = 60_000, terminalTags = [], match, terminalMatch, onMessage } = opts;
   return new Promise((resolve, reject) => {
     const done = () => {
       clearTimeout(timer);
@@ -74,7 +80,7 @@ export function waitForTag(
         } else if (data.tag === tag) {
           // tag matched but the predicate rejected — keep waiting
           logger.debug(`Tag '${tag}' matched but predicate rejected; continuing`);
-        } else if (terminalTags.includes(data.tag)) {
+        } else if (terminalTags.includes(data.tag) && (!terminalMatch || terminalMatch(data))) {
           done();
           reject(new HydraTerminalError(data.tag, data));
         } else {

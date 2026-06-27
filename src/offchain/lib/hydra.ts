@@ -194,6 +194,9 @@ class HydraHandler {
         timeout: 1_300_000, // > deposit-period (1200s) so the deadline can pass
         match: (m) => m.depositTxId === depositTxId,
         terminalTags: ['DepositExpired'],
+        // Only OUR deposit's DepositExpired is terminal; a stale/unrelated deposit's
+        // expiry must not abort this wait (would trigger a premature, pre-deadline recover).
+        terminalMatch: (m) => m.depositTxId === depositTxId,
         onMessage: (m) => {
           if (['CommitRecorded', 'CommitApproved'].includes(m.tag)) {
             logger.debug(`Commit progress: ${m.tag}`);

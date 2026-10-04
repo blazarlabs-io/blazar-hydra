@@ -28,3 +28,7 @@ DATABASE_URL=""          # URL to the db (can point to local db file)
 ```bash
 $> npm run dev
 ```
+
+## License
+
+The project's original source code is licensed under the [Apache License 2.0](LICENSE), consistent with the Project Catalyst 1200128 open-source commitment. See [NOTICE](NOTICE) for attribution and scope. Third-party dependencies, bundled third-party assets and files with separate licence notices retain their respective licences.

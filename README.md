@@ -2,19 +2,21 @@
 
 Repository containing all the blckochain onchain/offchain code for the Hydrapay system.
 
-## Additional Resources
+## Hydra / Cardano deployment
 
-Wee need to start by downloading the [hydra-setup]() folder containing the nodes and the hydra protocol and the [cardano-node]() folder. Once downloaded unzip the contents of both files and place the `cardano-node` filder inside the hydra-setup folder.
+The documented Hydra 2.x deployment is maintained on the [hydra-2x-migration branch](https://github.com/blazarlabs-io/blazar-hydra/tree/hydra-2x-migration). Its existing deployment files are available at the following recorded source revision:
 
-## Run the setup
+- [Docker Compose stack](https://github.com/blazarlabs-io/blazar-hydra/blob/d2bc41827caf0b332136df76c6c139e3d466b1ef/docker-compose.yaml): Cardano node 11.0.1, Hydra node 2.2.0, the Blazar backend and Caddy.
+- [Backend Dockerfile](https://github.com/blazarlabs-io/blazar-hydra/blob/d2bc41827caf0b332136df76c6c139e3d466b1ef/Dockerfile).
+- [L2 protocol parameters](https://github.com/blazarlabs-io/blazar-hydra/blob/d2bc41827caf0b332136df76c6c139e3d466b1ef/protocol-parameters.json).
+- [Migration and operational runbook](https://github.com/blazarlabs-io/blazar-hydra/blob/d2bc41827caf0b332136df76c6c139e3d466b1ef/doc/hydra-2x-migration.md).
+- [Configuration and prerequisites](https://github.com/blazarlabs-io/blazar-hydra/blob/d2bc41827caf0b332136df76c6c139e3d466b1ef/README.md#run-with-docker).
 
-To run the hydra system use these command on your terminal:
+Use the source, Compose file and runbook from the same migration checkout. The administrator supplies deployment-specific configuration (`.env`, signing keys and `Caddyfile`); keys and credentials must not be committed. Regenerate protocol cost models as instructed for the target network. The Compose file uses a mutable backend image tag, so record the deployed image digest and corresponding source revision when preparing a deployment.
 
-```bash
-cd hydra-setup && sudo docker compose up
-```
+These links replace the empty `hydra-setup` and `cardano-node` download references for the documented Hydra 2.x route. They do not establish the exact image used in a historical demonstration, or prove that a particular APK was built from the current mobile source. The migration runbook also documents the fan-out-after-decommit limitation.
 
-This might take a while. The nodes will be running and the hydra protocol will be deployed.
+The branch descriptions below describe the older main/demo flows and should not be mixed with the Hydra 2.x deployment without checking compatibility.
 
 ## Run the backend
 
@@ -57,3 +59,7 @@ npx prisma studio
 ```
 
 ## Run the Merchant App.
+
+## License
+
+The project's original source code is licensed under the [Apache License 2.0](LICENSE), consistent with the Project Catalyst 1200128 open-source commitment. See [NOTICE](NOTICE) for attribution and scope. Third-party dependencies, bundled third-party assets and files with separate licence notices retain their respective licences.

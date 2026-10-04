@@ -166,3 +166,7 @@ Full schemas and integration notes in [`doc/api-integration.md`](./doc/api-integ
   Express, `ws`, Axios, Prisma + SQLite, Zod; tested with Vitest.
 - **On-chain:** Aiken (PlutusV3) validator.
 - **Infra:** cardano-node `11.0.1`, hydra-node `2.2.0`, Caddy.
+
+## License
+
+The project's original source code is licensed under the [Apache License 2.0](LICENSE), consistent with the Project Catalyst 1200128 open-source commitment. See [NOTICE](NOTICE) for attribution and scope. Third-party dependencies, bundled third-party assets and files with separate licence notices retain their respective licences.

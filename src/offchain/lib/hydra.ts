@@ -133,7 +133,8 @@ class HydraHandler {
    * head is actually open (see performInit). Resolves with the HeadIsOpen payload (or undefined
    * when Init was skipped because a head was already open).
    */
-  async init(): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async init(): Promise<any> {
     await this.ensureConnectionReady();
     const result = await performInit({
       headIsOpen: () => this.headIsOpen(),

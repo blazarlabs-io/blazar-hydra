@@ -52,7 +52,8 @@ export function waitForTag(
   conn: MessageConn,
   tag: string,
   opts: WaitOptions = {}
-): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
   const { timeout = 60_000, terminalTags = [], match, terminalMatch, onMessage } = opts;
   return new Promise((resolve, reject) => {
     const done = () => {

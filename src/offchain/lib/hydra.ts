@@ -159,36 +159,7 @@ class HydraHandler {
   ): Promise<string> {
     let depositTxId: string | undefined;
     try {
-      const formatUtxos = (us: UTxO[]) =>
-        us.reduce(
-          (acc, u) => {
-            acc[`${u.txHash}#${u.outputIndex}`] = lucidUtxoToHydraUtxo(u);
-            return acc;
-          },
-          {} as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
-        );
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let payload: { blueprintTx?: any; utxo?: any } = {};
-      if (utxos.length > 0) {
-        if (blueprint) {
-          payload['blueprintTx'] = { cborHex: blueprint, description: '', type: 'Tx ConwayEra' };
-          payload['utxo'] = formatUtxos(utxos);
-        } else {
-          payload = formatUtxos(utxos);
-        }
-      }
-
-      logger.debug(`Sending commit request to ${apiUrl} with ${utxos.length} UTxOs`);
-      const response = await axios.post(apiUrl, payload);
-      const draft = response.data.cborHex;
-      this.lucid.selectWallet.fromSeed(env.SEED);
-      const signedTx = await this.lucid
-        .fromTx(draft)
-        .sign.withWallet()
-        .complete()
-        .then((tx) => setRedeemersAsMap(tx.toCBOR()));
-      depositTxId = await this.lucid.wallet().submitTx(signedTx);
+      depositTxId = await submitCommit(this.lucid, apiUrl, utxos, blueprint);
       logger.info(`Deposit tx submitted to L1: ${depositTxId}; awaiting CommitFinalized...`);
 
       await waitForTag(this.msgConn, 'CommitFinalized', {
@@ -531,6 +502,52 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
   return newTx;
 }
 
+/**
+ * Draft a Hydra deposit tx via POST {apiUrl} (/commit), sign it with the admin key and submit it to
+ * L1. `beforeSubmit` gets the deposit tx id first, so a caller can persist it before it can land.
+ */
+async function submitCommit(
+  lucid: LucidEvolution,
+  apiUrl: string,
+  utxos: UTxO[],
+  blueprint?: CBORHex,
+  beforeSubmit?: (depositTxId: string) => Promise<void>
+): Promise<string> {
+  const formatUtxos = (us: UTxO[]) =>
+    us.reduce(
+      (acc, u) => {
+        acc[`${u.txHash}#${u.outputIndex}`] = lucidUtxoToHydraUtxo(u);
+        return acc;
+      },
+      {} as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+    );
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let payload: { blueprintTx?: any; utxo?: any } = {};
+  if (utxos.length > 0) {
+    if (blueprint) {
+      payload['blueprintTx'] = { cborHex: blueprint, description: '', type: 'Tx ConwayEra' };
+      payload['utxo'] = formatUtxos(utxos);
+    } else {
+      payload = formatUtxos(utxos);
+    }
+  }
+
+  logger.debug(`Sending commit request to ${apiUrl} with ${utxos.length} UTxOs`);
+  const response = await axios.post(apiUrl, payload);
+  const draft = response.data.cborHex;
+  lucid.selectWallet.fromSeed(env.SEED);
+  const signedTx = await lucid
+    .fromTx(draft)
+    .sign.withWallet()
+    .complete()
+    .then((tx) => setRedeemersAsMap(tx.toCBOR()));
+  await beforeSubmit?.(
+    CML.hash_transaction(CML.Transaction.from_cbor_hex(signedTx).body()).to_hex()
+  );
+  return lucid.wallet().submitTx(signedTx);
+}
+
 /** GET {apiUrl}/snapshot/utxo over HTTP only (no WebSocket). Throws when the head snapshot can't be read. */
 async function fetchSnapshot(apiUrl: string): Promise<UTxO[]> {
   const { data } = await axios.get(`${apiUrl}/snapshot/utxo`, { timeout: 10_000 });
@@ -556,12 +573,7 @@ async function submitTxAndAwaitSnapshot(
   txId: string,
   timeout: number
 ): Promise<SubmitOutcome> {
-  const url = new URL(wsUrl);
-  url.protocol = url.protocol.replace('http', 'ws');
-  url.search = 'history=no&snapshot-utxo=no';
-  const ws = new Websocket(url);
-  const conn: MessageConn = { onmessage: null };
-  ws.on('message', (data) => conn.onmessage?.({ data: data.toString() }));
+  const { ws, conn } = connect(wsUrl);
   try {
     await new Promise((resolve, reject) => {
       ws.once('open', resolve);
@@ -597,8 +609,60 @@ async function submitTxAndAwaitSnapshot(
   }
 }
 
+/** A fresh WS without history or snapshot UTxO, exposed as a MessageConn for waitForTag. */
+function connect(wsUrl: string): { ws: Websocket; conn: MessageConn } {
+  const url = new URL(wsUrl);
+  url.protocol = url.protocol.replace('http', 'ws');
+  url.search = 'history=no&snapshot-utxo=no';
+  const ws = new Websocket(url);
+  const conn: MessageConn = { onmessage: null };
+  ws.on('message', (data) => conn.onmessage?.({ data: data.toString() }));
+  return { ws, conn };
+}
+
+type CommitOutcome = 'finalized' | 'expired' | 'pending';
+
+/**
+ * Waits for the CommitFinalized of `depositTxId`; its DepositExpired is 'expired'. Other deposits'
+ * messages are ignored. Timeout, socket error or a dropped socket is 'pending' (the caller settles
+ * it from the L2 snapshot), so this never throws.
+ */
+async function awaitCommitFinalized(
+  wsUrl: string,
+  depositTxId: string,
+  timeout: number
+): Promise<CommitOutcome> {
+  const { ws, conn } = connect(wsUrl);
+  // Listening before the socket opens, so no message can slip between open and the wait.
+  const finalized = waitForTag(conn, 'CommitFinalized', {
+    timeout,
+    match: (m) => m.depositTxId === depositTxId,
+    terminalTags: ['DepositExpired'],
+    terminalMatch: (m) => m.depositTxId === depositTxId,
+  });
+  const dropped = new Promise<never>((_, reject) => {
+    ws.on('error', reject);
+    ws.once('close', () => reject(new Error('Hydra WS closed')));
+  });
+  finalized.catch(() => undefined); // whichever loses the race below stays unawaited
+  dropped.catch(() => undefined);
+  try {
+    await Promise.race([finalized, dropped]);
+    return 'finalized';
+  } catch (e) {
+    if (e instanceof HydraTerminalError) return 'expired';
+    logger.warning(`No CommitFinalized for ${depositTxId} yet: ${e}`);
+    return 'pending';
+  } finally {
+    ws.close();
+  }
+}
+
 export {
   HydraHandler,
+  submitCommit,
+  awaitCommitFinalized,
+  CommitOutcome,
   lucidUtxoToHydraUtxo,
   fetchSnapshot,
   submitTxAndAwaitSnapshot,

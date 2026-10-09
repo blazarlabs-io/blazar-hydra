@@ -7,7 +7,7 @@ import {
 } from '@lucid-evolution/lucid';
 import { QueryFundsResponse } from '../../api/schemas/response';
 import { fetchSnapshot } from '../lib/hydra';
-import { fundsDatumOf, spendable } from '../lib/funds';
+import { payableInL2 } from '../lib/funds';
 import _ from 'lodash';
 import { env } from '../../config';
 import {
@@ -90,24 +90,14 @@ async function handleQueryFunds(
     fundsInL2.reduce(addAssetsFromUtxo, {})
   );
 
-  // Max over the user's L2 funds UTxOs: one payment spends exactly one funds UTxO.
-  const payableInL2: Record<string, string> = {};
-  for (const utxo of fundsInL2) {
-    const datum = fundsDatumOf(utxo);
-    if (!datum || datum.funds_type === 'Merchant') continue;
-    for (const unit of Object.keys(removeControlTokens(utxo.assets))) {
-      const v = spendable(utxo, datum, unit);
-      if (v > BigInt(payableInL2[unit] ?? '0'))
-        payableInL2[unit] = v.toString();
-    }
-  }
-
   return {
     fundsInL1,
     totalInL1,
     fundsInL2,
     totalInL2,
-    payableInL2,
+    payableInL2: payableInL2(fundsInL2, (unit) =>
+      unit.startsWith(controlTokenPolicy)
+    ),
   };
 }
 

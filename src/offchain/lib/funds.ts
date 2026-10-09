@@ -36,6 +36,27 @@ export function fundsDatumOf(u: UTxO): FundsDatumT | null {
   }
 }
 
+/**
+ * payableInL2: per unit, the max spendable over the user funds UTxOs (one payment spends exactly one
+ * funds UTxO). Merchant UTxOs, control tokens and zero amounts are left out.
+ */
+export function payableInL2(
+  utxos: UTxO[],
+  isControlToken: (unit: string) => boolean
+): Record<string, string> {
+  const payable: Record<string, string> = {};
+  for (const utxo of utxos) {
+    const datum = fundsDatumOf(utxo);
+    if (!datum || datum.funds_type === 'Merchant') continue;
+    for (const unit of Object.keys(utxo.assets)) {
+      if (isControlToken(unit)) continue;
+      const v = spendable(utxo, datum, unit);
+      if (v > BigInt(payable[unit] ?? '0')) payable[unit] = v.toString();
+    }
+  }
+  return payable;
+}
+
 /** What a user funds UTxO can pay in `unit`: lovelace keeps `locked_deposit` back. */
 export function spendable(u: UTxO, d: FundsDatumT, unit: string): bigint {
   const qty = u.assets[unit] ?? 0n;

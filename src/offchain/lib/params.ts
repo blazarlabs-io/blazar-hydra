@@ -11,6 +11,10 @@ type DepositParams = {
   walletUtxos: UTxO[];
   validatorRef: UTxO;
   fundsUtxo?: UTxO;
+  /** Consumed and used to name the validation token instead of walletUtxos[0] (bridged BTC UTxO). */
+  seedUtxo?: UTxO;
+  /** Also lock the deposited lovelace in locked_deposit, so only the tokens are payable. */
+  lockDeposited?: boolean;
 };
 
 type Withdraw = {

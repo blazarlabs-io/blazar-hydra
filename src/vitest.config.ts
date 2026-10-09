@@ -24,6 +24,10 @@ export default defineConfig({
       ADMIN_NODE_API_URL: 'http://127.0.0.1:9',
       FIREBASE_PROJECT_ID: 'test-project',
       ADMIN_API_KEY: 'test-admin-key-0123456789abcdef0123',
+      DEPOSIT_KEY: 'x', // only the startup check derives from it (not run in tests)
+      // destination of the recorded pair-517 deposit in bridge/wanbridge/__fixtures__
+      DEPOSIT_ADDRESS:
+        'addr_test1qr2ure5s9pg3ancpwfwhtcwgzeaktepk8nk8sep0yc9gff636vajy85w3dl7xprneqftdxzzqw6ywh3ht0gz3nkaj0uqkmdz5f',
       LOGGER_LEVEL: 'error',
     },
   },

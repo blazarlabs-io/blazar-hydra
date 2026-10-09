@@ -302,12 +302,20 @@ describe('authorize + executor', () => {
 
   it('an identical tx already recorded by another payment fails cleanly, not stuck authorized', async () => {
     const merchant = nextMerchant();
+    // The in-flight first payment would lock its input; age it so the executor settles it first.
     const deps = fakeDeps(
-      [userFunds({ lovelace: 10_000_000n }), merchantFunds(merchant)],
+      [
+        userFunds({ lovelace: 10_000_000n }, PAYER, 'e1'.repeat(32)),
+        merchantFunds(merchant),
+      ],
       { outcome: 'pending' }
     );
     const first = await newPayment(merchant);
     expect((await authorizePayment(first.id, PAYER, deps)).status).toBe(202);
+    await prisma.payment.update({
+      where: { id: first.id },
+      data: { state: 'failed', error: 'NOT_SUBMITTED' },
+    });
     const second = await newPayment(merchant); // same input, merchant, amount -> same tx id
     const r = await authorizePayment(second.id, PAYER, deps);
     expect(r.payment).toMatchObject({
@@ -316,6 +324,65 @@ describe('authorize + executor', () => {
       hydraTxId: null,
     });
     expect(deps.submit).toHaveBeenCalledOnce();
+  });
+
+  it('a later payment never spends the input of an unsettled one, so reconcile cannot confirm a tx that never landed', async () => {
+    const merchant = nextMerchant();
+    const funds = userFunds({ lovelace: 10_000_000n }, PAYER, 'e2'.repeat(32));
+    // A: NewTx never reached the head (WS down), so A stays submitted with fundsInRef = funds.
+    const depsA = fakeDeps([funds, merchantFunds(merchant)], {
+      outcome: 'pending',
+    });
+    const a = await newPayment(merchant);
+    expect((await authorizePayment(a.id, PAYER, depsA)).status).toBe(202);
+
+    // B: the payer retries on a new request within 60 s.
+    const depsB = fakeDeps([funds, merchantFunds(merchant)]);
+    const b = await newPayment(merchant, 'lovelace', '2000000');
+    const rb = await authorizePayment(b.id, PAYER, depsB);
+    expect(rb.payment).toMatchObject({
+      state: 'failed',
+      error: 'INSUFFICIENT_FUNDS',
+    });
+    expect(depsB.build).not.toHaveBeenCalled();
+
+    // A is reconciled later against whatever the head holds now.
+    await prisma.payment.update({
+      where: { id: a.id },
+      data: { updatedAt: new Date(Date.now() - 61_000) },
+    });
+    const headNow = depsB.build.mock.calls.length
+      ? [utxo(depsB.txId, 0, {}), utxo(depsB.txId, 1, {})] // B spent A's input
+      : [funds, merchantFunds(merchant)];
+    depsA.snapshot.mockResolvedValueOnce(headNow);
+    expect(await readPayment(a.id, depsA)).toMatchObject({
+      state: 'failed',
+      error: 'NOT_SUBMITTED',
+    });
+  });
+
+  it('settles a stale in-flight payment of the payer before selecting funds', async () => {
+    const merchant = nextMerchant();
+    const funds = userFunds({ lovelace: 10_000_000n }, PAYER, 'e3'.repeat(32));
+    const depsA = fakeDeps([funds, merchantFunds(merchant)], {
+      outcome: 'pending',
+    });
+    const a = await newPayment(merchant);
+    expect((await authorizePayment(a.id, PAYER, depsA)).status).toBe(202);
+    await prisma.payment.update({
+      where: { id: a.id },
+      data: { updatedAt: new Date(Date.now() - 61_000) },
+    });
+
+    const depsB = fakeDeps([funds, merchantFunds(merchant)]);
+    const b = await newPayment(merchant, 'lovelace', '2000000');
+    expect((await authorizePayment(b.id, PAYER, depsB)).payment?.state).toBe(
+      'confirmed'
+    );
+    // A's input was still unspent when B was built: A never landed.
+    expect(
+      await prisma.payment.findUniqueOrThrow({ where: { id: a.id } })
+    ).toMatchObject({ state: 'failed', error: 'NOT_SUBMITTED' });
   });
 
   it('TxInvalid for our tx fails the payment', async () => {

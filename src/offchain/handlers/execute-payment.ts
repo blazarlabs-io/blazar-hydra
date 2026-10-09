@@ -176,7 +176,8 @@ export function selectPayerUtxo(
   snapshot: UTxO[],
   payerAddress: string,
   unit: string,
-  amount: bigint
+  amount: bigint,
+  busy: ReadonlySet<string> = new Set() // inputs of unsettled payments
 ): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' } {
   const mine = snapshot.flatMap((u) => {
     const d = fundsDatumOf(u);
@@ -187,7 +188,11 @@ export function selectPayerUtxo(
       : [];
   });
   if (mine.length === 0) return { error: 'NO_L2_FUNDS' };
-  const hit = mine.find(({ u, d }) => spendable(u, d, unit) >= amount);
+  const hit = mine.find(
+    ({ u, d }) =>
+      !busy.has(`${u.txHash}#${u.outputIndex}`) &&
+      spendable(u, d, unit) >= amount
+  );
   return hit ? { utxo: hit.u } : { error: 'INSUFFICIENT_FUNDS' };
 }
 
@@ -225,12 +230,24 @@ export async function executePayment(
     }
     const snapshot = await deps.snapshot();
     const amount = BigInt(p.amountBaseUnits);
+    // An unsettled payment keeps its input: if another tx spent it, reconcile would read "input gone"
+    // as our tx having landed and confirm a payment that never moved money.
+    const busy = new Set<string>();
+    const inFlight = await prisma.payment.findMany({
+      where: { state: 'submitted', payerAddress: p.payerAddress },
+    });
+    for (const q of inFlight) {
+      if (Date.now() - q.updatedAt.getTime() > RECONCILE_AFTER_MS) {
+        await settle(q, snapshot);
+      } else busy.add(q.fundsInRef!);
+    }
     const pick = selectPayerUtxo(
       deps.lucid,
       snapshot,
       p.payerAddress,
       p.assetUnit,
-      amount
+      amount,
+      busy
     );
     if ('error' in pick) return fail(pick.error);
     const merchantUtxo = findMerchantUtxo(

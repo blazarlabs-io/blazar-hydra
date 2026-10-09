@@ -6,6 +6,8 @@ import { env } from '../../config';
 import { TxBuiltResponse } from '../../api/schemas/response';
 import { logger } from '../../shared/logger';
 import { HydraHandler } from '../lib/hydra';
+import { assertRunning } from '../../shared/close-guards';
+import { DBOps } from '../../prisma/db-ops';
 
 /**
  * Withdraws funds from the Hydra head back to L1. A withdraw spends UTxOs that live
@@ -17,6 +19,7 @@ async function handleWithdraw(
   lucid: LucidEvolution,
   params: WithdrawSchema
 ): Promise<TxBuiltResponse> {
+  assertRunning(await DBOps.getActiveHead());
   const localLucid = _.cloneDeep(lucid);
   const { address, owner, funds_utxos, network_layer } = params;
   const { SEED: adminSeed, HYDRA_KEY: hydraKey } = env;

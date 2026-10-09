@@ -17,7 +17,7 @@ const createServer = () => {
     // JSONbig.parse and threw — surfacing as a default-Express `[object Object]` 500 on
     // body-less POSTs like /close-head (which only reads req.query).
     if (
-      req.headers['content-type'] === 'application/json' &&
+      req.is('application/json') &&
       req.body &&
       req.body.length > 0
     ) {

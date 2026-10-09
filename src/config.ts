@@ -15,14 +15,33 @@ const envSchema = z
         }
       )
       .transform((val) => Number.parseInt(val)),
-    PROVIDER_PROJECT_ID: z.string(),
-    PROVIDER_URL: z.string(),
+    PROVIDER_TYPE: z.enum(['blockfrost', 'kupmios']).default('blockfrost'),
+    PROVIDER_PROJECT_ID: z.string().optional(),
+    PROVIDER_URL: z.string().optional(),
+    KUPO_URL: z.string().optional(),
+    OGMIOS_URL: z.string().optional(),
     NETWORK: z.string(),
     VALIDATOR_REF: z.string(),
     HYDRA_KEY: z.string(),
     SEED: z.string(),
     ADMIN_NODE_WS_URL: z.string(),
     ADMIN_NODE_API_URL: z.string(),
+    RESET_SIGNAL_DIR: z.string().default('/reset-signal'),
+    // Firebase ID tokens (users, merchant-web proxy) must carry aud = this project id.
+    FIREBASE_PROJECT_ID: z.string().min(1),
+    // Bearer key for legacy mutating routes and POST /accounts.
+    ADMIN_API_KEY: z.string().min(32, 'ADMIN_API_KEY must be at least 32 characters'),
+    BUILD_SHA: z.string().default('dev'),
+    // BTC deposits (M3 phase B). DEPOSIT_KEY: mnemonic like SEED, secret; it controls the bridge
+    // destination only. DEPOSIT_ADDRESS: its base address (public); startup checks they match.
+    DEPOSIT_KEY: z.string().min(1),
+    DEPOSIT_ADDRESS: z.string().min(1),
+    DEPOSIT_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+    // createTx2 requires a tb1 fromAccount but only echoes it (bridge-integration.md decision 1).
+    BRIDGE_PLACEHOLDER_FROM: z
+      .string()
+      .regex(/^tb1[02-9ac-hj-np-z]{8,87}$/)
+      .default('tb1qapnye2f5fjddqaguz4q7klhhtv2cqr5qgkc0pu'),
     USER_ADDRESS: z.string().optional(),
     USER_SEED: z.string().optional(),
     USER_ADDRESS_2: z.string().optional(),
@@ -36,7 +55,20 @@ const envSchema = z
       .default('info')
       .transform((val) => val.toLowerCase()),
   })
-  .readonly();
+  .readonly()
+  .superRefine((env, ctx) => {
+    if (env.PROVIDER_TYPE === 'kupmios') {
+      if (!env.KUPO_URL)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['KUPO_URL'], message: 'KUPO_URL is required when PROVIDER_TYPE=kupmios' });
+      if (!env.OGMIOS_URL)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['OGMIOS_URL'], message: 'OGMIOS_URL is required when PROVIDER_TYPE=kupmios' });
+    } else {
+      if (!env.PROVIDER_URL)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['PROVIDER_URL'], message: 'PROVIDER_URL is required when PROVIDER_TYPE=blockfrost' });
+      if (!env.PROVIDER_PROJECT_ID)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['PROVIDER_PROJECT_ID'], message: 'PROVIDER_PROJECT_ID is required when PROVIDER_TYPE=blockfrost' });
+    }
+  });
 type EnvSchema = z.infer<typeof envSchema>;
 const env = envSchema.parse(process.env);
 

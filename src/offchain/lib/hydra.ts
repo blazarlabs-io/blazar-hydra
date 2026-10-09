@@ -12,6 +12,7 @@ import blake2b from 'blake2b';
 import { env } from '../../config';
 import { logger } from '../../shared/logger';
 import { waitForTag, MessageConn, HydraTerminalError } from './hydra-messages';
+import { performInit } from './hydra-init';
 
 /**
  * Listen and send messages to a Hydra node.
@@ -112,26 +113,39 @@ class HydraHandler {
     });
   }
 
-  /** Sends Init; the head opens directly (empty). Resolves with the HeadIsOpen output. */
-  async init(): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
-    await this.ensureConnectionReady();
-    logger.debug('Sending Init; awaiting HeadIsOpen...');
-    this.connection.send(JSON.stringify({ tag: 'Init' }));
+  /**
+   * Authoritative open-head probe: GET /snapshot/utxo returns 200 iff a head is open.
+   * Any non-200 (incl. connection refused) is treated as "not open" so Init is attempted and
+   * fails loudly rather than being falsely skipped.
+   */
+  private async headIsOpen(): Promise<boolean> {
+    const apiURL = `${this.url.origin.replace('ws', 'http')}/snapshot/utxo`;
     try {
-      return await waitForTag(this.msgConn, 'HeadIsOpen', {
-        timeout: 120_000,
-        terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
-      });
-    } catch (err) {
-      // Init on an already-open head returns CommandFailed; treat it as a no-op.
-      if (err instanceof HydraTerminalError && err.tag === 'CommandFailed') {
-        logger.info(
-          'Init returned CommandFailed (head already open) — treating as no-op'
-        );
-        return err.payload;
-      }
-      throw err;
+      const res = await axios.get(apiURL, { validateStatus: () => true });
+      return res.status === 200;
+    } catch {
+      return false;
     }
+  }
+
+  /**
+   * Sends Init; the head opens directly (empty). Idempotent: a no-op only when the node confirms a
+   * head is actually open (see performInit). Resolves with the HeadIsOpen payload (or undefined
+   * when Init was skipped because a head was already open).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async init(): Promise<any> {
+    await this.ensureConnectionReady();
+    const result = await performInit({
+      headIsOpen: () => this.headIsOpen(),
+      sendInit: () => this.connection.send(JSON.stringify({ tag: 'Init' })),
+      awaitHeadIsOpen: () =>
+        waitForTag(this.msgConn, 'HeadIsOpen', {
+          timeout: 120_000,
+          terminalTags: ['CommandFailed', 'PostTxOnChainFailed'],
+        }),
+    });
+    return result.outcome === 'skipped-already-open' ? undefined : result.payload;
   }
 
   /**
@@ -181,6 +195,9 @@ class HydraHandler {
         timeout: 1_300_000, // > deposit-period (1200s) so the deadline can pass
         match: (m) => m.depositTxId === depositTxId,
         terminalTags: ['DepositExpired'],
+        // Only OUR deposit's DepositExpired is terminal; a stale/unrelated deposit's
+        // expiry must not abort this wait (would trigger a premature, pre-deadline recover).
+        terminalMatch: (m) => m.depositTxId === depositTxId,
         onMessage: (m) => {
           if (['CommitRecorded', 'CommitApproved'].includes(m.tag)) {
             logger.debug(`Commit progress: ${m.tag}`);
@@ -325,10 +342,13 @@ class HydraHandler {
   async fanout(): Promise<string> {
     await this.ensureConnectionReady();
     this.connection.send(JSON.stringify({ tag: 'Fanout' }));
-    // HeadIsFinalized fires once the Fanout tx is observed on L1; give it the same headroom as
-    // Close so a slow preprod block doesn't time the wait out.
+    // HeadIsFinalized fires once the Fanout tx is observed on L1. A PostTxOnChainFailed on fanout is
+    // deterministic (the node re-posts the same tx every block and fails identically) — most often
+    // the 2.2.0 fanout-after-decommit limitation — so treat it as terminal: fail in seconds instead
+    // of the 300s timeout.
     const data = await waitForTag(this.msgConn, 'HeadIsFinalized', {
       timeout: 300_000,
+      terminalTags: ['PostTxOnChainFailed'],
     });
     return data.tag;
   }
@@ -511,4 +531,76 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
   return newTx;
 }
 
-export { HydraHandler, lucidUtxoToHydraUtxo };
+/** GET {apiUrl}/snapshot/utxo over HTTP only (no WebSocket). Throws when the head snapshot can't be read. */
+async function fetchSnapshot(apiUrl: string): Promise<UTxO[]> {
+  const { data } = await axios.get(`${apiUrl}/snapshot/utxo`, { timeout: 10_000 });
+  return Object.entries(data).map(([ref, output]) => {
+    const [hash, idx] = ref.split('#');
+    return hydraUtxoToLucidUtxo(hash, Number(idx), output);
+  });
+}
+
+type SubmitOutcome =
+  | { outcome: 'confirmed'; snapshotNumber: number }
+  | { outcome: 'invalid' }
+  | { outcome: 'pending' };
+
+/**
+ * Sends NewTx and waits for the SnapshotConfirmed whose `confirmed` holds `txId`; a TxInvalid for
+ * `txId` is 'invalid'. Anything else (timeout, socket error) is 'pending': the caller reconciles
+ * later from /snapshot/utxo, so this never throws.
+ */
+async function submitTxAndAwaitSnapshot(
+  wsUrl: string,
+  cborHex: CBORHex,
+  txId: string,
+  timeout: number
+): Promise<SubmitOutcome> {
+  const url = new URL(wsUrl);
+  url.protocol = url.protocol.replace('http', 'ws');
+  url.search = 'history=no&snapshot-utxo=no';
+  const ws = new Websocket(url);
+  const conn: MessageConn = { onmessage: null };
+  ws.on('message', (data) => conn.onmessage?.({ data: data.toString() }));
+  try {
+    await new Promise((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.on('error', reject); // stays attached: a later socket error must not crash the process
+    });
+    const confirmed = waitForTag(conn, 'SnapshotConfirmed', {
+      timeout,
+      match: (m) =>
+        // 2.2.0 sends Transaction objects ({txId, cborHex, ...}); accept bare ids too.
+        (m.snapshot?.confirmed ?? []).some(
+          (t: { txId?: string } | string) => t === txId || (typeof t === 'object' && t?.txId === txId)
+        ),
+      terminalTags: ['TxInvalid'],
+      terminalMatch: (m) => m.transaction?.txId === txId,
+    });
+    ws.send(
+      JSON.stringify({
+        tag: 'NewTx',
+        transaction: { cborHex, description: '', type: 'Tx ConwayEra' },
+      })
+    );
+    const msg = await confirmed;
+    return { outcome: 'confirmed', snapshotNumber: Number(msg.snapshot.number) };
+  } catch (e) {
+    if (e instanceof HydraTerminalError) {
+      logger.error(`TxInvalid ${txId}: ${JSON.stringify(e.payload?.validationError)}`);
+      return { outcome: 'invalid' };
+    }
+    logger.warning(`No SnapshotConfirmed for ${txId} yet: ${e}`);
+    return { outcome: 'pending' };
+  } finally {
+    ws.close();
+  }
+}
+
+export {
+  HydraHandler,
+  lucidUtxoToHydraUtxo,
+  fetchSnapshot,
+  submitTxAndAwaitSnapshot,
+  SubmitOutcome,
+};

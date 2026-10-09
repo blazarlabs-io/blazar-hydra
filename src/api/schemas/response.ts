@@ -5,6 +5,8 @@ type QueryFundsResponse = {
   totalInL1: Assets;
   fundsInL2: OutRef[];
   totalInL2: Assets;
+  // Per unit, base units as strings: max spendable from one L2 funds UTxO (lovelace minus locked_deposit).
+  payableInL2: Record<string, string>;
 };
 
 type TxBuiltResponse = {

@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "data": {
+    "timestamp": 1768207963,
+    "tokenPair": "517",
+    "lockHash": "6633762d996f7932d159f76573c388c4282e8ea7ee7dfa6e7eda1579f67cf890",
+    "redeemHash": "b142c3c995e8f3c8d630fb0eda8673f55d1b8e2432dfee154255454cb1075abc",
+    "status": "Success",
+    "sendAmount": "200000",
+    "receiveAmount": "199680"
+  }
+}

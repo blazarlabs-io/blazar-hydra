@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AddressInfo } from 'net';
+import { AddressInfo, createServer, Socket } from 'net';
 import { WebSocketServer } from 'ws';
+import { withLock } from '../handlers/execute-payment';
 import { awaitCommitFinalized, submitTxAndAwaitSnapshot } from './hydra';
 
 const OURS = 'aa'.repeat(32);
@@ -75,6 +76,25 @@ describe('submitTxAndAwaitSnapshot', () => {
       outcome: 'pending',
     });
   });
+
+  it('a node that accepts TCP but never answers the handshake is pending within the timeout, and the lock is released', async () => {
+    const sockets: Socket[] = [];
+    const silent = createServer((s) => sockets.push(s)); // never replies to the upgrade
+    await new Promise<void>((r) => silent.listen(0, '127.0.0.1', r));
+    const dead = `ws://127.0.0.1:${(silent.address() as AddressInfo).port}`;
+    try {
+      const t0 = Date.now();
+      const held = withLock(() =>
+        submitTxAndAwaitSnapshot(dead, '84a0', OURS, 300)
+      );
+      const next = withLock(async () => Date.now());
+      expect(await held).toEqual({ outcome: 'pending' });
+      expect((await next) - t0).toBeLessThan(1500);
+    } finally {
+      sockets.forEach((s) => s.destroy());
+      silent.close();
+    }
+  }, 3000);
 
   it('an unreachable node is pending (reconcile decides), never a throw', async () => {
     expect(

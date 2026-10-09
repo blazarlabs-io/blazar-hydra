@@ -573,7 +573,8 @@ async function submitTxAndAwaitSnapshot(
   txId: string,
   timeout: number
 ): Promise<SubmitOutcome> {
-  const { ws, conn } = connect(wsUrl);
+  // A connect that never completes must not hold the payment lock: it counts against `timeout`.
+  const { ws, conn } = connect(wsUrl, Math.min(timeout, HANDSHAKE_TIMEOUT_MS));
   try {
     await new Promise((resolve, reject) => {
       ws.once('open', resolve);
@@ -609,12 +610,17 @@ async function submitTxAndAwaitSnapshot(
   }
 }
 
+const HANDSHAKE_TIMEOUT_MS = 5_000;
+
 /** A fresh WS without history or snapshot UTxO, exposed as a MessageConn for waitForTag. */
-function connect(wsUrl: string): { ws: Websocket; conn: MessageConn } {
+function connect(
+  wsUrl: string,
+  handshakeTimeout = HANDSHAKE_TIMEOUT_MS // covers the TCP connect too ('error' on expiry)
+): { ws: Websocket; conn: MessageConn } {
   const url = new URL(wsUrl);
   url.protocol = url.protocol.replace('http', 'ws');
   url.search = 'history=no&snapshot-utxo=no';
-  const ws = new Websocket(url);
+  const ws = new Websocket(url, { handshakeTimeout });
   const conn: MessageConn = { onmessage: null };
   ws.on('message', (data) => conn.onmessage?.({ data: data.toString() }));
   return { ws, conn };

@@ -530,4 +530,76 @@ function setRedeemersAsMap(tx: CBORHex): CBORHex {
   return newTx;
 }
 
-export { HydraHandler, lucidUtxoToHydraUtxo };
+/** GET {apiUrl}/snapshot/utxo over HTTP only (no WebSocket). Throws when the head snapshot can't be read. */
+async function fetchSnapshot(apiUrl: string): Promise<UTxO[]> {
+  const { data } = await axios.get(`${apiUrl}/snapshot/utxo`, { timeout: 10_000 });
+  return Object.entries(data).map(([ref, output]) => {
+    const [hash, idx] = ref.split('#');
+    return hydraUtxoToLucidUtxo(hash, Number(idx), output);
+  });
+}
+
+type SubmitOutcome =
+  | { outcome: 'confirmed'; snapshotNumber: number }
+  | { outcome: 'invalid' }
+  | { outcome: 'pending' };
+
+/**
+ * Sends NewTx and waits for the SnapshotConfirmed whose `confirmed` holds `txId`; a TxInvalid for
+ * `txId` is 'invalid'. Anything else (timeout, socket error) is 'pending': the caller reconciles
+ * later from /snapshot/utxo, so this never throws.
+ */
+async function submitTxAndAwaitSnapshot(
+  wsUrl: string,
+  cborHex: CBORHex,
+  txId: string,
+  timeout: number
+): Promise<SubmitOutcome> {
+  const url = new URL(wsUrl);
+  url.protocol = url.protocol.replace('http', 'ws');
+  url.search = 'history=no&snapshot-utxo=no';
+  const ws = new Websocket(url);
+  const conn: MessageConn = { onmessage: null };
+  ws.on('message', (data) => conn.onmessage?.({ data: data.toString() }));
+  try {
+    await new Promise((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.on('error', reject); // stays attached: a later socket error must not crash the process
+    });
+    const confirmed = waitForTag(conn, 'SnapshotConfirmed', {
+      timeout,
+      match: (m) =>
+        // 2.2.0 sends Transaction objects ({txId, cborHex, ...}); accept bare ids too.
+        (m.snapshot?.confirmed ?? []).some(
+          (t: { txId?: string } | string) => t === txId || (typeof t === 'object' && t?.txId === txId)
+        ),
+      terminalTags: ['TxInvalid'],
+      terminalMatch: (m) => m.transaction?.txId === txId,
+    });
+    ws.send(
+      JSON.stringify({
+        tag: 'NewTx',
+        transaction: { cborHex, description: '', type: 'Tx ConwayEra' },
+      })
+    );
+    const msg = await confirmed;
+    return { outcome: 'confirmed', snapshotNumber: Number(msg.snapshot.number) };
+  } catch (e) {
+    if (e instanceof HydraTerminalError) {
+      logger.error(`TxInvalid ${txId}: ${JSON.stringify(e.payload?.validationError)}`);
+      return { outcome: 'invalid' };
+    }
+    logger.warning(`No SnapshotConfirmed for ${txId} yet: ${e}`);
+    return { outcome: 'pending' };
+  } finally {
+    ws.close();
+  }
+}
+
+export {
+  HydraHandler,
+  lucidUtxoToHydraUtxo,
+  fetchSnapshot,
+  submitTxAndAwaitSnapshot,
+  SubmitOutcome,
+};

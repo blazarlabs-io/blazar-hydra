@@ -25,3 +25,19 @@ export function assertFundsEmpty(snapshot: UTxO[], adminAddress: string): void {
     throw new Error(`Head is not funds-empty: ${funds.length} fund UTxO(s) remain (${refs})`);
   }
 }
+
+/** The Blazar FundsDatum of a UTxO, or null when it has none. */
+export function fundsDatumOf(u: UTxO): FundsDatumT | null {
+  if (!u.datum) return null;
+  try {
+    return Data.from<FundsDatumT>(u.datum, FundsDatum);
+  } catch {
+    return null;
+  }
+}
+
+/** What a user funds UTxO can pay in `unit`: lovelace keeps `locked_deposit` back. */
+export function spendable(u: UTxO, d: FundsDatumT, unit: string): bigint {
+  const qty = u.assets[unit] ?? 0n;
+  return unit === 'lovelace' ? qty - d.locked_deposit : qty;
+}

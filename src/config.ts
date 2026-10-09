@@ -27,6 +27,11 @@ const envSchema = z
     ADMIN_NODE_WS_URL: z.string(),
     ADMIN_NODE_API_URL: z.string(),
     RESET_SIGNAL_DIR: z.string().default('/reset-signal'),
+    // Firebase ID tokens (users, merchant-web proxy) must carry aud = this project id.
+    FIREBASE_PROJECT_ID: z.string().min(1),
+    // Bearer key for legacy mutating routes and POST /accounts.
+    ADMIN_API_KEY: z.string().min(32, 'ADMIN_API_KEY must be at least 32 characters'),
+    BUILD_SHA: z.string().default('dev'),
     USER_ADDRESS: z.string().optional(),
     USER_SEED: z.string().optional(),
     USER_ADDRESS_2: z.string().optional(),

@@ -152,8 +152,25 @@ const IncrementalDecommitZodSchema = z.object({
   signature: z.string().optional(),
 });
 
+/** POST /accounts (admin seeding): a Firebase uid and/or a device key mapped to one address. */
+const CreateAccountZodSchema = z
+  .object({
+    firebaseUid: z.string().min(1).optional(),
+    apiKey: z
+      .string()
+      .min(32, 'apiKey must be at least 32 characters')
+      .optional(),
+    kind: z.enum(['user', 'merchant']),
+    address: addressSchema,
+  })
+  .strict()
+  .refine((a) => a.firebaseUid || a.apiKey, {
+    message: 'firebaseUid or apiKey is required',
+  });
+
 export {
   Layer,
+  CreateAccountZodSchema,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,

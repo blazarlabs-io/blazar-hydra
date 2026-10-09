@@ -82,6 +82,7 @@ export function findBtcDeposit(
 
 const koiosTxSchema = z.object({
   tx_hash: z.string(),
+  block_height: z.number().int().nullish(),
   metadata: z.record(z.unknown()).nullable(),
   outputs: z.array(
     z.object({
@@ -148,7 +149,12 @@ export function verifyCardanoArrival(
     btcTxid: string;
   }
 ): ArrivalCheck {
-  if (!tx || tx.tx_hash !== normalizeTxid(expected.redeemHash)) {
+  // Only a tx in a block counts (decision 6); the Hydra deposit period adds the rest of the finality.
+  if (
+    !tx ||
+    tx.block_height == null ||
+    tx.tx_hash !== normalizeTxid(expected.redeemHash)
+  ) {
     return { ok: false, reason: 'TX_NOT_FOUND' };
   }
   const meta = bridgeMetadata.safeParse(tx.metadata?.['1']);

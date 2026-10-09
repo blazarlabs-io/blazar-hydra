@@ -456,6 +456,27 @@ describe('expiry', () => {
     expect(deps.submit).not.toHaveBeenCalled();
   });
 
+  it("a new request supersedes the merchant's older unpaid one, so the terminal never serves a stale amount", async () => {
+    const merchant = nextMerchant();
+    const deps = fakeDeps([
+      userFunds({ lovelace: 30_000_000n }, PAYER, 'e4'.repeat(32)),
+      merchantFunds(merchant),
+    ]);
+    const typo = await newPayment(merchant, 'lovelace', '10000000');
+    const real = await newPayment(merchant, 'lovelace', '25000000');
+    expect((await pendingPaymentFor(merchant))?.id).toBe(real.id);
+    const r = await authorizePayment(typo.id, PAYER, deps);
+    expect(r.status).toBe(410);
+    expect(r.payment).toMatchObject({ state: 'expired', error: 'EXPIRED' });
+    expect(deps.build).not.toHaveBeenCalled();
+    // Other merchants' requests are untouched.
+    const other = await newPayment(nextMerchant());
+    expect(
+      (await prisma.payment.findUniqueOrThrow({ where: { id: real.id } })).state
+    ).toBe('created');
+    expect(other.state).toBe('created');
+  });
+
   it('a read after expiresAt marks it expired', async () => {
     const p = await newPayment(nextMerchant());
     await prisma.payment.update({

@@ -108,10 +108,22 @@ export function toPaymentDto(p: PaymentRow): Payment {
   };
 }
 
-export const createPayment = (c: CreatePayment) =>
-  prisma.payment.create({
-    data: { ...c, expiresAt: new Date(Date.now() + PAYMENT_TTL_MS) },
-  });
+/**
+ * A new request supersedes the merchant's unpaid ones (CAS created -> expired): the terminal serves
+ * one request at a time, and a stale one (e.g. a mistyped amount) must not stay payable.
+ */
+export const createPayment = async (c: CreatePayment) => {
+  const [, created] = await prisma.$transaction([
+    prisma.payment.updateMany({
+      where: { merchantAddress: c.merchantAddress, state: 'created' },
+      data: { state: 'expired', error: 'EXPIRED' },
+    }),
+    prisma.payment.create({
+      data: { ...c, expiresAt: new Date(Date.now() + PAYMENT_TTL_MS) },
+    }),
+  ]);
+  return created;
+};
 
 /** Oldest unexpired `created` payment of a merchant (terminal polling). */
 export const pendingPaymentFor = (merchantAddress: string) =>

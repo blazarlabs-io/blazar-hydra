@@ -58,7 +58,8 @@ reconciled against the head snapshot (on read, on the next authorize of the same
 | `POST /payments/:id/authorize` | user | 200 in a final state, 202 if still `submitted` (keep polling); 409 another payer, 410 expired |
 | `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 503 if the head cannot be read |
 | `POST /deposits/btc`, `POST /deposits/:id/btc-tx`, `GET /deposits/:id` | user | BTC deposit (section 3) |
-| `/deposit`, `/withdraw`, `/pay-merchant`, `/open-head`, `/close-head`, `/incremental-commit`, `/incremental-decommit` | admin key | Operator routes |
+| `POST /withdraw` | admin key, or the owner's Firebase ID token | Merchant claim (decommit of L2 funds to their datum address). An owner token must belong to the account whose address is `body.address` (403 otherwise; device keys get 401), and every requested funds UTxO must have that address in its datum |
+| `/deposit`, `/pay-merchant`, `/open-head`, `/close-head`, `/incremental-commit`, `/incremental-decommit` | admin key | Operator routes |
 
 ### Auth model
 
@@ -71,6 +72,8 @@ All new routes use `Authorization: Bearer <token>`.
 - **Terminal:** a device key, stored as a sha256 hash and mapped to the merchant account. It can
   read pending payments but cannot authorize one (403).
 - **Admin routes and `POST /accounts`:** `ADMIN_API_KEY` (at least 32 characters, constant-time compare).
+- **`POST /withdraw`:** the admin key, or the Firebase ID token of the address owner (see the table).
+  `/deposit` (custodial top-up from the admin wallet) stays admin-only.
 
 ### Executor
 
@@ -200,10 +203,11 @@ The bootstrap creates the merchant funds UTxO in L2. Before it, other payments f
 
 ## 7. Verified on preprod (October 2026)
 
-Backend `https://blazar-api.cardano.vip`; `GET /health` reported version
-`f4fa9aee3e71ce08afdef2f65f5c928761cbe1fd` (the code of this guide) and a single-party Hydra head
-`Open`. One payer and one merchant Firebase test account (provided on request) were seeded with
-`POST /accounts`. Times are UTC, 9 to 10 October 2026.
+Backend `https://blazar-api.cardano.vip` with a single-party Hydra head `Open`. Payments 1 to 4 and
+the deposits ran on version `f4fa9aee3e71ce08afdef2f65f5c928761cbe1fd` (`GET /health`); the
+merchant claim and payment 5 ran on `6c6109774820a2d5fb7b0b0670e024fae6b98bf0`, which only changes
+the `/withdraw` and `/deposit` auth. One payer and one merchant Firebase test account (provided on
+request) were seeded with `POST /accounts`. Times are UTC, 9 to 10 October 2026.
 
 - Payer P: `addr_test1qqv50nl9rp55wt9lvpsshsuu9fxmlqskudg8gmdygpldy6kgtmx9p4gfkl52500g8kcxs7d683w89ne7d5gkgl4yl0jq0ve0zj`
 - Merchant M: `addr_test1qqkmdp58hy4urz4zyszpdawfr23fhc3aky27rd7wh0u95h2pvaaxc8qdc6kmpuhz4t5kchxcneya5qtwfes0549pyujqveuc6j`
@@ -212,9 +216,11 @@ Backend `https://blazar-api.cardano.vip`; `GET /health` reported version
 
 | # | Payment | `paymentId` | `hydraTxId` | Snapshot | Result |
 |---|---|---|---|---|---|
-| 1 | 2 ADA merchant bootstrap | `187e6ec3-4b46-4f89-b915-19d4ab30373c` | `9cfcba4a4f9c63c8de423073f1e740e3cb3c44891a009fda40d3179ee87eb4b4` | 23 | Created 23:41:43, `authorize` HTTP 200 `confirmed` at 23:41:45. The terminal endpoint returned the same `paymentId` with `amountBaseUnits` `"2000000"` (204 when nothing is pending) |
+| 1 | 2 ADA merchant bootstrap | `187e6ec3-4b46-4f89-b915-19d4ab30373c` | `9cfcba4a8f9c63c8de423073f1e740e3cb3c44891a009fda40d3179ee87eb4b4` | 23 | Created 23:41:43, `authorize` HTTP 200 `confirmed` at 23:41:45. The terminal endpoint returned the same `paymentId` with `amountBaseUnits` `"2000000"` (204 when nothing is pending) |
 | 2 | 5 ADA, three concurrent `authorize` calls | `75ddd11b-0401-42fb-814e-126cf2e52484` | `be261f72d408fccd69574f8dd474a2becfef1d92c9933db59d7f99a69c26007e` | 24 | All three HTTP 200, one transaction. P `payableInL2` lovelace 99000000 → 94000000 (exactly 5 ADA, once). M `totalInL2` lovelace 7000000 (2 + 5 ADA, no extra ADA) |
 | 3 | 10000 BTC units (0.0001 BTC), three concurrent `authorize` calls | `8720bbcf-3252-4c37-8ac1-5b7a3693374e` | `80c0a3d38181fec088814c39020be85719101f4f9f4c265c155d51f21f0180d8` | 26 | One transaction. P BTC 49900 → 39900 (exactly 10000). M `totalInL2` BTC 10000 |
+| 4 | 1 ADA, requested from the merchant web UI | `71af6cd7-9ce5-4b0c-a123-ca73ce49896f` | `71c5bfedb55bb9706bab01af26e24502504c681527ded1b5a2575ba4a058a9e5` | 28 | The merchant web page and the app (Android emulator) showed the same transaction and snapshot. A second request left unpaid ended `expired` with no success shown |
+| 5 | 2 ADA re-bootstrap after the merchant claim | `85cbee5d-1193-481b-a332-04742c5d48fe` | `8ca25377f2e55377e8941f12537fd1518d7cf5d6588172da58284df1e2bca24f` | 30 | Three concurrent `authorize` calls, one transaction. P `payableInL2` lovelace 93000000 → 91000000 |
 
 For every payment, `GET /payments/:id` with the payer's token and with the merchant's token returned
 the same record (`confirmed`, same `hydraTxId` and snapshot). No live USDM payment is recorded here;
@@ -248,6 +254,15 @@ The app also showed the payable L2 balance equal to the backend (94.00 ADA), the
 payment 2 read from the backend, and "Payment not confirmed" (backend 404) for a forged
 `payment-success` deep link.
 
+### Merchant claim (`POST /withdraw`, merchant web Cashout)
+
+The merchant cashed out its whole L2 funds UTxO (8 ADA + 10000 BTC units) with its own Firebase
+token. Hydra decommit (an L2 transaction, not visible on L1 explorers)
+`b2342253bd3c6995d2ed1b32471f0d352cc4001335f5e693c58721962302f7b0`; L1 decrement
+`28fad04fed70a1edec537ce4f71fb48a4cc3ecf4dc0fa41c5d5d6931817ea992` (block 5275485), whose output #1
+pays M exactly 8000000 lovelace + 10000 `d2a8592e…425443`. The merchant was then bootstrapped again
+(payment 5). With the payer's token the same `/withdraw` returned 403; without a token, 401.
+
 ### Retries after credit
 
 - A second `POST /deposits/c5e028f9…/btc-tx` with the same txid: the deposit stays `available`, no
@@ -267,8 +282,9 @@ payment 2 read from the backend, and "Payment not confirmed" (backend 404) for a
 - **Single shared deposit address.** The bridge memo and destination are the same for all users.
   Attribution is the first claim of a BTC output, so a second app user could claim another user's
   transaction. Acceptable for one client; per-user destinations would close it.
-- **Contactless transport: BLE.** The payload is only the `paymentId`, so the transport can change
-  without changing the contract.
+- **Contactless transport: BLE.** NFC is not implemented. The payload is only the `paymentId`, so
+  the transport can change without changing the contract.
+- **No live USDM payment yet.** The backend holds no test USDM; the USDM path is covered by tests only.
 - **Payable balance = largest funds UTxO per asset.** A payment spends exactly one L2 funds UTxO,
   so `payableInL2` reports, per asset, the largest one, not the sum. Each BTC deposit becomes its
   own funds UTxO: after the two deposits above, payable BTC showed 39900, not 39900 + 29940.

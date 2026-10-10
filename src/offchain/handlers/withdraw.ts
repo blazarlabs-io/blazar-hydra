@@ -6,6 +6,9 @@ import { env } from '../../config';
 import { TxBuiltResponse } from '../../api/schemas/response';
 import { logger } from '../../shared/logger';
 import { HydraHandler } from '../lib/hydra';
+import { assertRunning } from '../../shared/close-guards';
+import { DBOps } from '../../prisma/db-ops';
+import { fundsOwnerOf } from '../lib/funds';
 
 /**
  * Withdraws funds from the Hydra head back to L1. A withdraw spends UTxOs that live
@@ -17,6 +20,7 @@ async function handleWithdraw(
   lucid: LucidEvolution,
   params: WithdrawSchema
 ): Promise<TxBuiltResponse> {
+  assertRunning(await DBOps.getActiveHead());
   const localLucid = _.cloneDeep(lucid);
   const { address, owner, funds_utxos, network_layer } = params;
   const { SEED: adminSeed, HYDRA_KEY: hydraKey } = env;
@@ -51,6 +55,15 @@ async function handleWithdraw(
     );
     if (fundsUtxos.length === 0) {
       throw new Error('Funds utxos not found in L2 snapshot');
+    }
+    // The route authorized `address`; never decommit funds that belong to another one.
+    const foreign = fundsUtxos.find(
+      (u) => fundsOwnerOf(localLucid, u) !== address
+    );
+    if (foreign) {
+      throw new Error(
+        `Funds utxo ${foreign.txHash}#${foreign.outputIndex} does not belong to ${address}`
+      );
     }
     const walletUtxos = utxosInL2.filter((u) => u.address === adminAddress);
     if (walletUtxos.length === 0) {

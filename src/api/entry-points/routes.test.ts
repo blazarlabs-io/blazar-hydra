@@ -274,4 +274,9 @@ describe('error replies are JSON without internals', () => {
     const p = await prisma.process.create({ data: { status: 'RUNNING' } });
     expect(await (await get(`/state?id=${p.id}`)).json()).toEqual({ status: 'RUNNING' });
   });
+
+  it('GET /query-funds rejects a missing or invalid address', async () => {
+    for (const q of ['', '?address=garbage', `?address=${USER}&address=${USER}`])
+      await clean(await get(`${API_ROUTES.QUERY_FUNDS}${q}`), 400);
+  });
 });

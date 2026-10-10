@@ -1,6 +1,7 @@
 import e from 'express';
 import { API_ROUTES } from '../schemas/routes';
 import {
+  addressSchema,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,
@@ -189,11 +190,16 @@ const setRoutes = (
 
   expressApp.get(API_ROUTES.QUERY_FUNDS, async (req, res) => {
     try {
-      const { address } = req.query as { address: string };
+      // A missing or malformed address answered 200 with empty funds, i.e. a silent zero balance.
+      const address = addressSchema.parse(req.query.address);
       const _res = await handleQueryFunds(lucid, address);
       res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`${STATUS.OK}`, `${API_ROUTES.QUERY_FUNDS}`);
     } catch (e) {
+      if (e instanceof ZodError) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'BAD_REQUEST' });
+        return;
+      }
       if (e instanceof HydraUnavailableError) {
         res.status(STATUS.SERVICE_UNAVAILABLE).json({ error: 'HYDRA_UNAVAILABLE' });
         logger.error(`${STATUS.SERVICE_UNAVAILABLE} - ${API_ROUTES.QUERY_FUNDS}: ${e}`);

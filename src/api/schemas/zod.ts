@@ -170,6 +170,7 @@ const CreateAccountZodSchema = z
 
 export {
   Layer,
+  addressSchema,
   CreateAccountZodSchema,
   DepositZodSchema,
   ManageHeadZodSchema,

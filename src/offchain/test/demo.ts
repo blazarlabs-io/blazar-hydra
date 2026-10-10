@@ -1,17 +1,16 @@
 import {
   Address,
   Assets,
-  Blockfrost,
   Data,
   getAddressDetails,
   Lucid,
   LucidEvolution,
   Network,
-  OutRef,
   toHex,
   validatorToAddress,
 } from '@lucid-evolution/lucid';
 import { env } from '../../config';
+import { makeProvider } from '../lib/provider';
 import {
   assetsToDataPairs,
   bech32ToAddressType,
@@ -41,7 +40,7 @@ import { TxBuiltResponse } from '../../api/schemas/response';
 
 const adminSeed = env.SEED;
 const lucid = (await Lucid(
-  new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
+  makeProvider(env),
   env.NETWORK as Network
 )) as LucidEvolution;
 lucid.selectWallet.fromSeed(adminSeed);
@@ -90,7 +89,6 @@ const deposit = async (fromWallet: 1 | 2, tokens?: Assets) => {
   const address = await lucid.wallet().address();
   const privKey = getPrivateKey(thisSeed!);
   const publicKey = toHex(privKey.to_public().to_raw_bytes());
-  const funds: OutRef[] = [];
   const totalDeposit: [string, bigint][] = [['lovelace', 20_000_000n]];
   if (tokens) {
     Object.entries(tokens).forEach((e) => totalDeposit.push(e));

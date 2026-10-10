@@ -6,7 +6,8 @@ import {
   UTxO,
 } from '@lucid-evolution/lucid';
 import { QueryFundsResponse } from '../../api/schemas/response';
-import { HydraHandler } from '../lib/hydra';
+import { fetchSnapshot } from '../lib/hydra';
+import { payableInL2 } from '../lib/funds';
 import _ from 'lodash';
 import { env } from '../../config';
 import {
@@ -65,18 +66,12 @@ async function handleQueryFunds(
 
   // Fetch funds in L2. Precondition: the head must be opened
   try {
-    const hydra = new HydraHandler(localLucid, env.ADMIN_NODE_WS_URL);
-    fundsInL2 = await hydra
-      .getSnapshot()
-      .then((utxos) => utxos.filter((utxo) => isOwnUtxo(utxo, address)));
-    await hydra.stop();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (error: any) {
-    if (JSON.stringify(error).includes('ECONNREFUSED')) {
-      logger.error(`Not connected to websocket`);
-    } else {
-      logger.error(`Error querying funds in L2: ${error}`);
-    }
+    fundsInL2 = (await fetchSnapshot(env.ADMIN_NODE_API_URL)).filter((utxo) =>
+      isOwnUtxo(utxo, address)
+    );
+  } catch (error) {
+    logger.error(`Error querying funds in L2: ${error}`);
+    throw new HydraUnavailableError(`${error}`);
   }
 
   const addAssetsFromUtxo = (acc: Assets, utxo: UTxO) =>
@@ -100,7 +95,13 @@ async function handleQueryFunds(
     totalInL1,
     fundsInL2,
     totalInL2,
+    payableInL2: payableInL2(fundsInL2, (unit) =>
+      unit.startsWith(controlTokenPolicy)
+    ),
   };
 }
 
-export { handleQueryFunds };
+/** The head snapshot could not be read: the route answers 503 instead of an empty L2. */
+class HydraUnavailableError extends Error {}
+
+export { handleQueryFunds, HydraUnavailableError };

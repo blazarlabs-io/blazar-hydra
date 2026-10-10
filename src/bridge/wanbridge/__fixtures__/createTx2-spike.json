@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "data": {
+    "tx": {
+      "fromAccount": "tb1qapnye2f5fjddqaguz4q7klhhtv2cqr5qgkc0pu",
+      "toAccount": "tb1p3l2xzu3lpz68c8ml5qydml44g8vu23q5wjl62cujngyh8xacr5pqyylxef",
+      "value": 50000,
+      "memo": "070205000000000000000000bf5e2188e154f057e33ebe46b12082f755747916492dbdc43ef9266cb1688740e1188f89bf7a383bb40a733b79d70d02161b31adbb53626b"
+    },
+    "receiveAmount": "0.000499",
+    "feeAndQuota": {
+      "symbol": "BTC",
+      "minQuota": "32",
+      "maxQuota": "10000000000000000000000000000000000000000",
+      "networkFee": {
+        "value": "0",
+        "isPercent": false
+      },
+      "operationFee": {
+        "value": "0.002",
+        "isPercent": true,
+        "minFeeLimit": "16",
+        "maxFeeLimit": "320",
+        "discountPercent": "1"
+      }
+    }
+  }
+}

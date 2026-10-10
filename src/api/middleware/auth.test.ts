@@ -6,6 +6,7 @@ import { prisma } from '../../config';
 import {
   requireAccount,
   requireAdmin,
+  requireAdminOrOwner,
   sha256Hex,
   verifyFirebaseIdToken,
 } from './auth';
@@ -94,9 +95,10 @@ describe('verifyFirebaseIdToken', () => {
 
 function call(
   handler: ReturnType<typeof requireAccount>,
-  authorization?: string
+  authorization?: string,
+  body?: unknown
 ) {
-  const req = { headers: { authorization } } as unknown as Request;
+  const req = { headers: { authorization }, body } as unknown as Request;
   const res = {
     locals: {} as Record<string, unknown>,
     status: vi.fn().mockReturnThis(),
@@ -182,6 +184,41 @@ describe('requireAccount / requireAdmin', () => {
       `Bearer ${deviceKey}`,
     ]) {
       const { res, next } = await admin(h);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    }
+  });
+
+  it('requireAdminOrOwner (/withdraw, /deposit): admin, or the Firebase owner of the address', async () => {
+    const owner = requireAdminOrOwner((b) => b.address);
+    const admin = await call(
+      owner,
+      'Bearer test-admin-key-0123456789abcdef0123',
+      {
+        address: 'addr_anyone',
+      }
+    );
+    expect(admin.next).toHaveBeenCalledOnce();
+
+    const self = await call(owner, `Bearer ${await valid(uid)}`, {
+      address: 'addr_user',
+    });
+    expect(self.next).toHaveBeenCalledOnce();
+    expect(self.res.locals.caller).toMatchObject({ address: 'addr_user' });
+
+    const other = await call(owner, `Bearer ${await valid(uid)}`, {
+      address: 'addr_merchant',
+    });
+    expect(other.next).not.toHaveBeenCalled();
+    expect(other.res.status).toHaveBeenCalledWith(403);
+
+    // no auth, a forged token, and the merchant's own device key (a terminal must not move funds)
+    for (const h of [
+      undefined,
+      `Bearer ${await sign({ iss: ISS, aud: PROJECT, sub: uid, iat: now(), exp: now() + 60 }, otherKey)}`,
+      `Bearer ${deviceKey}`,
+    ]) {
+      const { res, next } = await call(owner, h, { address: 'addr_merchant' });
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
     }

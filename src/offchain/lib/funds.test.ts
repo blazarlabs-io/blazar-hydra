@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { UTxO } from '@lucid-evolution/lucid';
+import { LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { Data } from '@lucid-evolution/lucid';
-import { findFundUtxos, assertFundsEmpty, payableInL2 } from './funds';
+import { findFundUtxos, assertFundsEmpty, payableInL2, fundsOwnerOf } from './funds';
 import { FundsDatum, FundsDatumT } from './types';
 import { BTC_UNIT } from '../../bridge/wanbridge';
 import { ASSETS } from '../../shared/payment-contract';
@@ -56,5 +56,21 @@ describe('payableInL2 with bridged BTC', () => {
       lovelace: '3000000',
     });
     expect(ASSETS[BTC_UNIT as keyof typeof ASSETS].decimals).toBe(8);
+  });
+});
+
+describe('fundsOwnerOf (withdraw ownership check)', () => {
+  const lucid = { config: () => ({ network: 'Preprod' }) } as unknown as LucidEvolution;
+  // Merchant M's live L2 funds UTxO datum (query-funds, 2026-10-10).
+  const MERCHANT_DATUM =
+    'd8799fd8799fd8799f581c2db68687b92bc18aa2240416f5c91aa29be23db115e1b7cebbf85a5dffd8799fd8799fd8799f581c41677a6c1c0dc6adb0f2e2aae96c5cd89e49da016e4e60fa54a12724ffffffff00d87a80ff';
+  const M =
+    'addr_test1qqkmdp58hy4urz4zyszpdawfr23fhc3aky27rd7wh0u95h2pvaaxc8qdc6kmpuhz4t5kchxcneya5qtwfes0549pyujqveuc6j';
+
+  it('returns the datum address in bech32, null without a FundsDatum', () => {
+    expect(fundsOwnerOf(lucid, utxo({ datum: MERCHANT_DATUM }))).toBe(M);
+    expect(fundsOwnerOf(lucid, utxo({ datum: USER_FUNDS_DATUM }))).not.toBe(M);
+    expect(fundsOwnerOf(lucid, utxo({ datum: null }))).toBeNull();
+    expect(fundsOwnerOf(lucid, utxo({ datum: 'd87980' }))).toBeNull();
   });
 });

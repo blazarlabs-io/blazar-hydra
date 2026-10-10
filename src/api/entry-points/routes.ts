@@ -168,21 +168,21 @@ const setRoutes = (
 
   expressApp.get('/state', async (req, res) => {
     try {
-      const procId = req.query.id as string;
-      const process = await prisma.process
-        .findUniqueOrThrow({
-          where: { id: procId },
-        })
-        .catch((error) => {
-          logger.error('DB Error while fetching status: ' + error);
-          throw error;
-        });
+      const procId = req.query.id;
+      // A missing or repeated id must not reach Prisma: its error quotes our source and schema.
+      const process =
+        typeof procId === 'string' &&
+        (await prisma.process.findUnique({ where: { id: procId } }));
+      if (!process) {
+        res.status(STATUS.NOT_FOUND).json({ error: 'NOT_FOUND' });
+        return;
+      }
       res.status(STATUS.OK).json({ status: process.status });
       logger.info(`${STATUS.OK}`, `/state`);
     } catch (e) {
       res
         .status(STATUS.INTERNAL_SERVER_ERROR)
-        .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        .json({ error: ERRORS.INTERNAL_SERVER_ERROR });
       logger.error(`${STATUS.INTERNAL_SERVER_ERROR}`, `/state: ${e}`);
     }
   });
@@ -511,6 +511,24 @@ const setRoutes = (
       if (!d) return notFound(res);
       res.status(STATUS.OK).json(toDepositDto(d));
     })
+  );
+
+  // Last: body-parser errors (413, 415, bad encoding) and anything a route lets escape. Express's
+  // default handler answered these in HTML with the stack trace (NODE_ENV is unset in the image).
+  expressApp.use(
+    (err: unknown, req: e.Request, res: e.Response, next: e.NextFunction) => {
+      if (res.headersSent) return next(err);
+      const s = (err as { status?: unknown })?.status;
+      const status =
+        typeof s === 'number' && s >= 400 && s < 500
+          ? s
+          : STATUS.INTERNAL_SERVER_ERROR;
+      if (status === STATUS.INTERNAL_SERVER_ERROR)
+        logger.error(`${status} ${req.method} ${req.path}: ${err}`);
+      res
+        .status(status)
+        .json({ error: status < 500 ? 'BAD_REQUEST' : 'INTERNAL' });
+    }
   );
 };
 

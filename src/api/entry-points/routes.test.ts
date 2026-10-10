@@ -239,3 +239,39 @@ describe('routes', () => {
     expect(reclaim.status).toBe(409); // that BTC output already funds the first deposit
   });
 });
+
+// Seen live on 6c61097: HTML stack traces, Prisma source excerpts and Buffer keys in replies.
+describe('error replies are JSON without internals', () => {
+  const post = (path: string, init: RequestInit) =>
+    fetch(`${base}${path}`, { method: 'POST', ...init });
+  const json = { 'content-type': 'application/json' };
+  const clean = async (r: Response, status: number) => {
+    expect(r.status).toBe(status);
+    expect(r.headers.get('content-type')).toMatch(/^application\/json/);
+    const text = await r.text();
+    expect(text).not.toMatch(/node_modules|\.ts:\d|Prisma|readUInt|<html/);
+    return JSON.parse(text);
+  };
+
+  it('malformed JSON is a 400', async () => {
+    await clean(await post(API_ROUTES.PAYMENTS, { headers: json, body: '{"a":' }), 400);
+  });
+
+  it('body-parser errors (too large, bad encoding) carry no stack', async () => {
+    await clean(await post('/nope', { headers: { 'content-type': 'text/plain' }, body: 'a'.repeat(1_100_000) }), 413);
+    await clean(await post('/nope', { headers: { ...json, 'content-encoding': 'gzip' }, body: 'notgzip' }), 400);
+  });
+
+  it('an empty JSON body is validated as {}', async () => {
+    const r = await post(API_ROUTES.ACCOUNTS, { headers: { ...json, authorization: ADMIN }, body: '' });
+    const { issues } = await clean(r, 400);
+    expect(issues.map((i: { path: string[] }) => i.path[0])).toEqual(['kind', 'address']);
+  });
+
+  it('GET /state: 404 for a missing, repeated or unknown id', async () => {
+    for (const q of ['', '?id=a&id=b', `?id=${randomUUID()}`])
+      expect(await clean(await get(`/state${q}`), 404)).toEqual({ error: 'NOT_FOUND' });
+    const p = await prisma.process.create({ data: { status: 'RUNNING' } });
+    expect(await (await get(`/state?id=${p.id}`)).json()).toEqual({ status: 'RUNNING' });
+  });
+});

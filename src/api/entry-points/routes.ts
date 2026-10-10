@@ -76,8 +76,9 @@ const setRoutes = (
   expressApp: e.Application,
   deposits: DepositDeps = depositDeps(lucid)
 ) => {
-  // User Routes: the admin key, or the Firebase token of the address's owner (merchant-web Topup/Cashout)
-  expressApp.post(API_ROUTES.DEPOSIT, requireAdminOrOwner((b) => b.user_address), async (req, res) => {
+  // User Routes
+  // Admin only: the admin wallet funds and signs the deposit (custodial top-up is a setup operation).
+  expressApp.post(API_ROUTES.DEPOSIT, requireAdmin, async (req, res) => {
     try {
       const depositSchema = DepositZodSchema.parse(req.body);
       const _res = await handleDeposit(lucid, depositSchema);
@@ -106,6 +107,7 @@ const setRoutes = (
     }
   });
 
+  // The admin key, or the Firebase token of the address's owner (merchant-web Cashout).
   expressApp.post(API_ROUTES.WITHDRAW, requireAdminOrOwner((b) => b.address), async (req, res) => {
     try {
       const withdrawSchema = WithdrawZodSchema.parse(req.body);

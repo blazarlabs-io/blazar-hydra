@@ -91,7 +91,7 @@ describe('routes', () => {
   });
 
   it.each([API_ROUTES.DEPOSIT, API_ROUTES.WITHDRAW])(
-    '%s still accepts ADMIN_API_KEY (owner tokens: auth.test.ts)',
+    '%s accepts ADMIN_API_KEY (/withdraw owner tokens: auth.test.ts)',
     async (path) => {
       // past auth: the empty body fails validation
       expect((await api(path, ADMIN, {})).status).toBe(500);

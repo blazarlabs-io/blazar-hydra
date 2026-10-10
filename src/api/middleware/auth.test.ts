@@ -189,7 +189,7 @@ describe('requireAccount / requireAdmin', () => {
     }
   });
 
-  it('requireAdminOrOwner (/withdraw, /deposit): admin, or the Firebase owner of the address', async () => {
+  it('requireAdminOrOwner (/withdraw): admin, or the Firebase owner of the address', async () => {
     const owner = requireAdminOrOwner((b) => b.address);
     const admin = await call(
       owner,

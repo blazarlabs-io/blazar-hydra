@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "data": [
+    {
+      "tokenPairID": "517",
+      "symbol": "BTC",
+      "fromChain": {
+        "chainId": null,
+        "slip44ChainID": "0x80000000",
+        "chainType": "BTC",
+        "chainName": "Bitcoin"
+      },
+      "toChain": {
+        "chainId": null,
+        "slip44ChainID": "0x80000717",
+        "chainType": "ADA",
+        "chainName": "Cardano"
+      },
+      "fromToken": {
+        "address": "0x0000000000000000000000000000000000000000",
+        "name": "bitcoin",
+        "symbol": "BTC",
+        "decimals": "8"
+      },
+      "toToken": {
+        "address": "0x64326138353932656339363733616331386665613130343438383566393435313865393534616230636232623662623061333238643261662e343235343433",
+        "name": "bitcoin",
+        "symbol": "BTC",
+        "decimals": "8"
+      }
+    }
+  ]
+}

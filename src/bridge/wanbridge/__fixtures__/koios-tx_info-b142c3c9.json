@@ -1,0 +1,76 @@
+[
+  {
+    "tx_hash": "b142c3c995e8f3c8d630fb0eda8673f55d1b8e2432dfee154255454cb1075abc",
+    "block_height": 4317235,
+    "metadata": {
+      "1": {
+        "type": 9,
+        "uniqueId": "0x6633762d996f7932d159f76573c388c4282e8ea7ee7dfa6e7eda1579f67cf890",
+        "tokenPairID": 517
+      }
+    },
+    "outputs": [
+      {
+        "value": "1150770",
+        "tx_hash": "b142c3c995e8f3c8d630fb0eda8673f55d1b8e2432dfee154255454cb1075abc",
+        "tx_index": 0,
+        "asset_list": [
+          {
+            "decimals": 8,
+            "quantity": "199680",
+            "policy_id": "d2a8592ec9673ac18fea1044885f94518e954ab0cb2b6bb0a328d2af",
+            "asset_name": "425443",
+            "fingerprint": "asset1gfrdq54fgrjytstjud5642trwmm2rckeeyrerl"
+          }
+        ],
+        "datum_hash": null,
+        "stake_addr": "stake_test1upgaxwezr68gkllrq3eusy4knppq8dz8tcm4h5pgemwe87q7xq6kr",
+        "inline_datum": null,
+        "payment_addr": {
+          "cred": "d5c1e69028511ecf01725d75e1c8167b65e4363cec78642f260a84a7",
+          "bech32": "addr_test1qr2ure5s9pg3ancpwfwhtcwgzeaktepk8nk8sep0yc9gff636vajy85w3dl7xprneqftdxzzqw6ywh3ht0gz3nkaj0uqkmdz5f"
+        },
+        "reference_script": null
+      },
+      {
+        "value": "9885605149",
+        "tx_hash": "b142c3c995e8f3c8d630fb0eda8673f55d1b8e2432dfee154255454cb1075abc",
+        "tx_index": 2,
+        "asset_list": [],
+        "datum_hash": null,
+        "stake_addr": "stake_test1ur7rkhxz96s4jtcja55l3nhsxzceu6wmv3u4ttykhawy9xsdz4m5e",
+        "inline_datum": null,
+        "payment_addr": {
+          "cred": "fc3b5cc22ea1592f12ed29f8cef030b19e69db647955ac96bf5c429a",
+          "bech32": "addr_test1qr7rkhxz96s4jtcja55l3nhsxzceu6wmv3u4ttykhawy9xhu8dwvyt4ptyh39mfflr80qv93ne5akere2kkfd06ug2dq9y7rvt"
+        },
+        "reference_script": null
+      },
+      {
+        "value": "1219730",
+        "tx_hash": "b142c3c995e8f3c8d630fb0eda8673f55d1b8e2432dfee154255454cb1075abc",
+        "tx_index": 1,
+        "asset_list": [
+          {
+            "decimals": 0,
+            "quantity": "1",
+            "policy_id": "2707ef39e2521117d2d3851ef80ad17737eb8294a58397948aa28568",
+            "asset_name": "4d436865636b436f696e",
+            "fingerprint": "asset1wfnuu23rq0fy8ux2fh79fd9wmn7tskkwt3g78m"
+          }
+        ],
+        "datum_hash": "58b85f4b6b8f3d8e62f406ee77f09afc99a9e1b959389367969bcce3c485c6ad",
+        "stake_addr": "stake_test17p8g82t994mpvlvj3xcephhn2fmtasnzlvxdrr92fgyrt4gw25zwy",
+        "inline_datum": {
+          "bytes": null,
+          "value": null
+        },
+        "payment_addr": {
+          "cred": "6faf1930c605c51b1898c8ca153d675a8d3857eac02fae10da58de4b",
+          "bech32": "addr_test1xph67xfscczu2xccnryv59favadg6wzhatqzltssmfvduj6wsw5k2ttkze7e9zd3jr00x5nkhmpx97cv6xx25jsgxh2snm3zu0"
+        },
+        "reference_script": null
+      }
+    ]
+  }
+]

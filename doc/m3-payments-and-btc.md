@@ -313,8 +313,14 @@ pays M exactly 8000000 lovelace + 10000 `d2a8592e…425443`. The merchant was th
   second credit.
 - A second `POST /payments/8720bbcf…/authorize`: the same `confirmed` payment, no second debit.
 - P `payableInL2` after the retries: BTC 39900, lovelace 94000000 (unchanged).
-- Idempotency across a backend restart was not exercised live; it is covered by the automated
-  tests (resumable poller, compare-and-set transitions, reconcile at boot).
+- Idempotency across a backend restart was also exercised live (2026-10-11): deposit
+  `b8660173…` (BTC `db996be112ffa5bd8bb13c374aef884a37165640ba92762b6410beb239b442d3`, 10000 sat)
+  was in `bridge_processing` when the backend was restarted (same image, config change only).
+  WanBridge minted on Cardano during the restart (`30befe47b63509111765e9eaa7da124d9e4a6ec0ddafbfa676a212435af8e375`);
+  the resumed poller took the deposit to `available` (Hydra deposit tx
+  `3a7bae137a0b57fb79d4f7b925c7105fba18f172f21870a984b205135994d6a6`), P's BTC total rose by
+  exactly 9980 once, and resubmitting the txid credited nothing. The automated tests cover the
+  same paths (resumable poller, compare-and-set transitions, reconcile at boot).
 
 ## 8. Known limitations
 

@@ -149,7 +149,11 @@ describe('routes', () => {
     expect(
       (await api(API_ROUTES.PAYMENTS, m, { ...amount, merchantAddress: USER }))
         .status
-    ).toBe(403);
+    ).toBe(403); // another address: still forbidden
+    // no merchantAddress: the caller's account address (merchant web without a connected wallet)
+    const implicit = await api(API_ROUTES.PAYMENTS, m, { assetUnit: 'lovelace', amountBaseUnits: '1000000' });
+    expect(implicit.status).toBe(201);
+    expect(await implicit.json()).toMatchObject({ merchantAddress: MERCHANT, state: 'created' });
     expect(
       (
         await api(API_ROUTES.PAYMENTS, m, {
@@ -195,6 +199,49 @@ describe('routes', () => {
     expect((await get(`/payments/${randomUUID()}`, m)).status).toBe(404);
   });
 
+  it('NFC tag: a payer reads the pending payment of a terminal by merchant account id', async () => {
+    const m = `Bearer ${merchantKey}`;
+    const u = `Bearer ${userKey}`;
+    const merchant = await prisma.account.findFirstOrThrow({ where: { kind: 'merchant', address: MERCHANT } });
+    const user = await prisma.account.findFirstOrThrow({ where: { kind: 'user' } });
+    const byId = (id: string, auth?: string) => get(`/terminals/${id}/pending-payment`, auth);
+    const create = async () =>
+      (
+        await (
+          await api(API_ROUTES.PAYMENTS, m, { merchantAddress: MERCHANT, assetUnit: 'lovelace', amountBaseUnits: '2000000' })
+        ).json()
+      ).paymentId as string;
+
+    expect((await byId(merchant.id, u)).status).toBe(204); // nothing pending (previous test settled it)
+
+    const id = await create();
+    const r = await byId(merchant.id, u);
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body).toMatchObject({ paymentId: id, merchantAddress: MERCHANT, state: 'created', amountBaseUnits: '2000000' });
+    expect(body).toEqual(await (await get(API_ROUTES.TERMINAL_PENDING_PAYMENT, m)).json()); // same as the terminal sees
+
+    // callers: users only, like the other requireAccount('user') routes
+    expect((await byId(merchant.id)).status).toBe(401);
+    expect((await byId(merchant.id, 'Bearer unknown-device-key-0123456789abcdef')).status).toBe(401);
+    expect((await byId(merchant.id, m)).status).toBe(403); // merchant / terminal device key
+
+    // only merchant account ids resolve
+    for (const bad of [randomUUID(), 'not-a-uuid', user.id]) {
+      const nf = await byId(bad, u);
+      expect(nf.status).toBe(404);
+      expect(await nf.json()).toEqual({ error: 'NOT_FOUND' });
+    }
+
+    await prisma.payment.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect((await byId(merchant.id, u)).status).toBe(204); // expired
+
+    const id2 = await create();
+    expect((await byId(merchant.id, u)).status).toBe(200);
+    await prisma.payment.update({ where: { id: id2 }, data: { state: 'authorized', payerAddress: USER } });
+    expect((await byId(merchant.id, u)).status).toBe(204); // already authorized
+  });
+
   it('BTC deposits: user-only, integer-string sats, own deposits only', async () => {
     await prisma.deposit.deleteMany();
     const u = `Bearer ${userKey}`;
@@ -237,5 +284,46 @@ describe('routes', () => {
     const short = await (await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: '150000' })).json();
     const reclaim = await api(`/deposits/${short.depositId}/btc-tx`, u, { btcTxid: BTC_TXID });
     expect(reclaim.status).toBe(409); // that BTC output already funds the first deposit
+  });
+});
+
+// Seen live on 6c61097: HTML stack traces, Prisma source excerpts and Buffer keys in replies.
+describe('error replies are JSON without internals', () => {
+  const post = (path: string, init: RequestInit) =>
+    fetch(`${base}${path}`, { method: 'POST', ...init });
+  const json = { 'content-type': 'application/json' };
+  const clean = async (r: Response, status: number) => {
+    expect(r.status).toBe(status);
+    expect(r.headers.get('content-type')).toMatch(/^application\/json/);
+    const text = await r.text();
+    expect(text).not.toMatch(/node_modules|\.ts:\d|Prisma|readUInt|<html/);
+    return JSON.parse(text);
+  };
+
+  it('malformed JSON is a 400', async () => {
+    await clean(await post(API_ROUTES.PAYMENTS, { headers: json, body: '{"a":' }), 400);
+  });
+
+  it('body-parser errors (too large, bad encoding) carry no stack', async () => {
+    await clean(await post('/nope', { headers: { 'content-type': 'text/plain' }, body: 'a'.repeat(1_100_000) }), 413);
+    await clean(await post('/nope', { headers: { ...json, 'content-encoding': 'gzip' }, body: 'notgzip' }), 400);
+  });
+
+  it('an empty JSON body is validated as {}', async () => {
+    const r = await post(API_ROUTES.ACCOUNTS, { headers: { ...json, authorization: ADMIN }, body: '' });
+    const { issues } = await clean(r, 400);
+    expect(issues.map((i: { path: string[] }) => i.path[0])).toEqual(['kind', 'address']);
+  });
+
+  it('GET /state: 404 for a missing, repeated or unknown id', async () => {
+    for (const q of ['', '?id=a&id=b', `?id=${randomUUID()}`])
+      expect(await clean(await get(`/state${q}`), 404)).toEqual({ error: 'NOT_FOUND' });
+    const p = await prisma.process.create({ data: { status: 'RUNNING' } });
+    expect(await (await get(`/state?id=${p.id}`)).json()).toEqual({ status: 'RUNNING' });
+  });
+
+  it('GET /query-funds rejects a missing or invalid address', async () => {
+    for (const q of ['', '?address=garbage', `?address=${USER}&address=${USER}`])
+      await clean(await get(`${API_ROUTES.QUERY_FUNDS}${q}`), 400);
   });
 });

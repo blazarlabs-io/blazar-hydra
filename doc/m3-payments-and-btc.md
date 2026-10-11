@@ -30,6 +30,12 @@ Phone app --BLE (read)--> BLE terminal (Raspberry Pi)        Merchant web
 
 Amounts are integer strings in base units end to end (ADA 6, USDM 6, BTC 8 decimals).
 
+USDM is Moneta's official preprod test token tUSDM (CIP-68 fungible token), unit
+`e675b46e4d2242c991a8932a99db3044e80515ae14b4c4ccf6b3f4c9.0014df10745553444d`. Its 6 decimals come
+from the `decimals` field of its CIP-68 reference datum (`…000643b0745553444d`). Milestone 2 used a
+team test token (`77484e67c1ed6c96f55b89206cb5d6caae9a09a0bd473bba817929fe.5553444d`), which can no
+longer be obtained on preprod.
+
 ## 2. Payment contract
 
 The backend owns the payment. Success means a `SnapshotConfirmed` that contains the transaction.
@@ -52,11 +58,12 @@ reconciled against the head snapshot (on read, on the next authorize of the same
 |---|---|---|
 | `GET /health` | none | `{status, version, hydra}` |
 | `POST /accounts` | admin key | Seed an account: `{kind: user\|merchant, address, firebaseUid?, apiKey?}` |
-| `POST /payments` | merchant | `{merchantAddress, assetUnit, amountBaseUnits}`; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
+| `POST /payments` | merchant | `{merchantAddress?, assetUnit, amountBaseUnits}`; `merchantAddress` defaults to the caller's account address, any other address is 403; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
 | `GET /terminal/pending-payment` | merchant (device key) | Oldest unexpired `created` payment, or 204 |
+| `GET /terminals/:id/pending-payment` | user | The same payment for the merchant account `:id` (NFC terminal tag, below), or 204; 404 if `:id` is not a merchant account |
 | `GET /payments/:id` | any account | A merchant sees its own; a user sees unclaimed ones and its own |
 | `POST /payments/:id/authorize` | user | 200 in a final state, 202 if still `submitted` (keep polling); 409 another payer, 410 expired |
-| `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 503 if the head cannot be read |
+| `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 400 for a missing or malformed address; 503 if the head cannot be read |
 | `POST /deposits/btc`, `POST /deposits/:id/btc-tx`, `GET /deposits/:id` | user | BTC deposit (section 3) |
 | `POST /withdraw` | admin key, or the owner's Firebase ID token | Merchant claim (decommit of L2 funds to their datum address). An owner token must belong to the account whose address is `body.address` (403 otherwise; device keys get 401), and every requested funds UTxO must have that address in its datum |
 | `/deposit`, `/pay-merchant`, `/open-head`, `/close-head`, `/incremental-commit`, `/incremental-decommit` | admin key | Operator routes |
@@ -74,6 +81,39 @@ All new routes use `Authorization: Bearer <token>`.
 - **Admin routes and `POST /accounts`:** `ADMIN_API_KEY` (at least 32 characters, constant-time compare).
 - **`POST /withdraw`:** the admin key, or the Firebase ID token of the address owner (see the table).
   `/deposit` (custodial top-up from the admin wallet) stays admin-only.
+
+### NFC terminal tag
+
+The terminal can carry a static NFC tag, as an alternative to BLE. The tag holds one NDEF URI record:
+
+```
+myapp://home/nfc?terminal=<merchant account id>
+```
+
+`<merchant account id>` is the `id` that `POST /accounts` returned for the terminal's merchant
+account (section 6). Merchant accounts that share an address see the same payments. The app reads
+the tag and calls `GET /terminals/<id>/pending-payment` with the payer's Firebase ID token. The reply
+is the payment the terminal itself gets from `GET /terminal/pending-payment` (200), 204 when nothing
+is pending, and 404 `{"error":"NOT_FOUND"}` when the id is not a merchant account. From there the
+flow is the BLE one: `GET /payments/:id`, `POST /payments/:id/authorize`, then polling until a final
+state. The tag does not change between payments, so the terminal needs no NFC hardware. The app also
+accepts `myapp://home/nfc?paymentId=<uuid>` for a single payment (useful for testing).
+
+Write the tag once:
+
+- **NTAG213 or NTAG215 sticker:** with a phone app such as NFC Tools (Android or iOS), add a URI
+  record with the full URI (no `http://` prefix), write it, and hold the phone to the sticker. The
+  record is about 70 bytes; an NTAG213 holds 144. Stick it on the terminal. Locking the tag
+  read-only afterwards (irreversible) stops anyone from rewriting it.
+- **Flipper Zero (testing):** NFC, Add Manually, NTAG215, Emulate. While it emulates, write the URI
+  onto it from the phone as above.
+
+BLE stays available: the terminal keeps advertising the pending payment, and the app can use it
+when the phone has no NFC. The tag is read inside the app (the payer starts the scan); iOS
+background tag reading does not open custom schemes such as `myapp://`. On iPhone, tag reading
+uses the "Near Field Communication Tag Reading" capability of the Apple Developer Program.
+Android needs a phone with NFC. Whoever knows the tag id can read the merchant's pending payment (id, amount,
+asset), the same data BLE broadcasts; paying still takes an authenticated `authorize` by a payer.
 
 ### Executor
 
@@ -206,8 +246,10 @@ The bootstrap creates the merchant funds UTxO in L2. Before it, other payments f
 Backend `https://blazar-api.cardano.vip` with a single-party Hydra head `Open`. Payments 1 to 4 and
 the deposits ran on version `f4fa9aee3e71ce08afdef2f65f5c928761cbe1fd` (`GET /health`); the
 merchant claim and payment 5 ran on `6c6109774820a2d5fb7b0b0670e024fae6b98bf0`, which only changes
-the `/withdraw` and `/deposit` auth. One payer and one merchant Firebase test account (provided on
-request) were seeded with `POST /accounts`. Times are UTC, 9 to 10 October 2026.
+the `/withdraw` and `/deposit` auth; payment 6 ran on `692f92b0cdda500f8bd0c0c4e97966ad00d6fbad`
+(the tUSDM unit of section 1, on top of error-handling fixes). One payer and one merchant Firebase
+test account (provided on request) were seeded with `POST /accounts`. Times are UTC, 9 to 11
+October 2026.
 
 - Payer P: `addr_test1qqv50nl9rp55wt9lvpsshsuu9fxmlqskudg8gmdygpldy6kgtmx9p4gfkl52500g8kcxs7d683w89ne7d5gkgl4yl0jq0ve0zj`
 - Merchant M: `addr_test1qqkmdp58hy4urz4zyszpdawfr23fhc3aky27rd7wh0u95h2pvaaxc8qdc6kmpuhz4t5kchxcneya5qtwfes0549pyujqveuc6j`
@@ -221,10 +263,11 @@ request) were seeded with `POST /accounts`. Times are UTC, 9 to 10 October 2026.
 | 3 | 10000 BTC units (0.0001 BTC), three concurrent `authorize` calls | `8720bbcf-3252-4c37-8ac1-5b7a3693374e` | `80c0a3d38181fec088814c39020be85719101f4f9f4c265c155d51f21f0180d8` | 26 | One transaction. P BTC 49900 → 39900 (exactly 10000). M `totalInL2` BTC 10000 |
 | 4 | 1 ADA, requested from the merchant web UI | `71af6cd7-9ce5-4b0c-a123-ca73ce49896f` | `71c5bfedb55bb9706bab01af26e24502504c681527ded1b5a2575ba4a058a9e5` | 28 | The merchant web page and the app (Android emulator) showed the same transaction and snapshot. A second request left unpaid ended `expired` with no success shown |
 | 5 | 2 ADA re-bootstrap after the merchant claim | `85cbee5d-1193-481b-a332-04742c5d48fe` | `8ca25377f2e55377e8941f12537fd1518d7cf5d6588172da58284df1e2bca24f` | 30 | Three concurrent `authorize` calls, one transaction. P `payableInL2` lovelace 93000000 → 91000000 |
+| 6 | 10 tUSDM (10000000 units), three concurrent `authorize` calls, 11 October 2026 | `9abf0dcb-2233-4468-b2e7-c2f3c22ff211` | `b4daa03f54e2673c36fb0f9f2b90771fd6cf507442413092eea4a744636570e9` | 34 | Backend `692f92b0`. One transaction. P tUSDM 100000000 → 90000000 (exactly 10 tUSDM). M `totalInL2` tUSDM 10000000, no extra ADA. P's 100 tUSDM were committed with `/incremental-commit`: L1 `84e23dc14c2f89a12faeecf4b6e8a4a2d932851792523de44d78656d9f6527b2`, Hydra deposit `6751082ffd87d380906e022747d5fb07b10b0789ad0ab5f6bd050f5a01ddceaf`, increment `bf9cbe5ca166a3a0278a2bab1d2eda68fcc4cbcb869ba2a04b04400d0be9879b` |
 
 For every payment, `GET /payments/:id` with the payer's token and with the merchant's token returned
-the same record (`confirmed`, same `hydraTxId` and snapshot). No live USDM payment is recorded here;
-USDM uses the same code path with its own unit.
+the same record (`confirmed`, same `hydraTxId` and snapshot). The USDM payment (6) uses Moneta's preprod
+tUSDM (section 1) through the same code path as ADA and BTC.
 
 ### BTC deposit through the API (Electrum testnet3)
 
@@ -236,10 +279,10 @@ USDM uses the same code path with its own unit.
 | `POST /deposits/:id/btc-tx` | First call 1 s after broadcast: 422 `BTC_TX_NOT_FOUND` (not indexed yet), state unchanged. Second call: `btc_sent` |
 | WanBridge status | `Processing` (receive amount 49900), then `Success` with `redeemHash` `565c077368d1840a495f8d0660d6488629f0d91b1fd64d790d5ec1750cdd9301` |
 | Cardano L1 (checked independently on Koios) | Block 5274275, output #0 to `DEPOSIT_ADDRESS`: 49900 × `d2a8592e…425443` + 1.14215 ADA, no datum; metadata `{"1":{"type":9,"uniqueId":"0x63f5b2f2…9844","tokenPairID":517}}` |
-| Backend states | `l1_confirmed` 00:42:11 (`l1Ref` `565c0773…#0`, `receivedBaseUnits` 49900) → `committing` 00:42:56 (Hydra deposit tx `7f22a6145a81e0f149bc763881892134c960ee089cefb18db1676a880c7f5042`) → `available` 00:49:48 |
+| Backend states | `l1_confirmed` 00:42:11 (`l1Ref` `565c0773…#0`, `receivedBaseUnits` 49900) → `committing` by 00:42:47 (Hydra deposit tx `7f22a6145a81e0f149bc763881892134c960ee089cefb18db1676a880c7f5042`) → `available` 00:49:47 |
 | Payable | P `payableInL2` BTC = 49900 |
 
-End to end: BTC broadcast 00:25:49 → `available` 00:49:48, about **24 minutes** (two testnet3
+End to end: BTC broadcast 00:25:49 → `available` 00:49:47, about **24 minutes** (two testnet3
 confirmations and the bridge about 16 minutes, the Hydra commit about 7 minutes).
 
 ### BTC deposit from the mobile app (Android emulator, live backend)
@@ -269,47 +312,11 @@ pays M exactly 8000000 lovelace + 10000 `d2a8592e…425443`. The merchant was th
   second credit.
 - A second `POST /payments/8720bbcf…/authorize`: the same `confirmed` payment, no second debit.
 - P `payableInL2` after the retries: BTC 39900, lovelace 94000000 (unchanged).
-- Idempotency across a backend restart was not exercised live; it is covered by the automated
-  tests (resumable poller, compare-and-set transitions, reconcile at boot).
-
-## 8. Known limitations
-
-- **Testnet and preprod only.** Bitcoin testnet3, Cardano preprod, WanBridge testnet.
-- **Custodial demo.** The backend holds the funds and signs with its own key. One client, one
-  merchant, one terminal, one head. Not a production custody design.
-- **The deployed validator does not enforce the payer signature.** Payer consent is the
-  authenticated `authorize` call, checked by the backend, not an on-chain rule.
-- **Single shared deposit address.** The bridge memo and destination are the same for all users.
-  Attribution is the first claim of a BTC output, so a second app user could claim another user's
-  transaction. Acceptable for one client; per-user destinations would close it.
-- **Contactless transport: BLE.** NFC is not implemented. The payload is only the `paymentId`, so
-  the transport can change without changing the contract.
-- **No live USDM payment yet.** The backend holds no test USDM; the USDM path is covered by tests only.
-- **Payable balance = largest funds UTxO per asset.** A payment spends exactly one L2 funds UTxO,
-  so `payableInL2` reports, per asset, the largest one, not the sum. Each BTC deposit becomes its
-  own funds UTxO: after the two deposits above, payable BTC showed 39900, not 39900 + 29940.
-- **No BTC cash-out.** No native BTC withdrawal, no BTC/ADA swap, no Bitcoin wallet in the app.
-  About 3 ADA stays locked per BTC deposit.
-- The head is not closed in the demo (known Close/Fanout risk). Deposit commits run one at a time.
-- Third-party APIs (WanBridge testnet, Koios, mempool.space) can rate-limit; the poller retries
-  without backoff.
-
-## 9. Open review items
-
-From the pre-launch code review (fixed: reconcile marking a never-landed payment as confirmed,
-stale terminal request causing a double payment, no Hydra WebSocket handshake timeout, and in the
-mobile app a success screen that trusted deep-link parameters). Still open:
-
-- The terminal device key has full merchant scope (it can create and supersede payment requests).
-- Lazy reconcile on every read can queue behind the global lock while Hydra is unreachable.
-- Mobile: a dropped `authorize` response is shown as failure although the payment may confirm;
-  the displayed payable balance follows a build-time address, not the signed-in account.
-- Funds selection matches snapshot UTxOs by datum only (it does not check validator address and
-  control token), so a forged UTxO could make a payment fail (griefing, no theft).
-- Malformed JSON returns a framework error page; revoked Firebase users keep access until the
-  token expires (at most 1 h); `GET /query-funds` is public by design; `POST /accounts` with an
-  empty body returns 400 with an unhelpful issue list (cosmetic).
-- Deposits: an unbounded retry when the commit cannot start, and a late-finalizing commit after
-  3 attempts leaves the row in `needs_attention` although the funds are payable.
-- Hydra amounts are parsed as JS numbers (exact below 2^53); the global lock assumes a single
-  backend replica; PR CI lints but does not run the tests.
+- Idempotency across a backend restart was also exercised live (2026-10-11): deposit
+  `b8660173…` (BTC `db996be112ffa5bd8bb13c374aef884a37165640ba92762b6410beb239b442d3`, 10000 sat)
+  was in `bridge_processing` when the backend was restarted (same image, config change only).
+  WanBridge minted on Cardano during the restart (`30befe47b63509111765e9eaa7da124d9e4a6ec0ddafbfa676a212435af8e375`);
+  the resumed poller took the deposit to `available` (Hydra deposit tx
+  `3a7bae137a0b57fb79d4f7b925c7105fba18f172f21870a984b205135994d6a6`), P's BTC total rose by
+  exactly 9980 once, and resubmitting the txid credited nothing. The automated tests cover the
+  same paths (resumable poller, compare-and-set transitions, reconcile at boot).

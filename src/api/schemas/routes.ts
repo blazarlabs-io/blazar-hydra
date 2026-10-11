@@ -13,6 +13,7 @@ const API_ROUTES = {
   PAYMENT: '/payments/:id',
   AUTHORIZE_PAYMENT: '/payments/:id/authorize',
   TERMINAL_PENDING_PAYMENT: '/terminal/pending-payment',
+  TERMINAL_PAYMENT_BY_ID: '/terminals/:id/pending-payment',
   BTC_DEPOSITS: '/deposits/btc',
   BTC_DEPOSIT: '/deposits/:id',
   DEPOSIT_BTC_TX: '/deposits/:id/btc-tx',

@@ -1,6 +1,7 @@
 import e from 'express';
 import { API_ROUTES } from '../schemas/routes';
 import {
+  addressSchema,
   DepositZodSchema,
   ManageHeadZodSchema,
   PayMerchantZodSchema,
@@ -168,32 +169,37 @@ const setRoutes = (
 
   expressApp.get('/state', async (req, res) => {
     try {
-      const procId = req.query.id as string;
-      const process = await prisma.process
-        .findUniqueOrThrow({
-          where: { id: procId },
-        })
-        .catch((error) => {
-          logger.error('DB Error while fetching status: ' + error);
-          throw error;
-        });
+      const procId = req.query.id;
+      // A missing or repeated id must not reach Prisma: its error quotes our source and schema.
+      const process =
+        typeof procId === 'string' &&
+        (await prisma.process.findUnique({ where: { id: procId } }));
+      if (!process) {
+        res.status(STATUS.NOT_FOUND).json({ error: 'NOT_FOUND' });
+        return;
+      }
       res.status(STATUS.OK).json({ status: process.status });
       logger.info(`${STATUS.OK}`, `/state`);
     } catch (e) {
       res
         .status(STATUS.INTERNAL_SERVER_ERROR)
-        .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+        .json({ error: ERRORS.INTERNAL_SERVER_ERROR });
       logger.error(`${STATUS.INTERNAL_SERVER_ERROR}`, `/state: ${e}`);
     }
   });
 
   expressApp.get(API_ROUTES.QUERY_FUNDS, async (req, res) => {
     try {
-      const { address } = req.query as { address: string };
+      // A missing or malformed address answered 200 with empty funds, i.e. a silent zero balance.
+      const address = addressSchema.parse(req.query.address);
       const _res = await handleQueryFunds(lucid, address);
       res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`${STATUS.OK}`, `${API_ROUTES.QUERY_FUNDS}`);
     } catch (e) {
+      if (e instanceof ZodError) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'BAD_REQUEST' });
+        return;
+      }
       if (e instanceof HydraUnavailableError) {
         res.status(STATUS.SERVICE_UNAVAILABLE).json({ error: 'HYDRA_UNAVAILABLE' });
         logger.error(`${STATUS.SERVICE_UNAVAILABLE} - ${API_ROUTES.QUERY_FUNDS}: ${e}`);
@@ -421,11 +427,12 @@ const setRoutes = (
     requireAccount('merchant'),
     handle(async (req, res) => {
       const body = CreatePaymentSchema.parse(req.body);
-      if (body.merchantAddress !== callerOf(res).address) {
+      const { address } = callerOf(res);
+      if ((body.merchantAddress ?? address) !== address) {
         res.status(403).json({ error: 'FORBIDDEN' });
         return;
       }
-      res.status(201).json(toPaymentDto(await createPayment(body)));
+      res.status(201).json(toPaymentDto(await createPayment({ ...body, merchantAddress: address })));
     })
   );
 
@@ -434,6 +441,20 @@ const setRoutes = (
     requireAccount('merchant'),
     handle(async (_req, res) => {
       const p = await pendingPaymentFor(callerOf(res).address);
+      if (p) res.status(STATUS.OK).json(toPaymentDto(p));
+      else res.status(204).end();
+    })
+  );
+
+  // NFC: the payer's phone reads `myapp://home/nfc?terminal=<merchant Account.id>` from a static tag on
+  // the terminal and gets what the terminal itself gets above. Only merchant account ids resolve.
+  expressApp.get(
+    API_ROUTES.TERMINAL_PAYMENT_BY_ID,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const merchant = await prisma.account.findUnique({ where: { id: req.params.id } });
+      if (merchant?.kind !== 'merchant') return notFound(res);
+      const p = await pendingPaymentFor(merchant.address);
       if (p) res.status(STATUS.OK).json(toPaymentDto(p));
       else res.status(204).end();
     })
@@ -511,6 +532,24 @@ const setRoutes = (
       if (!d) return notFound(res);
       res.status(STATUS.OK).json(toDepositDto(d));
     })
+  );
+
+  // Last: body-parser errors (413, 415, bad encoding) and anything a route lets escape. Express's
+  // default handler answered these in HTML with the stack trace (NODE_ENV is unset in the image).
+  expressApp.use(
+    (err: unknown, req: e.Request, res: e.Response, next: e.NextFunction) => {
+      if (res.headersSent) return next(err);
+      const s = (err as { status?: unknown })?.status;
+      const status =
+        typeof s === 'number' && s >= 400 && s < 500
+          ? s
+          : STATUS.INTERNAL_SERVER_ERROR;
+      if (status === STATUS.INTERNAL_SERVER_ERROR)
+        logger.error(`${status} ${req.method} ${req.path}: ${err}`);
+      res
+        .status(status)
+        .json({ error: status < 500 ? 'BAD_REQUEST' : 'INTERNAL' });
+    }
   );
 };
 

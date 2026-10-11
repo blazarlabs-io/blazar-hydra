@@ -112,7 +112,7 @@ export function toPaymentDto(p: PaymentRow): Payment {
  * A new request supersedes the merchant's unpaid ones (CAS created -> expired): the terminal serves
  * one request at a time, and a stale one (e.g. a mistyped amount) must not stay payable.
  */
-export const createPayment = async (c: CreatePayment) => {
+export const createPayment = async (c: Required<CreatePayment>) => {
   const [, created] = await prisma.$transaction([
     prisma.payment.updateMany({
       where: { merchantAddress: c.merchantAddress, state: 'created' },

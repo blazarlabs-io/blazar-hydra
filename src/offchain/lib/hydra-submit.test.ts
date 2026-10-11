@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AddressInfo } from 'net';
 import { WebSocketServer } from 'ws';
-import { submitTxAndAwaitSnapshot } from './hydra';
+import { awaitCommitFinalized, submitTxAndAwaitSnapshot } from './hydra';
 
 const OURS = 'aa'.repeat(32);
 const OTHER = 'bb'.repeat(32);
@@ -18,6 +18,8 @@ const confirmed = (number: number, ids: string[]) => ({
 
 // The fake hydra-node answers each NewTx with the script of the current test.
 let script: object[] = [];
+// Sent to every new connection (commit waits send nothing first).
+let pushOnConnect: object[] = [];
 let lastUrl = '';
 let server: WebSocketServer;
 let url: string;
@@ -33,6 +35,7 @@ beforeAll(async () => {
       if (JSON.parse(m.toString()).tag === 'NewTx')
         script.forEach((s) => ws.send(JSON.stringify(s)));
     });
+    pushOnConnect.forEach((s) => ws.send(JSON.stringify(s)));
   });
 });
 afterAll(() => server.close());
@@ -79,5 +82,42 @@ describe('submitTxAndAwaitSnapshot', () => {
     ).toEqual({
       outcome: 'pending',
     });
+  });
+});
+
+describe('awaitCommitFinalized (deposit correlated on depositTxId)', () => {
+  const commit = (tag: string, depositTxId: string) => ({ tag, headId: 'h', depositTxId });
+
+  it("ignores other deposits' messages and resolves on our CommitFinalized", async () => {
+    pushOnConnect = [
+      commit('CommitRecorded', OURS),
+      commit('DepositExpired', OTHER),
+      commit('CommitFinalized', OTHER),
+      commit('CommitFinalized', OURS),
+    ];
+    expect(await awaitCommitFinalized(url, OURS, 2000)).toBe('finalized');
+    expect(lastUrl).toContain('history=no');
+  });
+
+  it('our DepositExpired is expired', async () => {
+    pushOnConnect = [commit('CommitFinalized', OTHER), commit('DepositExpired', OURS)];
+    expect(await awaitCommitFinalized(url, OURS, 2000)).toBe('expired');
+  });
+
+  it('a socket the node drops mid-wait is pending at once, not after the timeout', async () => {
+    pushOnConnect = [];
+    const t0 = Date.now();
+    const wait = awaitCommitFinalized(url, OURS, 5000);
+    await new Promise((r) => setTimeout(r, 50));
+    server.clients.forEach((c) => c.terminate());
+    expect(await wait).toBe('pending');
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it('nothing for us (or no node) is pending, never a throw', async () => {
+    pushOnConnect = [commit('CommitFinalized', OTHER)];
+    expect(await awaitCommitFinalized(url, OURS, 300)).toBe('pending');
+    expect(await awaitCommitFinalized('ws://127.0.0.1:9', OURS, 300)).toBe('pending');
+    pushOnConnect = [];
   });
 });

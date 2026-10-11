@@ -51,6 +51,7 @@ COPY --from=builder /app/config.ts ./config.ts
 COPY --from=builder /app/offchain ./offchain
 COPY --from=builder /app/onchain ./onchain
 COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/bridge ./bridge
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/tsconfig.json ./
 

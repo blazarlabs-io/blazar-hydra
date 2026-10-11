@@ -28,6 +28,8 @@ async function deposit(
     walletUtxos,
     validatorRef,
     fundsUtxo,
+    seedUtxo,
+    lockDeposited,
   } = params;
   lucid.selectWallet.fromAddress(adminAddress, walletUtxos);
   const tx = lucid.newTx();
@@ -59,19 +61,13 @@ async function deposit(
 
     tx.collectFrom([fundsUtxo], Spend.AddFunds);
   } else {
-    const selectedUtxo = walletUtxos[0];
+    const selectedUtxo = seedUtxo ?? walletUtxos[0];
     const outRef: OutputRefT = {
       transaction_id: selectedUtxo.txHash,
       output_index: BigInt(selectedUtxo.outputIndex),
     };
 
-    const serializedIndex = Data.to<bigint>(outRef.output_index);
-    const newTokenName = Buffer.from(
-      outRef.transaction_id + serializedIndex,
-      'hex'
-    );
-    const tokenNameHash = blake2b(32).update(newTokenName).digest('hex');
-    validationToken = toUnit(policyId, tokenNameHash);
+    validationToken = toUnit(policyId, validationTokenName(selectedUtxo));
     totalAmount = addAssets(totalAmount, {
       ['lovelace']: minLvc,
       [validationToken]: 1n,
@@ -84,7 +80,8 @@ async function deposit(
   const datum = Data.to<FundsDatumT>(
     {
       addr: bech32ToAddressType(lucid, userAddress),
-      locked_deposit: minLvc,
+      locked_deposit:
+        minLvc + (lockDeposited ? (amountsToDeposit['lovelace'] ?? 0n) : 0n),
       funds_type: { User: { public_key: publicKey } },
     },
     FundsDatum
@@ -109,4 +106,12 @@ async function deposit(
   return { tx: txSignBuilder, newFundsUtxo };
 }
 
-export { deposit };
+/** Name of the validation token minted when `ref` is consumed (on-chain output_reference_to_bytestring). */
+function validationTokenName(ref: OutRef): string {
+  const serializedIndex = Data.to<bigint>(BigInt(ref.outputIndex));
+  return blake2b(32)
+    .update(Buffer.from(ref.txHash + serializedIndex, 'hex'))
+    .digest('hex');
+}
+
+export { deposit, validationTokenName };

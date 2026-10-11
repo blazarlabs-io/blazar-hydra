@@ -30,7 +30,19 @@ import {
   readPayment,
   toPaymentDto,
 } from '../../offchain/handlers/execute-payment';
-import { CreatePaymentSchema } from '../../shared/payment-contract';
+import {
+  attachBtcTx,
+  createBtcDeposit,
+  DepositDeps,
+  depositDeps,
+  readDeposit,
+  toDepositDto,
+} from '../../offchain/handlers/btc-deposit';
+import {
+  AttachBtcTxSchema,
+  CreateBtcDepositSchema,
+  CreatePaymentSchema,
+} from '../../shared/payment-contract';
 import { Caller, requireAccount, requireAdmin, sha256Hex } from '../middleware/auth';
 import { Prisma } from '@prisma/client';
 import axios from 'axios';
@@ -59,7 +71,11 @@ enum STATUS {
   UNKNOWN_ERROR = 520,
 }
 
-const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
+const setRoutes = (
+  lucid: LucidEvolution,
+  expressApp: e.Application,
+  deposits: DepositDeps = depositDeps(lucid)
+) => {
   // User Routes
   expressApp.post(API_ROUTES.DEPOSIT, requireAdmin, async (req, res) => {
     try {
@@ -453,6 +469,45 @@ const setRoutes = (lucid: LucidEvolution, expressApp: e.Application) => {
         return;
       }
       res.status(status).json(toPaymentDto(payment));
+    })
+  );
+
+  // M3 BTC deposits (payment-contract.md §3.7); the poller in btc-deposit.ts drives them to `available`.
+  expressApp.post(
+    API_ROUTES.BTC_DEPOSITS,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const { amountSats } = CreateBtcDepositSchema.parse(req.body);
+      const r = await createBtcDeposit(callerOf(res), BigInt(amountSats), deposits);
+      if (r.status === 201) res.status(201).json(toDepositDto(r.deposit));
+      else res.status(r.status).json({ error: r.error });
+    })
+  );
+
+  expressApp.post(
+    API_ROUTES.DEPOSIT_BTC_TX,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const { btcTxid } = AttachBtcTxSchema.parse(req.body);
+      const r = await attachBtcTx(req.params.id, callerOf(res).id, btcTxid, deposits);
+      if (r.status === 200) {
+        res.status(200).json(toDepositDto(r.deposit));
+        return;
+      }
+      res.status(r.status).json({
+        error: r.error,
+        ...(r.deposit && { deposit: toDepositDto(r.deposit) }),
+      });
+    })
+  );
+
+  expressApp.get(
+    API_ROUTES.BTC_DEPOSIT,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const d = await readDeposit(req.params.id, callerOf(res).id);
+      if (!d) return notFound(res);
+      res.status(STATUS.OK).json(toDepositDto(d));
     })
   );
 };

@@ -6,6 +6,11 @@ import { credentialToAddress, LucidEvolution } from '@lucid-evolution/lucid';
 import { createServer } from './server';
 import { setRoutes } from './routes';
 import { API_ROUTES } from '../schemas/routes';
+import { prisma } from '../../config';
+import { DepositDeps } from '../../offchain/handlers/btc-deposit';
+import { parseBtcTx, parseQuotaAndFee } from '../../bridge/wanbridge';
+import mempoolFx from '../../bridge/wanbridge/__fixtures__/mempool-tx-6633762d.json';
+import quotaFx from '../../bridge/wanbridge/__fixtures__/quotaAndFee-517.json';
 
 // Real Express app and DB; Hydra (127.0.0.1:9 in vitest.config.ts) is unreachable.
 const lucid = {
@@ -22,6 +27,31 @@ const MERCHANT = addr('e1');
 const USER = addr('e2');
 const merchantKey = `m-${randomUUID()}-${randomUUID()}`;
 const userKey = `u-${randomUUID()}-${randomUUID()}`;
+const otherUserKey = `o-${randomUUID()}-${randomUUID()}`;
+const BTC_TXID = mempoolFx.txid;
+const unused = async (): Promise<never> => {
+  throw new Error('not used over HTTP');
+};
+// Bridge answers from the recorded pair-517 deposit; the poller (Hydra side) is not exercised here.
+const deposits: DepositDeps = {
+  bridge: {
+    getQuotaAndFee: async () => parseQuotaAndFee(quotaFx),
+    createTx2: async ({ amountSats }) => ({
+      depositAddress: mempoolFx.vout[0].scriptpubkey_address!,
+      valueSats: amountSats,
+      memo: mempoolFx.vout[1].scriptpubkey.slice(4),
+      receiveSats: amountSats - 320n,
+    }),
+    fetchBtcTx: async () => parseBtcTx(mempoolFx),
+    getStatus: unused,
+    fetchKoiosTx: unused,
+  },
+  snapshot: unused,
+  fundsUtxo: unused,
+  submitCommit: unused,
+  awaitCommit: unused,
+  recover: unused,
+};
 
 let server: Server;
 let base: string;
@@ -38,7 +68,7 @@ const get = (path: string, auth?: string) => api(path, auth, undefined, 'GET');
 
 beforeAll(async () => {
   const app = createServer();
-  setRoutes(lucid, app);
+  setRoutes(lucid, app, deposits);
   server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -155,5 +185,49 @@ describe('routes', () => {
       204
     );
     expect((await get(`/payments/${randomUUID()}`, m)).status).toBe(404);
+  });
+
+  it('BTC deposits: user-only, integer-string sats, own deposits only', async () => {
+    await prisma.deposit.deleteMany();
+    const u = `Bearer ${userKey}`;
+    const other = `Bearer ${otherUserKey}`;
+    expect(
+      (await api(API_ROUTES.ACCOUNTS, ADMIN, { kind: 'user', address: USER, apiKey: otherUserKey })).status
+    ).toBe(201);
+
+    expect((await api(API_ROUTES.BTC_DEPOSITS, undefined, { amountSats: '200000' })).status).toBe(401);
+    expect((await api(API_ROUTES.BTC_DEPOSITS, `Bearer ${merchantKey}`, { amountSats: '200000' })).status).toBe(403);
+    for (const bad of [200000, '0', '1.5', '-5', '0200000', ''])
+      expect((await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: bad })).status).toBe(400);
+    expect((await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: '200000', userAddress: USER })).status).toBe(400);
+
+    const created = await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: '200000' });
+    expect(created.status).toBe(201);
+    const d = await created.json();
+    expect(d).toMatchObject({
+      state: 'created',
+      userAddress: USER,
+      requestedBaseUnits: '200000',
+      btc: { toAccount: mempoolFx.vout[0].scriptpubkey_address, valueSats: '200000' },
+      btcTxid: null,
+    });
+    expect(Date.parse(d.expiresAt)).toBeGreaterThan(Date.now() + 29 * 60_000);
+
+    expect((await get(`/deposits/${d.depositId}`, u)).status).toBe(200);
+    expect((await get(`/deposits/${d.depositId}`, other)).status).toBe(404);
+    expect((await get(`/deposits/${d.depositId}`)).status).toBe(401);
+
+    const attach = (auth: string, btcTxid: unknown) =>
+      api(`/deposits/${d.depositId}/btc-tx`, auth, { btcTxid });
+    expect((await attach(u, 'xyz')).status).toBe(400);
+    expect((await attach(other, BTC_TXID)).status).toBe(404);
+    const sent = await attach(u, BTC_TXID.toUpperCase());
+    expect(sent.status).toBe(200);
+    expect(await sent.json()).toMatchObject({ state: 'btc_sent', btcTxid: BTC_TXID, btcVout: 0 });
+    expect((await attach(u, 'ab'.repeat(32))).status).toBe(409);
+
+    const short = await (await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: '150000' })).json();
+    const reclaim = await api(`/deposits/${short.depositId}/btc-tx`, u, { btcTxid: BTC_TXID });
+    expect(reclaim.status).toBe(409); // that BTC output already funds the first deposit
   });
 });

@@ -45,3 +45,34 @@ model Payment {
 
   @@index([merchantAddress, state])
 }
+
+// M3 phase B: one BTC bridge deposit, from createTx2 to the payable L2 funds UTxO (additive only).
+model Deposit {
+  id                 String    @id @default(uuid())
+  userId             String // Account.id of the depositor (ownership)
+  userAddress        String // FundsDatum address credited in L2
+  assetUnit          String
+  state              String    @default("created")
+  requestedBaseUnits String // sats the user was told to send
+  receivedBaseUnits  String? // measured on L1 (Koios); the credited amount
+  btcToAccount       String // createTx2 tx.toAccount (storeman BTC address at creation)
+  btcValueSats       String
+  btcMemo            String
+  expiresAt          DateTime
+  btcTxid            String?
+  btcVout            Int?
+  btcSentAt          DateTime?
+  redeemTxHash       String? // bridge mint tx on Cardano L1
+  redeemIndex        Int?
+  fundsUnit          String? // validation token of the user funds UTxO (tracks it across L1, recover, L2)
+  fundsTxId          String? // L1 tx that moved the bridged UTxO into the user funds UTxO
+  depositTxId        String?   @unique // Hydra incremental-commit deposit tx
+  commitAttempts     Int       @default(0)
+  error              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([btcTxid, btcVout])
+  @@unique([redeemTxHash, redeemIndex])
+  @@index([state])
+}

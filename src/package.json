@@ -13,6 +13,7 @@
     "demo": "tsx offchain/test/demo.ts",
     "ws": "tsx offchain/test/websocket.ts",
     "deploy": "tsx offchain/handlers/deploy-validator.ts",
+    "deposit-key": "tsx scripts/new-deposit-key.ts",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",

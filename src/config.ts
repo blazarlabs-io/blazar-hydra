@@ -32,6 +32,16 @@ const envSchema = z
     // Bearer key for legacy mutating routes and POST /accounts.
     ADMIN_API_KEY: z.string().min(32, 'ADMIN_API_KEY must be at least 32 characters'),
     BUILD_SHA: z.string().default('dev'),
+    // BTC deposits (M3 phase B). DEPOSIT_KEY: mnemonic like SEED, secret; it controls the bridge
+    // destination only. DEPOSIT_ADDRESS: its base address (public); startup checks they match.
+    DEPOSIT_KEY: z.string().min(1),
+    DEPOSIT_ADDRESS: z.string().min(1),
+    DEPOSIT_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+    // createTx2 requires a tb1 fromAccount but only echoes it (bridge-integration.md decision 1).
+    BRIDGE_PLACEHOLDER_FROM: z
+      .string()
+      .regex(/^tb1[02-9ac-hj-np-z]{8,87}$/)
+      .default('tb1qapnye2f5fjddqaguz4q7klhhtv2cqr5qgkc0pu'),
     USER_ADDRESS: z.string().optional(),
     USER_SEED: z.string().optional(),
     USER_ADDRESS_2: z.string().optional(),

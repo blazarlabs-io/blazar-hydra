@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "data": {
+    "symbol": "BTC",
+    "minQuota": "32",
+    "maxQuota": "10000000000000000000000000000000000000000",
+    "networkFee": {
+      "value": "0",
+      "isPercent": false
+    },
+    "operationFee": {
+      "value": "0.002",
+      "isPercent": true,
+      "minFeeLimit": "16",
+      "maxFeeLimit": "320"
+    }
+  }
+}

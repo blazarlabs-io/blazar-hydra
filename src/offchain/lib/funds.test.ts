@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { UTxO } from '@lucid-evolution/lucid';
-import { findFundUtxos, assertFundsEmpty } from './funds';
+import { Data } from '@lucid-evolution/lucid';
+import { findFundUtxos, assertFundsEmpty, payableInL2 } from './funds';
+import { FundsDatum, FundsDatumT } from './types';
+import { BTC_UNIT } from '../../bridge/wanbridge';
+import { ASSETS } from '../../shared/payment-contract';
 
 // A real User FundsDatum captured from a live head snapshot (query-funds output).
 const USER_FUNDS_DATUM =
@@ -35,5 +39,22 @@ describe('findFundUtxos / assertFundsEmpty', () => {
   it('assertFundsEmpty passes on a funds-empty snapshot and throws when funds remain', () => {
     expect(() => assertFundsEmpty([utxo({ address: ADMIN_ADDR, datum: null })], ADMIN_ADDR)).not.toThrow();
     expect(() => assertFundsEmpty([utxo({ datum: USER_FUNDS_DATUM })], ADMIN_ADDR)).toThrow(/not funds-empty/);
+  });
+});
+
+describe('payableInL2 with bridged BTC', () => {
+  it('reports the BTC of a committed deposit; its locked lovelace is not payable (decision 4)', () => {
+    const d = Data.from<FundsDatumT>(USER_FUNDS_DATUM, FundsDatum);
+    const btcFunds = Data.to<FundsDatumT>({ ...d, locked_deposit: 3_150_770n }, FundsDatum);
+    const control = 'cc'.repeat(28) + 'dd'.repeat(32);
+    const snap = [
+      utxo({ datum: btcFunds, assets: { lovelace: 3_150_770n, [BTC_UNIT]: 199_680n, [control]: 1n } }),
+      utxo({ datum: USER_FUNDS_DATUM, assets: { lovelace: 5_000_000n, [control]: 1n } }),
+    ];
+    expect(payableInL2(snap, (u) => u.startsWith('cc'.repeat(28)))).toEqual({
+      [BTC_UNIT]: '199680',
+      lovelace: '3000000',
+    });
+    expect(ASSETS[BTC_UNIT as keyof typeof ASSETS].decimals).toBe(8);
   });
 });

@@ -63,8 +63,9 @@ export const paymentDeps = (lucid: LucidEvolution): PaymentDeps => ({
 });
 
 // ponytail: one process-wide lock around UTxO selection + submit + reconcile; per-payer locks if throughput matters.
+// BTC deposits take it too for their L1 and Hydra submissions (btc-deposit.ts).
 let lockTail: Promise<unknown> = Promise.resolve();
-function withLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = lockTail.then(fn, fn);
   lockTail = run.catch(() => undefined);
   return run;

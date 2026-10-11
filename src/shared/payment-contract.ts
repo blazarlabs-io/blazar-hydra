@@ -105,28 +105,38 @@ export function formatBaseUnits(base: string, decimals: number): string {
 
 // ---- Deposits (S2 owns the bridge steps, S1 the Hydra commit) ----
 export const DepositStateSchema = z.enum([
-  'created', // createTx2 done, BTC instructions returned
-  'btc_sent', // btcTxid (+vout paying btc.toAccount) recorded
-  'l1_confirmed', // Koios: unit, quantity, destination, metadata uniqueId = 0x<btcTxid>
-  'committing', // Hydra deposit (incremental commit) tx submitted on L1
-  'available', // CommitFinalized.depositTxId matched: payable in L2
-  'failed', // Trusteeship / Refund / DepositExpired / verification mismatch
-  'expired', // still Processing after the deadline
+  'created', // createTx2 done, BTC instructions returned (valid until expiresAt)
+  'btc_sent', // btcTxid + vout verified: pays btc.toAccount exactly valueSats with the exact memo
+  'bridge_processing', // bridge reports Processing, or Success not yet verified on Cardano L1
+  'l1_confirmed', // Koios: unit, quantity, destination, metadata uniqueId = 0x<btcTxid>; in a block
+  'committing', // Hydra incremental-commit deposit tx submitted (depositTxId)
+  'available', // CommitFinalized for depositTxId: payable in L2
+  'failed', // bridge Refund (final)
+  'expired', // no BTC tx attached before expiresAt; a tx that still verifies is accepted later
+  'needs_attention', // memo/value mismatch, Trusteeship, bridge timeout, L1 mismatch or 3 failed commits
 ]);
+export type DepositState = z.infer<typeof DepositStateSchema>;
 export const DepositSchema = z.object({
   depositId: z.string().uuid(),
   userAddress: z.string(),
   assetUnit: AssetUnitSchema,
   state: DepositStateSchema,
-  requestedBaseUnits: BaseUnitsSchema,
+  requestedBaseUnits: BaseUnitsSchema, // sats to send
   receivedBaseUnits: BaseUnitsSchema.nullable(), // measured on L1; this is what gets credited
-  btc: z.object({ toAccount: z.string(), valueSats: BaseUnitsSchema, memo: z.string() }).nullable(), // createTx2, never cached
+  btc: z.object({ toAccount: z.string(), valueSats: BaseUnitsSchema, memo: z.string() }), // createTx2 at creation
+  expiresAt: z.string().datetime(),
   btcTxid: TxIdSchema.nullable(),
   btcVout: z.number().int().min(0).nullable(),
-  l1Ref: OutRefSchema.nullable(), // "redeemHash#ix"
-  depositTxId: TxIdSchema.nullable(), // Hydra deposit tx; L2 funds ref = l1Ref
+  l1Ref: OutRefSchema.nullable(), // "redeemHash#ix": the bridged UTxO on L1
+  fundsTxId: TxIdSchema.nullable(), // L1 tx that moved l1Ref into the user funds UTxO at the validator
+  depositTxId: TxIdSchema.nullable(), // Hydra deposit tx committing that funds UTxO
   error: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 export type Deposit = z.infer<typeof DepositSchema>;
+
+/** POST /deposits/btc body. Sats as an integer string, like every amount. */
+export const CreateBtcDepositSchema = z.object({ amountSats: BaseUnitsSchema }).strict();
+/** POST /deposits/:id/btc-tx body. */
+export const AttachBtcTxSchema = z.object({ btcTxid: z.string().toLowerCase().pipe(TxIdSchema) }).strict();

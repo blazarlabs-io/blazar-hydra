@@ -427,11 +427,12 @@ const setRoutes = (
     requireAccount('merchant'),
     handle(async (req, res) => {
       const body = CreatePaymentSchema.parse(req.body);
-      if (body.merchantAddress !== callerOf(res).address) {
+      const { address } = callerOf(res);
+      if ((body.merchantAddress ?? address) !== address) {
         res.status(403).json({ error: 'FORBIDDEN' });
         return;
       }
-      res.status(201).json(toPaymentDto(await createPayment(body)));
+      res.status(201).json(toPaymentDto(await createPayment({ ...body, merchantAddress: address })));
     })
   );
 

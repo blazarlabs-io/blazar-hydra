@@ -47,7 +47,7 @@ export const PaymentErrorSchema = z.enum([
 /** POST /payments body. Strings only: the backend json-bigint parser turns every JSON number into BigInt. */
 export const CreatePaymentSchema = z
   .object({
-    merchantAddress: z.string().min(1), // must equal the calling merchant Account.address
+    merchantAddress: z.string().min(1).optional(), // must equal the calling merchant Account.address; absent: that address
     assetUnit: AssetUnitSchema,
     amountBaseUnits: BaseUnitsSchema,
   })

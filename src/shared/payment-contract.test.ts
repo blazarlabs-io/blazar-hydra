@@ -61,6 +61,8 @@ describe('payment contract self-check', () => {
       amountBaseUnits: '2500000',
     };
     expect(CreatePaymentSchema.safeParse(ok).success).toBe(true);
+    // absent: the backend uses the caller's address
+    expect(CreatePaymentSchema.safeParse({ ...ok, merchantAddress: undefined }).success).toBe(true);
     for (const bad of [
       { ...ok, amountBaseUnits: 2500000 },
       { ...ok, amountBaseUnits: BigInt(2500000) }, // what json-bigint makes of a JSON number
@@ -68,6 +70,7 @@ describe('payment contract self-check', () => {
       { ...ok, amountBaseUnits: '01' },
       { ...ok, amountBaseUnits: '1.5' },
       { ...ok, assetUnit: 'deadbeef' },
+      { ...ok, merchantAddress: '' },
       { ...ok, extra: 1 }, // strict
     ]) {
       expect(CreatePaymentSchema.safeParse(bad).success).toBe(false);

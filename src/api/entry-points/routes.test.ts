@@ -149,7 +149,11 @@ describe('routes', () => {
     expect(
       (await api(API_ROUTES.PAYMENTS, m, { ...amount, merchantAddress: USER }))
         .status
-    ).toBe(403);
+    ).toBe(403); // another address: still forbidden
+    // no merchantAddress: the caller's account address (merchant web without a connected wallet)
+    const implicit = await api(API_ROUTES.PAYMENTS, m, { assetUnit: 'lovelace', amountBaseUnits: '1000000' });
+    expect(implicit.status).toBe(201);
+    expect(await implicit.json()).toMatchObject({ merchantAddress: MERCHANT, state: 'created' });
     expect(
       (
         await api(API_ROUTES.PAYMENTS, m, {

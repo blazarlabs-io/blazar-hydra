@@ -58,7 +58,7 @@ reconciled against the head snapshot (on read, on the next authorize of the same
 |---|---|---|
 | `GET /health` | none | `{status, version, hydra}` |
 | `POST /accounts` | admin key | Seed an account: `{kind: user\|merchant, address, firebaseUid?, apiKey?}` |
-| `POST /payments` | merchant | `{merchantAddress, assetUnit, amountBaseUnits}`; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
+| `POST /payments` | merchant | `{merchantAddress?, assetUnit, amountBaseUnits}`; `merchantAddress` defaults to the caller's account address, any other address is 403; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
 | `GET /terminal/pending-payment` | merchant (device key) | Oldest unexpired `created` payment, or 204 |
 | `GET /terminals/:id/pending-payment` | user | The same payment for the merchant account `:id` (NFC terminal tag, below), or 204; 404 if `:id` is not a merchant account |
 | `GET /payments/:id` | any account | A merchant sees its own; a user sees unclaimed ones and its own |

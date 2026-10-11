@@ -57,7 +57,12 @@ async function buildIncrementalCommitBlueprint(
     inputs.add(cmlInput);
   });
 
+  // The deposit is exactly the funds UTxO. With an explicit output, hydra-node deposits the blueprint's
+  // outputs; without one it deposits the whole lookup UTxO, which also holds VALIDATOR_REF (sent only to
+  // resolve the reference script). That put another copy of the ref-script UTxO (68 ADA) into the head on
+  // L1 at every commit but kept one in L2, and Close failed with H65 ChangedHeadAdaOverhead (9 Jul 2026).
   const outputs = CML.TransactionOutputList.new();
+  outputs.add(utxoToCore({ ...depositedUtxo, scriptRef: undefined }).output());
   const fee = 0n;
   const txBody = CML.TransactionBody.new(inputs, outputs, fee);
 

@@ -29,6 +29,7 @@ import {
   paymentDeps,
   pendingPaymentFor,
   readPayment,
+  signPayload,
   toPaymentDto,
 } from '../../offchain/handlers/execute-payment';
 import {
@@ -43,6 +44,7 @@ import { NoPublicKeyError } from '../../offchain/lib/accounts';
 import {
   AttachBtcTxSchema,
   CreateBtcDepositSchema,
+  AuthorizePaymentSchema,
   CreatePaymentSchema,
   RegisterPublicKeySchema,
 } from '../../shared/payment-contract';
@@ -504,16 +506,37 @@ const setRoutes = (
     })
   );
 
+  expressApp.get(
+    API_ROUTES.PAYMENT_SIGN_PAYLOAD,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const r = await signPayload(req.params.id, callerOf(res).address, deps);
+      if (r.status === STATUS.NOT_FOUND) return notFound(res);
+      if (r.payload) res.status(STATUS.OK).json(r.payload);
+      else res.status(r.status).json({ error: r.error });
+    })
+  );
+
   expressApp.post(
     API_ROUTES.AUTHORIZE_PAYMENT,
     requireAccount('user'),
     handle(async (req, res) => {
-      const { status, payment } = await authorizePayment(
-        req.params.id,
-        callerOf(res).address,
-        deps
-      );
+      const { fundsInRef, signature } = AuthorizePaymentSchema.parse(req.body);
+      const caller = callerOf(res);
+      if (!caller.publicKey) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
+        return;
+      }
+      const { status, payment, error } = await authorizePayment(req.params.id, caller.address, deps, {
+        fundsInRef,
+        signature,
+        publicKey: caller.publicKey,
+      });
       if (!payment) return notFound(res);
+      if (error) {
+        res.status(status).json({ error });
+        return;
+      }
       if (status === STATUS.CONFLICT) {
         res.status(status).json({ error: 'CONFLICT' }); // authorized by another payer
         return;

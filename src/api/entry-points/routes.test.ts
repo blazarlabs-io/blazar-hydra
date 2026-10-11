@@ -212,7 +212,14 @@ describe('routes', () => {
       (await api(`/payments/${p.paymentId}/authorize`, m, {})).status
     ).toBe(403); // terminal can't pay
 
-    const auth = await api(`/payments/${p.paymentId}/authorize`, u, {});
+    expect((await api(`/payments/${p.paymentId}/authorize`, u, {})).status).toBe(400); // no consent
+    const fundsInRef = `${'11'.repeat(32)}#0`;
+    const sign = (key: typeof PAYER_KEY) =>
+      key.sign(Buffer.from(payInfoCbor({ ...p, fundsInRef }), 'hex')).to_hex();
+    const forged = await api(`/payments/${p.paymentId}/authorize`, u, { fundsInRef, signature: sign(OTHER_KEY) });
+    expect(forged.status).toBe(400);
+    expect(await forged.json()).toEqual({ error: 'BAD_SIGNATURE' });
+    const auth = await api(`/payments/${p.paymentId}/authorize`, u, { fundsInRef, signature: sign(PAYER_KEY) });
     expect(auth.status).toBe(200);
     expect(await auth.json()).toMatchObject({
       state: 'failed',
@@ -310,6 +317,18 @@ describe('routes', () => {
     const short = await (await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: '150000' })).json();
     const reclaim = await api(`/deposits/${short.depositId}/btc-tx`, u, { btcTxid: BTC_TXID });
     expect(reclaim.status).toBe(409); // that BTC output already funds the first deposit
+  });
+
+  // Last in this block: its unpaid request must not show up as pending in the terminal tests above.
+  it('authorize without a registered phone key is a 400 NO_PUBLIC_KEY', async () => {
+    const keyless = `k-${randomUUID()}-${randomUUID()}`;
+    expect((await api(API_ROUTES.ACCOUNTS, ADMIN, { kind: 'user', address: addr('e9'), apiKey: keyless })).status).toBe(201);
+    const p = await (
+      await api(API_ROUTES.PAYMENTS, `Bearer ${merchantKey}`, { merchantAddress: MERCHANT, assetUnit: 'lovelace', amountBaseUnits: '1000000' })
+    ).json();
+    const r = await api(`/payments/${p.paymentId}/authorize`, `Bearer ${keyless}`, { fundsInRef: `${'11'.repeat(32)}#0`, signature: '00'.repeat(64) });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
   });
 });
 

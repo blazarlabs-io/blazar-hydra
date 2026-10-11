@@ -221,10 +221,11 @@ Backend `https://blazar-api.cardano.vip`; `GET /health` reported version
 | 1 | 2 ADA merchant bootstrap | `187e6ec3-4b46-4f89-b915-19d4ab30373c` | `9cfcba4a4f9c63c8de423073f1e740e3cb3c44891a009fda40d3179ee87eb4b4` | 23 | Created 23:41:43, `authorize` HTTP 200 `confirmed` at 23:41:45. The terminal endpoint returned the same `paymentId` with `amountBaseUnits` `"2000000"` (204 when nothing is pending) |
 | 2 | 5 ADA, three concurrent `authorize` calls | `75ddd11b-0401-42fb-814e-126cf2e52484` | `be261f72d408fccd69574f8dd474a2becfef1d92c9933db59d7f99a69c26007e` | 24 | All three HTTP 200, one transaction. P `payableInL2` lovelace 99000000 → 94000000 (exactly 5 ADA, once). M `totalInL2` lovelace 7000000 (2 + 5 ADA, no extra ADA) |
 | 3 | 10000 BTC units (0.0001 BTC), three concurrent `authorize` calls | `8720bbcf-3252-4c37-8ac1-5b7a3693374e` | `80c0a3d38181fec088814c39020be85719101f4f9f4c265c155d51f21f0180d8` | 26 | One transaction. P BTC 49900 → 39900 (exactly 10000). M `totalInL2` BTC 10000 |
+| 4 | 10 tUSDM (10000000 units), three concurrent `authorize` calls, 11 October 2026 | `9abf0dcb-2233-4468-b2e7-c2f3c22ff211` | `b4daa03f54e2673c36fb0f9f2b90771fd6cf507442413092eea4a744636570e9` | 34 | Backend `692f92b0`. One transaction. P tUSDM 100000000 → 90000000 (exactly 10 tUSDM). M `totalInL2` tUSDM 10000000, no extra ADA. P's 100 tUSDM were committed with `/incremental-commit`: L1 `84e23dc14c2f89a12faeecf4b6e8a4a2d932851792523de44d78656d9f6527b2`, Hydra deposit `6751082ffd87d380906e022747d5fb07b10b0789ad0ab5f6bd050f5a01ddceaf`, increment `bf9cbe5ca166a3a0278a2bab1d2eda68fcc4cbcb869ba2a04b04400d0be9879b` |
 
 For every payment, `GET /payments/:id` with the payer's token and with the merchant's token returned
-the same record (`confirmed`, same `hydraTxId` and snapshot). No live USDM payment is recorded here;
-USDM uses the same code path with its own unit.
+the same record (`confirmed`, same `hydraTxId` and snapshot). The USDM payment (4) uses Moneta's preprod
+tUSDM (section 1) through the same code path as ADA and BTC.
 
 ### BTC deposit through the API (Electrum testnet3)
 

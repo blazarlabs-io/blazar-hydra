@@ -4,8 +4,8 @@ import { z } from 'zod';
 /** Payable assets. Execution moves base units only; `decimals` is for entry/display. */
 export const ASSETS = {
   lovelace: { symbol: 'ADA', decimals: 6 },
-  // preprod test USDM, no token-registry metadata. DECISION (S1): 6 like mainnet USDM; merchant-web uses 0 today.
-  '77484e67c1ed6c96f55b89206cb5d6caae9a09a0bd473bba817929fe5553444d': { symbol: 'USDM', decimals: 6 },
+  // Moneta's official preprod USDM (tUSDM, CIP-68 333 FT); decimals 6 from its CIP-68 reference datum (000643b0…).
+  'e675b46e4d2242c991a8932a99db3044e80515ae14b4c4ccf6b3f4c90014df10745553444d': { symbol: 'USDM', decimals: 6 },
   // WanBridge pair 517 (BTC testnet3 -> preprod): 8 decimals, 1 unit = 1 sat.
   'd2a8592ec9673ac18fea1044885f94518e954ab0cb2b6bb0a328d2af425443': { symbol: 'BTC', decimals: 8 },
 } as const;

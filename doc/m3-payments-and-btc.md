@@ -30,6 +30,12 @@ Phone app --BLE (read)--> BLE terminal (Raspberry Pi)        Merchant web
 
 Amounts are integer strings in base units end to end (ADA 6, USDM 6, BTC 8 decimals).
 
+USDM is Moneta's official preprod test token tUSDM (CIP-68 fungible token), unit
+`e675b46e4d2242c991a8932a99db3044e80515ae14b4c4ccf6b3f4c9.0014df10745553444d`. Its 6 decimals come
+from the `decimals` field of its CIP-68 reference datum (`…000643b0745553444d`). Milestone 2 used a
+team test token (`77484e67c1ed6c96f55b89206cb5d6caae9a09a0bd473bba817929fe.5553444d`), which can no
+longer be obtained on preprod.
+
 ## 2. Payment contract
 
 The backend owns the payment. Success means a `SnapshotConfirmed` that contains the transaction.

@@ -39,6 +39,7 @@ import {
   readDeposit,
   toDepositDto,
 } from '../../offchain/handlers/btc-deposit';
+import { NoPublicKeyError } from '../../offchain/lib/accounts';
 import {
   AttachBtcTxSchema,
   CreateBtcDepositSchema,
@@ -87,6 +88,10 @@ const setRoutes = (
       res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`${STATUS.OK}`, `${API_ROUTES.DEPOSIT}`);
     } catch (e) {
+      if (e instanceof NoPublicKeyError) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
+        return;
+      }
       if (e instanceof Error) {
         res
           .status(STATUS.INTERNAL_SERVER_ERROR)
@@ -313,6 +318,10 @@ const setRoutes = (
       res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
       logger.info(`${STATUS.OK}`, `${API_ROUTES.INCREMENTAL_COMMIT}`);
     } catch (e) {
+      if (e instanceof NoPublicKeyError) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
+        return;
+      }
       if (e instanceof Error) {
         res
           .status(STATUS.INTERNAL_SERVER_ERROR)

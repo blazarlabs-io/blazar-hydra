@@ -157,6 +157,12 @@ describe('routes', () => {
     expect(await other.json()).toEqual({ error: 'PUBLIC_KEY_ALREADY_SET' });
   });
 
+  it('/deposit refuses an address without a registered device key, before any L1 work', async () => {
+    const r = await api(API_ROUTES.DEPOSIT, ADMIN, { user_address: addr('e7'), amount: [['lovelace', 20000000]] });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
+  });
+
   it('create -> pending -> read -> authorize; Hydra down never reports success', async () => {
     const amount = {
       merchantAddress: MERCHANT,

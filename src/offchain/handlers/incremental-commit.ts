@@ -15,6 +15,7 @@ import { logger } from '../../shared/logger';
 import { HydraHandler } from '../lib/hydra';
 import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
+import { userPublicKeyFor } from '../lib/accounts';
 
 /**
  * Handles incremental commit operation.
@@ -47,6 +48,8 @@ async function handleIncrementalCommit(
     amount,
     funds_utxo_ref: fundsUtxoRef,
   } = params;
+  // First: funds under no real key could never pay (the validator checks the payer's signature).
+  const userPublicKey = await userPublicKeyFor(userAddress, publicKey || undefined);
 
   // Step 1: Check if there's an active (RUNNING) head
   const activeHead = await DBOps.getActiveHead();
@@ -92,13 +95,10 @@ async function handleIncrementalCommit(
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);
 
-  const nonEmptyPubKey =
-    publicKey && publicKey.length > 0 ? publicKey : '0'.repeat(64);
-
   // Step 2: Build deposit transaction (same as regular deposit)
   const depositParams = {
     userAddress,
-    publicKey: nonEmptyPubKey,
+    publicKey: userPublicKey,
     amountsToDeposit: amountsToCommit,
     walletUtxos,
     validatorRef,

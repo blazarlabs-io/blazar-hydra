@@ -84,6 +84,17 @@ export const BLE = {
   // Retired: write characteristic 9b16159d-7c3e-4ae6-990b-0d34f22389bb (payer address). A BLE write never moves money.
 } as const;
 
+/**
+ * NFC NDEF URI record read by the phone: `myapp://home/nfc?terminal=<merchant Account.id>` (static tag
+ * on the terminal -> GET /terminals/:id/pending-payment) or `myapp://home/nfc?paymentId=<uuid>`.
+ */
+export const NFC = {
+  SCHEME: 'myapp',
+  PATH: 'home/nfc',
+  TERMINAL_PARAM: 'terminal',
+  PAYMENT_ID_PARAM: 'paymentId',
+} as const;
+
 /** "1.5", 6 -> "1500000". Rejects excess decimals, signs, exponents, zero and out-of-range values. */
 export function toBaseUnits(human: string, decimals: number): string {
   const m = /^(\d+)(?:\.(\d*))?$/.exec(human.trim());

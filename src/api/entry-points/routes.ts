@@ -445,6 +445,20 @@ const setRoutes = (
     })
   );
 
+  // NFC: the payer's phone reads `myapp://home/nfc?terminal=<merchant Account.id>` from a static tag on
+  // the terminal and gets what the terminal itself gets above. Only merchant account ids resolve.
+  expressApp.get(
+    API_ROUTES.TERMINAL_PAYMENT_BY_ID,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const merchant = await prisma.account.findUnique({ where: { id: req.params.id } });
+      if (merchant?.kind !== 'merchant') return notFound(res);
+      const p = await pendingPaymentFor(merchant.address);
+      if (p) res.status(STATUS.OK).json(toPaymentDto(p));
+      else res.status(204).end();
+    })
+  );
+
   expressApp.get(
     API_ROUTES.PAYMENT,
     requireAccount(),

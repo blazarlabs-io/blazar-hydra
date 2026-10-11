@@ -195,6 +195,49 @@ describe('routes', () => {
     expect((await get(`/payments/${randomUUID()}`, m)).status).toBe(404);
   });
 
+  it('NFC tag: a payer reads the pending payment of a terminal by merchant account id', async () => {
+    const m = `Bearer ${merchantKey}`;
+    const u = `Bearer ${userKey}`;
+    const merchant = await prisma.account.findFirstOrThrow({ where: { kind: 'merchant', address: MERCHANT } });
+    const user = await prisma.account.findFirstOrThrow({ where: { kind: 'user' } });
+    const byId = (id: string, auth?: string) => get(`/terminals/${id}/pending-payment`, auth);
+    const create = async () =>
+      (
+        await (
+          await api(API_ROUTES.PAYMENTS, m, { merchantAddress: MERCHANT, assetUnit: 'lovelace', amountBaseUnits: '2000000' })
+        ).json()
+      ).paymentId as string;
+
+    expect((await byId(merchant.id, u)).status).toBe(204); // nothing pending (previous test settled it)
+
+    const id = await create();
+    const r = await byId(merchant.id, u);
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body).toMatchObject({ paymentId: id, merchantAddress: MERCHANT, state: 'created', amountBaseUnits: '2000000' });
+    expect(body).toEqual(await (await get(API_ROUTES.TERMINAL_PENDING_PAYMENT, m)).json()); // same as the terminal sees
+
+    // callers: users only, like the other requireAccount('user') routes
+    expect((await byId(merchant.id)).status).toBe(401);
+    expect((await byId(merchant.id, 'Bearer unknown-device-key-0123456789abcdef')).status).toBe(401);
+    expect((await byId(merchant.id, m)).status).toBe(403); // merchant / terminal device key
+
+    // only merchant account ids resolve
+    for (const bad of [randomUUID(), 'not-a-uuid', user.id]) {
+      const nf = await byId(bad, u);
+      expect(nf.status).toBe(404);
+      expect(await nf.json()).toEqual({ error: 'NOT_FOUND' });
+    }
+
+    await prisma.payment.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect((await byId(merchant.id, u)).status).toBe(204); // expired
+
+    const id2 = await create();
+    expect((await byId(merchant.id, u)).status).toBe(200);
+    await prisma.payment.update({ where: { id: id2 }, data: { state: 'authorized', payerAddress: USER } });
+    expect((await byId(merchant.id, u)).status).toBe(204); // already authorized
+  });
+
   it('BTC deposits: user-only, integer-string sats, own deposits only', async () => {
     await prisma.deposit.deleteMany();
     const u = `Bearer ${userKey}`;

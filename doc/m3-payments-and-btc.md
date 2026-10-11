@@ -60,6 +60,7 @@ reconciled against the head snapshot (on read, on the next authorize of the same
 | `POST /accounts` | admin key | Seed an account: `{kind: user\|merchant, address, firebaseUid?, apiKey?}` |
 | `POST /payments` | merchant | `{merchantAddress, assetUnit, amountBaseUnits}`; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
 | `GET /terminal/pending-payment` | merchant (device key) | Oldest unexpired `created` payment, or 204 |
+| `GET /terminals/:id/pending-payment` | user | The same payment for the merchant account `:id` (NFC terminal tag, below), or 204; 404 if `:id` is not a merchant account |
 | `GET /payments/:id` | any account | A merchant sees its own; a user sees unclaimed ones and its own |
 | `POST /payments/:id/authorize` | user | 200 in a final state, 202 if still `submitted` (keep polling); 409 another payer, 410 expired |
 | `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 400 for a missing or malformed address; 503 if the head cannot be read |
@@ -80,6 +81,40 @@ All new routes use `Authorization: Bearer <token>`.
 - **Admin routes and `POST /accounts`:** `ADMIN_API_KEY` (at least 32 characters, constant-time compare).
 - **`POST /withdraw`:** the admin key, or the Firebase ID token of the address owner (see the table).
   `/deposit` (custodial top-up from the admin wallet) stays admin-only.
+
+### NFC terminal tag
+
+The terminal can carry a static NFC tag, as an alternative to BLE. The tag holds one NDEF URI record:
+
+```
+myapp://home/nfc?terminal=<merchant account id>
+```
+
+`<merchant account id>` is the `id` that `POST /accounts` returned for the terminal's merchant
+account (section 6). Merchant accounts that share an address see the same payments. The app reads
+the tag and calls `GET /terminals/<id>/pending-payment` with the payer's Firebase ID token. The reply
+is the payment the terminal itself gets from `GET /terminal/pending-payment` (200), 204 when nothing
+is pending, and 404 `{"error":"NOT_FOUND"}` when the id is not a merchant account. From there the
+flow is the BLE one: `GET /payments/:id`, `POST /payments/:id/authorize`, then polling until a final
+state. The tag does not change between payments, so the terminal needs no NFC hardware. The app also
+accepts `myapp://home/nfc?paymentId=<uuid>` for a single payment (useful for testing).
+
+Write the tag once:
+
+- **NTAG213 or NTAG215 sticker:** with a phone app such as NFC Tools (Android or iOS), add a URI
+  record with the full URI (no `http://` prefix), write it, and hold the phone to the sticker. The
+  record is about 70 bytes; an NTAG213 holds 144. Stick it on the terminal. Locking the tag
+  read-only afterwards (irreversible) stops anyone from rewriting it.
+- **Flipper Zero (testing):** NFC, Add Manually, NTAG215, Emulate. While it emulates, write the URI
+  onto it from the phone as above.
+
+BLE stays available: the terminal keeps advertising the pending payment, and the app can use it
+when the phone has no NFC. The tag is read inside the app (the payer starts the scan); iOS
+background tag reading does not open custom schemes such as `myapp://`. On iPhone, tag reading
+needs the "Near Field Communication Tag Reading" capability, which Apple grants only to paid Apple
+Developer Program teams, not to a free personal team. Android needs only a phone with NFC;
+emulators have none. Whoever knows the tag id can read the merchant's pending payment (id, amount,
+asset), the same data BLE broadcasts; paying still takes an authenticated `authorize` by a payer.
 
 ### Executor
 
@@ -291,8 +326,9 @@ pays M exactly 8000000 lovelace + 10000 `d2a8592e…425443`. The merchant was th
 - **Single shared deposit address.** The bridge memo and destination are the same for all users.
   Attribution is the first claim of a BTC output, so a second app user could claim another user's
   transaction. Acceptable for one client; per-user destinations would close it.
-- **Contactless transport: BLE.** NFC is not implemented. The payload is only the `paymentId`, so
-  the transport can change without changing the contract.
+- **Contactless transport: BLE or a static NFC tag.** BLE carries only the `paymentId` and the NFC
+  tag only the terminal's merchant account id (section 2), so the app always shows what the backend
+  returns. NFC on iPhone needs a paid Apple Developer team.
 - **Payable balance = largest funds UTxO per asset.** A payment spends exactly one L2 funds UTxO,
   so `payableInL2` reports, per asset, the largest one, not the sum. Each BTC deposit becomes its
   own funds UTxO: after the two deposits above, payable BTC showed 39900, not 39900 + 29940.

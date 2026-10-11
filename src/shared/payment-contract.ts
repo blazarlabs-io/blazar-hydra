@@ -47,7 +47,7 @@ export const PaymentErrorSchema = z.enum([
 /** POST /payments body. Strings only: the backend json-bigint parser turns every JSON number into BigInt. */
 export const CreatePaymentSchema = z
   .object({
-    merchantAddress: z.string().min(1), // must equal the calling merchant Account.address
+    merchantAddress: z.string().min(1).optional(), // must equal the calling merchant Account.address; absent: that address
     assetUnit: AssetUnitSchema,
     amountBaseUnits: BaseUnitsSchema,
   })
@@ -82,6 +82,17 @@ export const BLE = {
   ASSET_UNIT: '52f34145-0363-4f4e-9fab-a133e8e5b0b1', // value3, unchanged
   PAYMENT_ID: '44f2e2a5-f323-44a2-bfbb-4afe3ef2b3ba', // value4, NEW
   // Retired: write characteristic 9b16159d-7c3e-4ae6-990b-0d34f22389bb (payer address). A BLE write never moves money.
+} as const;
+
+/**
+ * NFC NDEF URI record read by the phone: `myapp://home/nfc?terminal=<merchant Account.id>` (static tag
+ * on the terminal -> GET /terminals/:id/pending-payment) or `myapp://home/nfc?paymentId=<uuid>`.
+ */
+export const NFC = {
+  SCHEME: 'myapp',
+  PATH: 'home/nfc',
+  TERMINAL_PARAM: 'terminal',
+  PAYMENT_ID_PARAM: 'paymentId',
 } as const;
 
 /** "1.5", 6 -> "1500000". Rejects excess decimals, signs, exponents, zero and out-of-range values. */

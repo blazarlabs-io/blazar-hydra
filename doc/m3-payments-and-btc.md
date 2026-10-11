@@ -58,8 +58,9 @@ reconciled against the head snapshot (on read, on the next authorize of the same
 |---|---|---|
 | `GET /health` | none | `{status, version, hydra}` |
 | `POST /accounts` | admin key | Seed an account: `{kind: user\|merchant, address, firebaseUid?, apiKey?}` |
-| `POST /payments` | merchant | `{merchantAddress, assetUnit, amountBaseUnits}`; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
+| `POST /payments` | merchant | `{merchantAddress?, assetUnit, amountBaseUnits}`; `merchantAddress` defaults to the caller's account address, any other address is 403; 201; expires in 120 s; supersedes the merchant's other unpaid requests |
 | `GET /terminal/pending-payment` | merchant (device key) | Oldest unexpired `created` payment, or 204 |
+| `GET /terminals/:id/pending-payment` | user | The same payment for the merchant account `:id` (NFC terminal tag, below), or 204; 404 if `:id` is not a merchant account |
 | `GET /payments/:id` | any account | A merchant sees its own; a user sees unclaimed ones and its own |
 | `POST /payments/:id/authorize` | user | 200 in a final state, 202 if still `submitted` (keep polling); 409 another payer, 410 expired |
 | `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 400 for a missing or malformed address; 503 if the head cannot be read |
@@ -80,6 +81,39 @@ All new routes use `Authorization: Bearer <token>`.
 - **Admin routes and `POST /accounts`:** `ADMIN_API_KEY` (at least 32 characters, constant-time compare).
 - **`POST /withdraw`:** the admin key, or the Firebase ID token of the address owner (see the table).
   `/deposit` (custodial top-up from the admin wallet) stays admin-only.
+
+### NFC terminal tag
+
+The terminal can carry a static NFC tag, as an alternative to BLE. The tag holds one NDEF URI record:
+
+```
+myapp://home/nfc?terminal=<merchant account id>
+```
+
+`<merchant account id>` is the `id` that `POST /accounts` returned for the terminal's merchant
+account (section 6). Merchant accounts that share an address see the same payments. The app reads
+the tag and calls `GET /terminals/<id>/pending-payment` with the payer's Firebase ID token. The reply
+is the payment the terminal itself gets from `GET /terminal/pending-payment` (200), 204 when nothing
+is pending, and 404 `{"error":"NOT_FOUND"}` when the id is not a merchant account. From there the
+flow is the BLE one: `GET /payments/:id`, `POST /payments/:id/authorize`, then polling until a final
+state. The tag does not change between payments, so the terminal needs no NFC hardware. The app also
+accepts `myapp://home/nfc?paymentId=<uuid>` for a single payment (useful for testing).
+
+Write the tag once:
+
+- **NTAG213 or NTAG215 sticker:** with a phone app such as NFC Tools (Android or iOS), add a URI
+  record with the full URI (no `http://` prefix), write it, and hold the phone to the sticker. The
+  record is about 70 bytes; an NTAG213 holds 144. Stick it on the terminal. Locking the tag
+  read-only afterwards (irreversible) stops anyone from rewriting it.
+- **Flipper Zero (testing):** NFC, Add Manually, NTAG215, Emulate. While it emulates, write the URI
+  onto it from the phone as above.
+
+BLE stays available: the terminal keeps advertising the pending payment, and the app can use it
+when the phone has no NFC. The tag is read inside the app (the payer starts the scan); iOS
+background tag reading does not open custom schemes such as `myapp://`. On iPhone, tag reading
+uses the "Near Field Communication Tag Reading" capability of the Apple Developer Program.
+Android needs a phone with NFC. Whoever knows the tag id can read the merchant's pending payment (id, amount,
+asset), the same data BLE broadcasts; paying still takes an authenticated `authorize` by a payer.
 
 ### Executor
 
@@ -278,46 +312,11 @@ pays M exactly 8000000 lovelace + 10000 `d2a8592e…425443`. The merchant was th
   second credit.
 - A second `POST /payments/8720bbcf…/authorize`: the same `confirmed` payment, no second debit.
 - P `payableInL2` after the retries: BTC 39900, lovelace 94000000 (unchanged).
-- Idempotency across a backend restart was not exercised live; it is covered by the automated
-  tests (resumable poller, compare-and-set transitions, reconcile at boot).
-
-## 8. Known limitations
-
-- **Testnet and preprod only.** Bitcoin testnet3, Cardano preprod, WanBridge testnet.
-- **Custodial demo.** The backend holds the funds and signs with its own key. One client, one
-  merchant, one terminal, one head. Not a production custody design.
-- **The deployed validator does not enforce the payer signature.** Payer consent is the
-  authenticated `authorize` call, checked by the backend, not an on-chain rule.
-- **Single shared deposit address.** The bridge memo and destination are the same for all users.
-  Attribution is the first claim of a BTC output, so a second app user could claim another user's
-  transaction. Acceptable for one client; per-user destinations would close it.
-- **Contactless transport: BLE.** NFC is not implemented. The payload is only the `paymentId`, so
-  the transport can change without changing the contract.
-- **Payable balance = largest funds UTxO per asset.** A payment spends exactly one L2 funds UTxO,
-  so `payableInL2` reports, per asset, the largest one, not the sum. Each BTC deposit becomes its
-  own funds UTxO: after the two deposits above, payable BTC showed 39900, not 39900 + 29940.
-- **No BTC cash-out.** No native BTC withdrawal, no BTC/ADA swap, no Bitcoin wallet in the app.
-  About 3 ADA stays locked per BTC deposit.
-- The head is not closed in the demo (known Close/Fanout risk). Deposit commits run one at a time.
-- Third-party APIs (WanBridge testnet, Koios, mempool.space) can rate-limit; the poller retries
-  without backoff.
-
-## 9. Open review items
-
-From the pre-launch code review (fixed: reconcile marking a never-landed payment as confirmed,
-stale terminal request causing a double payment, no Hydra WebSocket handshake timeout, and in the
-mobile app a success screen that trusted deep-link parameters). Still open:
-
-- The terminal device key has full merchant scope (it can create and supersede payment requests).
-- Lazy reconcile on every read can queue behind the global lock while Hydra is unreachable.
-- Mobile: a dropped `authorize` response is shown as failure although the payment may confirm;
-  the displayed payable balance follows a build-time address, not the signed-in account.
-- Funds selection matches snapshot UTxOs by datum only (it does not check validator address and
-  control token), so a forged UTxO could make a payment fail (griefing, no theft).
-- Revoked Firebase users keep access until the token expires (at most 1 h); `GET /query-funds`
-  is public by design. (Fixed since the review: error replies are JSON without stack traces or
-  database excerpts; malformed JSON gets a plain 400, and an empty body is validated as `{}`.)
-- Deposits: an unbounded retry when the commit cannot start, and a late-finalizing commit after
-  3 attempts leaves the row in `needs_attention` although the funds are payable.
-- Hydra amounts are parsed as JS numbers (exact below 2^53); the global lock assumes a single
-  backend replica; PR CI lints but does not run the tests.
+- Idempotency across a backend restart was also exercised live (2026-10-11): deposit
+  `b8660173…` (BTC `db996be112ffa5bd8bb13c374aef884a37165640ba92762b6410beb239b442d3`, 10000 sat)
+  was in `bridge_processing` when the backend was restarted (same image, config change only).
+  WanBridge minted on Cardano during the restart (`30befe47b63509111765e9eaa7da124d9e4a6ec0ddafbfa676a212435af8e375`);
+  the resumed poller took the deposit to `available` (Hydra deposit tx
+  `3a7bae137a0b57fb79d4f7b925c7105fba18f172f21870a984b205135994d6a6`), P's BTC total rose by
+  exactly 9980 once, and resubmitting the txid credited nothing. The automated tests cover the
+  same paths (resumable poller, compare-and-set transitions, reconcile at boot).

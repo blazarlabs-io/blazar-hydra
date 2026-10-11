@@ -427,11 +427,12 @@ const setRoutes = (
     requireAccount('merchant'),
     handle(async (req, res) => {
       const body = CreatePaymentSchema.parse(req.body);
-      if (body.merchantAddress !== callerOf(res).address) {
+      const { address } = callerOf(res);
+      if ((body.merchantAddress ?? address) !== address) {
         res.status(403).json({ error: 'FORBIDDEN' });
         return;
       }
-      res.status(201).json(toPaymentDto(await createPayment(body)));
+      res.status(201).json(toPaymentDto(await createPayment({ ...body, merchantAddress: address })));
     })
   );
 
@@ -440,6 +441,20 @@ const setRoutes = (
     requireAccount('merchant'),
     handle(async (_req, res) => {
       const p = await pendingPaymentFor(callerOf(res).address);
+      if (p) res.status(STATUS.OK).json(toPaymentDto(p));
+      else res.status(204).end();
+    })
+  );
+
+  // NFC: the payer's phone reads `myapp://home/nfc?terminal=<merchant Account.id>` from a static tag on
+  // the terminal and gets what the terminal itself gets above. Only merchant account ids resolve.
+  expressApp.get(
+    API_ROUTES.TERMINAL_PAYMENT_BY_ID,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const merchant = await prisma.account.findUnique({ where: { id: req.params.id } });
+      if (merchant?.kind !== 'merchant') return notFound(res);
+      const p = await pendingPaymentFor(merchant.address);
       if (p) res.status(STATUS.OK).json(toPaymentDto(p));
       else res.status(204).end();
     })

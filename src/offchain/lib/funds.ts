@@ -1,5 +1,6 @@
-import { Data, UTxO } from '@lucid-evolution/lucid';
+import { Data, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { FundsDatum, FundsDatumT } from './types';
+import { dataAddressToBech32 } from './utils';
 
 /**
  * Head-snapshot UTxOs that carry a Blazar FundsDatum (user or merchant), excluding the admin's own
@@ -34,6 +35,12 @@ export function fundsDatumOf(u: UTxO): FundsDatumT | null {
   } catch {
     return null;
   }
+}
+
+/** The bech32 address a funds UTxO pays out to (its FundsDatum.addr), or null without a FundsDatum. */
+export function fundsOwnerOf(lucid: LucidEvolution, u: UTxO): string | null {
+  const d = fundsDatumOf(u);
+  return d && dataAddressToBech32(lucid, d.addr);
 }
 
 /**

@@ -72,18 +72,50 @@ export const requireAccount =
     }
   };
 
-/** Bearer ADMIN_API_KEY, compared in constant time. */
-export const requireAdmin: RequestHandler = (req, res, next) => {
-  const token = bearer(req.headers.authorization);
-  const ok =
+const isAdmin = (header: string | undefined) => {
+  const token = bearer(header);
+  return (
     !!token &&
     timingSafeEqual(
       Buffer.from(sha256Hex(token), 'hex'),
       Buffer.from(sha256Hex(env.ADMIN_API_KEY), 'hex')
-    );
-  if (!ok) {
+    )
+  );
+};
+
+/** Bearer ADMIN_API_KEY, compared in constant time. */
+export const requireAdmin: RequestHandler = (req, res, next) => {
+  if (!isAdmin(req.headers.authorization)) {
     res.status(401).json({ error: 'UNAUTHORIZED' });
     return;
   }
   next();
 };
+
+/**
+ * ADMIN_API_KEY, or a Firebase ID token whose account address equals `addressOf(req.body)`.
+ * 401 without either, 403 for another address. Device keys are refused: a terminal must not move funds.
+ */
+export const requireAdminOrOwner =
+  (addressOf: (body: Record<string, unknown>) => unknown): RequestHandler =>
+  async (req, res, next) => {
+    const header = req.headers.authorization;
+    if (isAdmin(header)) return next();
+    try {
+      const isJwt = bearer(header)?.split('.').length === 3;
+      const caller = isJwt ? await authenticate(header) : null;
+      if (!caller) {
+        res.status(401).json({ error: 'UNAUTHORIZED' });
+        return;
+      }
+      if (addressOf(req.body ?? {}) !== caller.address) {
+        res.status(403).json({ error: 'FORBIDDEN' });
+        return;
+      }
+      res.locals.caller = caller;
+      next();
+    } catch (e) {
+      logger.error(`auth: ${e}`);
+      res.status(500).json({ error: 'INTERNAL' });
+    }
+  };

@@ -245,10 +245,10 @@ tUSDM (section 1) through the same code path as ADA and BTC.
 | `POST /deposits/:id/btc-tx` | First call 1 s after broadcast: 422 `BTC_TX_NOT_FOUND` (not indexed yet), state unchanged. Second call: `btc_sent` |
 | WanBridge status | `Processing` (receive amount 49900), then `Success` with `redeemHash` `565c077368d1840a495f8d0660d6488629f0d91b1fd64d790d5ec1750cdd9301` |
 | Cardano L1 (checked independently on Koios) | Block 5274275, output #0 to `DEPOSIT_ADDRESS`: 49900 × `d2a8592e…425443` + 1.14215 ADA, no datum; metadata `{"1":{"type":9,"uniqueId":"0x63f5b2f2…9844","tokenPairID":517}}` |
-| Backend states | `l1_confirmed` 00:42:11 (`l1Ref` `565c0773…#0`, `receivedBaseUnits` 49900) → `committing` 00:42:56 (Hydra deposit tx `7f22a6145a81e0f149bc763881892134c960ee089cefb18db1676a880c7f5042`) → `available` 00:49:48 |
+| Backend states | `l1_confirmed` 00:42:11 (`l1Ref` `565c0773…#0`, `receivedBaseUnits` 49900) → `committing` by 00:42:47 (Hydra deposit tx `7f22a6145a81e0f149bc763881892134c960ee089cefb18db1676a880c7f5042`) → `available` 00:49:47 |
 | Payable | P `payableInL2` BTC = 49900 |
 
-End to end: BTC broadcast 00:25:49 → `available` 00:49:48, about **24 minutes** (two testnet3
+End to end: BTC broadcast 00:25:49 → `available` 00:49:47, about **24 minutes** (two testnet3
 confirmations and the bridge about 16 minutes, the Hydra commit about 7 minutes).
 
 ### BTC deposit from the mobile app (Android emulator, live backend)

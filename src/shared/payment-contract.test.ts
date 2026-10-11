@@ -9,11 +9,11 @@ import {
   toBaseUnits,
 } from './payment-contract';
 
-const USDM = '77484e67c1ed6c96f55b89206cb5d6caae9a09a0bd473bba817929fe5553444d';
+const USDM = 'e675b46e4d2242c991a8932a99db3044e80515ae14b4c4ccf6b3f4c90014df10745553444d';
 const BTC = 'd2a8592ec9673ac18fea1044885f94518e954ab0cb2b6bb0a328d2af425443';
 
 describe('payment contract self-check', () => {
-  it('asset decimals: ADA 6, USDM 6 (no on-chain metadata), BTC 8', () => {
+  it('asset decimals: ADA 6, tUSDM 6 (CIP-68 reference datum), BTC 8', () => {
     expect(ASSETS.lovelace.decimals).toBe(6);
     expect(ASSETS[USDM].decimals).toBe(6);
     expect(ASSETS[BTC].decimals).toBe(8);

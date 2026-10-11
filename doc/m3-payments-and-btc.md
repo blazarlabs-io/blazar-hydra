@@ -62,9 +62,10 @@ reconciled against the head snapshot (on read, on the next authorize of the same
 | `GET /terminal/pending-payment` | merchant (device key) | Oldest unexpired `created` payment, or 204 |
 | `GET /payments/:id` | any account | A merchant sees its own; a user sees unclaimed ones and its own |
 | `POST /payments/:id/authorize` | user | 200 in a final state, 202 if still `submitted` (keep polling); 409 another payer, 410 expired |
-| `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 503 if the head cannot be read |
+| `GET /query-funds?address=` | none | L1 and L2 funds plus `payableInL2` per unit (user funds only; a merchant's received funds are in `totalInL2`); 400 for a missing or malformed address; 503 if the head cannot be read |
 | `POST /deposits/btc`, `POST /deposits/:id/btc-tx`, `GET /deposits/:id` | user | BTC deposit (section 3) |
-| `/deposit`, `/withdraw`, `/pay-merchant`, `/open-head`, `/close-head`, `/incremental-commit`, `/incremental-decommit` | admin key | Operator routes |
+| `POST /withdraw` | admin key, or the Firebase ID token of the account whose `address` is in the body | Merchant claim: decommits that address's L2 funds to L1. 403 for another address; device keys are refused; every requested funds UTxO must carry that address in its datum |
+| `/deposit`, `/pay-merchant`, `/open-head`, `/close-head`, `/incremental-commit`, `/incremental-decommit` | admin key | Operator routes |
 
 ### Auth model
 
@@ -77,6 +78,7 @@ All new routes use `Authorization: Bearer <token>`.
 - **Terminal:** a device key, stored as a sha256 hash and mapped to the merchant account. It can
   read pending payments but cannot authorize one (403).
 - **Admin routes and `POST /accounts`:** `ADMIN_API_KEY` (at least 32 characters, constant-time compare).
+  `POST /withdraw` also accepts the owner's Firebase ID token (see the table above).
 
 ### Executor
 
@@ -206,10 +208,11 @@ The bootstrap creates the merchant funds UTxO in L2. Before it, other payments f
 
 ## 7. Verified on preprod (October 2026)
 
-Backend `https://blazar-api.cardano.vip`; `GET /health` reported version
-`f4fa9aee3e71ce08afdef2f65f5c928761cbe1fd` (the code of this guide) and a single-party Hydra head
-`Open`. One payer and one merchant Firebase test account (provided on request) were seeded with
-`POST /accounts`. Times are UTC, 9 to 10 October 2026.
+Backend `https://blazar-api.cardano.vip` with a single-party Hydra head `Open`. `GET /health`
+reported version `f4fa9aee3e71ce08afdef2f65f5c928761cbe1fd` for payments 1 to 3 and the BTC
+deposits, and `692f92b0cdda500f8bd0c0c4e97966ad00d6fbad` (the code of this guide) for payment 4.
+One payer and one merchant Firebase test account (provided on request) were seeded with
+`POST /accounts`. Times are UTC, 9 to 11 October 2026.
 
 - Payer P: `addr_test1qqv50nl9rp55wt9lvpsshsuu9fxmlqskudg8gmdygpldy6kgtmx9p4gfkl52500g8kcxs7d683w89ne7d5gkgl4yl0jq0ve0zj`
 - Merchant M: `addr_test1qqkmdp58hy4urz4zyszpdawfr23fhc3aky27rd7wh0u95h2pvaaxc8qdc6kmpuhz4t5kchxcneya5qtwfes0549pyujqveuc6j`
@@ -297,9 +300,9 @@ mobile app a success screen that trusted deep-link parameters). Still open:
   the displayed payable balance follows a build-time address, not the signed-in account.
 - Funds selection matches snapshot UTxOs by datum only (it does not check validator address and
   control token), so a forged UTxO could make a payment fail (griefing, no theft).
-- Malformed JSON returns a framework error page; revoked Firebase users keep access until the
-  token expires (at most 1 h); `GET /query-funds` is public by design; `POST /accounts` with an
-  empty body returns 400 with an unhelpful issue list (cosmetic).
+- Revoked Firebase users keep access until the token expires (at most 1 h); `GET /query-funds`
+  is public by design. (Fixed since the review: error replies are JSON without stack traces or
+  database excerpts; malformed JSON gets a plain 400, and an empty body is validated as `{}`.)
 - Deposits: an unbounded retry when the commit cannot start, and a late-finalizing commit after
   3 attempts leaves the row in `needs_attention` although the funds are payable.
 - Hydra amounts are parsed as JS numbers (exact below 2^53); the global lock assumes a single

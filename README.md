@@ -50,7 +50,7 @@ transactions. See the [migration doc](./doc/hydra-2x-migration.md#do-not-use-hyd
 | [`doc/api-integration.md`](./doc/api-integration.md) | Full API reference (request/response schemas, integration notes) |
 | [`doc/requirements_and_design.md`](./doc/requirements_and_design.md) | Problem, design, use cases, on-chain validator details |
 | [`doc/INCREMENTAL_FEATURES_COMPLETE_GUIDE.md`](./doc/INCREMENTAL_FEATURES_COMPLETE_GUIDE.md) | Incremental commit / decommit walkthrough |
-| [`doc/m3-payments-and-btc.md`](./doc/m3-payments-and-btc.md) | M3: payment contract, BTC testnet deposits, configuration, run/test, seeding, limitations |
+| [`doc/m3-payments-and-btc.md`](./doc/m3-payments-and-btc.md) | M3: payment contract, BTC testnet deposits, configuration, run/test, seeding, results on preprod |
 
 ## Repository layout
 
@@ -155,7 +155,7 @@ Full schemas and integration notes in [`doc/api-integration.md`](./doc/api-integ
 | `POST /incremental-decommit` | Decommit a single funds UTxO L2→L1 |
 | `POST /close-head?id=` | Decommit merchant funds, `Close`, then `Fanout` the rest to L1 |
 
-> **Known limitation (hydra-node 2.2.0):** a head that has had an incremental decommit (any
+> **Note (hydra-node 2.2.0):** a head that has had an incremental decommit (any
 > `/withdraw`, and the merchant decommit in `/close-head`) cannot reach `Fanout` — the node re-runs
 > the Blazar validator on the already-settled UTxO and throws `FailedToConstructPartialFanoutTx`.
 > Funds are unaffected (the decommits settle them to L1); only head cleanup is blocked. See

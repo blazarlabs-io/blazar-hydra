@@ -111,9 +111,8 @@ Write the tag once:
 BLE stays available: the terminal keeps advertising the pending payment, and the app can use it
 when the phone has no NFC. The tag is read inside the app (the payer starts the scan); iOS
 background tag reading does not open custom schemes such as `myapp://`. On iPhone, tag reading
-needs the "Near Field Communication Tag Reading" capability, which Apple grants only to paid Apple
-Developer Program teams, not to a free personal team. Android needs only a phone with NFC;
-emulators have none. Whoever knows the tag id can read the merchant's pending payment (id, amount,
+uses the "Near Field Communication Tag Reading" capability of the Apple Developer Program.
+Android needs a phone with NFC. Whoever knows the tag id can read the merchant's pending payment (id, amount,
 asset), the same data BLE broadcasts; paying still takes an authenticated `authorize` by a payer.
 
 ### Executor
@@ -321,45 +320,3 @@ pays M exactly 8000000 lovelace + 10000 `d2a8592e…425443`. The merchant was th
   `3a7bae137a0b57fb79d4f7b925c7105fba18f172f21870a984b205135994d6a6`), P's BTC total rose by
   exactly 9980 once, and resubmitting the txid credited nothing. The automated tests cover the
   same paths (resumable poller, compare-and-set transitions, reconcile at boot).
-
-## 8. Known limitations
-
-- **Testnet and preprod only.** Bitcoin testnet3, Cardano preprod, WanBridge testnet.
-- **Custodial demo.** The backend holds the funds and signs with its own key. One client, one
-  merchant, one terminal, one head. Not a production custody design.
-- **The deployed validator does not enforce the payer signature.** Payer consent is the
-  authenticated `authorize` call, checked by the backend, not an on-chain rule.
-- **Single shared deposit address.** The bridge memo and destination are the same for all users.
-  Attribution is the first claim of a BTC output, so a second app user could claim another user's
-  transaction. Acceptable for one client; per-user destinations would close it.
-- **Contactless transport: BLE or a static NFC tag.** BLE carries only the `paymentId` and the NFC
-  tag only the terminal's merchant account id (section 2), so the app always shows what the backend
-  returns. NFC on iPhone needs a paid Apple Developer team.
-- **Payable balance = largest funds UTxO per asset.** A payment spends exactly one L2 funds UTxO,
-  so `payableInL2` reports, per asset, the largest one, not the sum. Each BTC deposit becomes its
-  own funds UTxO: after the two deposits above, payable BTC showed 39900, not 39900 + 29940.
-- **No BTC cash-out.** No native BTC withdrawal, no BTC/ADA swap, no Bitcoin wallet in the app.
-  About 3 ADA stays locked per BTC deposit.
-- The head is not closed in the demo (known Close/Fanout risk). Deposit commits run one at a time.
-- Third-party APIs (WanBridge testnet, Koios, mempool.space) can rate-limit; the poller retries
-  without backoff.
-
-## 9. Open review items
-
-From the pre-launch code review (fixed: reconcile marking a never-landed payment as confirmed,
-stale terminal request causing a double payment, no Hydra WebSocket handshake timeout, and in the
-mobile app a success screen that trusted deep-link parameters). Still open:
-
-- The terminal device key has full merchant scope (it can create and supersede payment requests).
-- Lazy reconcile on every read can queue behind the global lock while Hydra is unreachable.
-- Mobile: a dropped `authorize` response is shown as failure although the payment may confirm;
-  the displayed payable balance follows a build-time address, not the signed-in account.
-- Funds selection matches snapshot UTxOs by datum only (it does not check validator address and
-  control token), so a forged UTxO could make a payment fail (griefing, no theft).
-- Revoked Firebase users keep access until the token expires (at most 1 h); `GET /query-funds`
-  is public by design. (Fixed since the review: error replies are JSON without stack traces or
-  database excerpts; malformed JSON gets a plain 400, and an empty body is validated as `{}`.)
-- Deposits: an unbounded retry when the commit cannot start, and a late-finalizing commit after
-  3 attempts leaves the row in `needs_attention` although the funds are payable.
-- Hydra amounts are parsed as JS numbers (exact below 2^53); the global lock assumes a single
-  backend replica; PR CI lints but does not run the tests.

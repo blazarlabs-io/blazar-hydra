@@ -157,6 +157,12 @@ describe('routes', () => {
     expect(await other.json()).toEqual({ error: 'PUBLIC_KEY_ALREADY_SET' });
   });
 
+  it('accounts take only base addresses with key credentials (script credentials would break the Pay message)', async () => {
+    const scriptBase = 'addr_test1zrhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwams0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8saqnrty';
+    const r = await api(API_ROUTES.ACCOUNTS, ADMIN, { kind: 'merchant', address: scriptBase, apiKey: `s-${randomUUID()}-${randomUUID()}` });
+    expect(r.status).toBe(400);
+  });
+
   it('/deposit refuses an address without a registered device key, before any L1 work', async () => {
     const r = await api(API_ROUTES.DEPOSIT, ADMIN, { user_address: addr('e7'), amount: [['lovelace', 20000000]] });
     expect(r.status).toBe(400);
@@ -329,6 +335,12 @@ describe('routes', () => {
     const r = await api(`/payments/${p.paymentId}/authorize`, `Bearer ${keyless}`, { fundsInRef: `${'11'.repeat(32)}#0`, signature: '00'.repeat(64) });
     expect(r.status).toBe(400);
     expect(await r.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
+    const oldApp = await api(`/payments/${p.paymentId}/authorize`, `Bearer ${keyless}`, {}); // M3 app: no body
+    expect(oldApp.status).toBe(400);
+    expect(await oldApp.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
+    const btc = await api(API_ROUTES.BTC_DEPOSITS, `Bearer ${keyless}`, { amountSats: '200000' });
+    expect(btc.status).toBe(400);
+    expect(await btc.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
   });
 });
 

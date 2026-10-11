@@ -32,6 +32,12 @@ import {
 const lucid = {
   config: () => ({ network: 'Preprod' }),
 } as unknown as LucidEvolution;
+// Payer phones (ed25519 seeds 01×32 and 02×32, the golden-vector keys of pay-message.test.ts).
+const PAYER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('01'.repeat(32), 'hex'));
+const OTHER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('02'.repeat(32), 'hex'));
+const pkOf = (k: CML.PrivateKey) => Buffer.from(k.to_public().to_raw_bytes()).toString('hex');
+const PAYER_PK = pkOf(PAYER_KEY);
+const OTHER_PK = pkOf(OTHER_KEY);
 const USDM = 'e675b46e4d2242c991a8932a99db3044e80515ae14b4c4ccf6b3f4c90014df10745553444d';
 const CONTROL = `${'cc'.repeat(28)}${'01'.repeat(32)}`; // validation token, never payable
 const SCRIPT = credentialToAddress('Preprod', {
@@ -49,15 +55,13 @@ const OTHER_PAYER = addr('a2');
 let seq = 0;
 const nextMerchant = () => addr((0xb0 + ++seq).toString(16)); // b1, b2, ... ff (< 80 merchants)
 
-const datum = (owner: string, kind: 'user' | 'merchant') =>
+// User funds are locked under the owner's phone key (PAYER -> seed 01, OTHER_PAYER -> seed 02) unless given.
+const datum = (owner: string, kind: 'user' | 'merchant', key = owner === OTHER_PAYER ? OTHER_PK : PAYER_PK) =>
   Data.to<FundsDatumT>(
     {
       addr: bech32ToAddressType(lucid, owner),
       locked_deposit: kind === 'user' ? 2_000_000n : 0n,
-      funds_type:
-        kind === 'user'
-          ? { User: { public_key: '00'.repeat(32) } }
-          : 'Merchant',
+      funds_type: kind === 'user' ? { User: { public_key: key } } : 'Merchant',
     },
     FundsDatum
   );
@@ -76,8 +80,9 @@ const utxo = (
 const userFunds = (
   assets: UTxO['assets'],
   owner = PAYER,
-  tx = '11'.repeat(32)
-) => utxo(tx, 0, { [CONTROL]: 1n, ...assets }, datum(owner, 'user'));
+  tx = '11'.repeat(32),
+  key?: string
+) => utxo(tx, 0, { [CONTROL]: 1n, ...assets }, datum(owner, 'user', key));
 const merchantFunds = (owner: string) =>
   utxo(
     '22'.repeat(32),
@@ -103,10 +108,6 @@ function fakeDeps(
   } satisfies PaymentDeps & { txId: string };
 }
 
-// Payer phones (ed25519 seeds 01×32 and 02×32, the golden-vector keys of pay-message.test.ts).
-const PAYER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('01'.repeat(32), 'hex'));
-const OTHER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('02'.repeat(32), 'hex'));
-const pkOf = (k: CML.PrivateKey) => Buffer.from(k.to_public().to_raw_bytes()).toString('hex');
 /** What the phone sends: its signature over PayInfo(payment, funds UTxO) and its public key. */
 const consent = (p: PaymentRow, funds: UTxO, key = PAYER_KEY): PayConsent => {
   const fundsInRef = `${funds.txHash}#${funds.outputIndex}`;
@@ -135,7 +136,7 @@ describe('selectPayerUtxo (per-unit funds check)', () => {
       userFunds({ lovelace: 10_000_000n }, OTHER_PAYER),
       merchantFunds(PAYER),
     ];
-    expect(selectPayerUtxo(lucid, snap, PAYER, 'lovelace', 1n)).toEqual({
+    expect(selectPayerUtxo(lucid, snap, PAYER, PAYER_PK, 'lovelace', 1n)).toEqual({
       error: 'NO_L2_FUNDS',
     });
   });
@@ -143,9 +144,9 @@ describe('selectPayerUtxo (per-unit funds check)', () => {
   it('lovelace keeps locked_deposit back, exactly at the boundary', () => {
     const snap = [userFunds({ lovelace: 5_000_000n })];
     expect(
-      selectPayerUtxo(lucid, snap, PAYER, 'lovelace', 3_000_000n)
+      selectPayerUtxo(lucid, snap, PAYER, PAYER_PK, 'lovelace', 3_000_000n)
     ).toHaveProperty('utxo');
-    expect(selectPayerUtxo(lucid, snap, PAYER, 'lovelace', 3_000_001n)).toEqual(
+    expect(selectPayerUtxo(lucid, snap, PAYER, PAYER_PK, 'lovelace', 3_000_001n)).toEqual(
       { error: 'INSUFFICIENT_FUNDS' }
     );
   });
@@ -161,10 +162,10 @@ describe('selectPayerUtxo (per-unit funds check)', () => {
       PAYER,
       '44'.repeat(32)
     );
-    const pick = selectPayerUtxo(lucid, [poor, rich], PAYER, USDM, 10_000_000n);
+    const pick = selectPayerUtxo(lucid, [poor, rich], PAYER, PAYER_PK, USDM, 10_000_000n);
     expect(pick).toEqual({ utxo: rich });
     expect(
-      selectPayerUtxo(lucid, [poor, rich], PAYER, USDM, 10_000_001n)
+      selectPayerUtxo(lucid, [poor, rich], PAYER, PAYER_PK, USDM, 10_000_001n)
     ).toEqual({ error: 'INSUFFICIENT_FUNDS' });
   });
 });
@@ -419,18 +420,29 @@ describe('authorize + executor', () => {
     expect(deps.build).not.toHaveBeenCalled();
   });
 
+  it('funds locked under another key are neither proposed nor spent (the validator would reject them)', async () => {
+    const merchant = nextMerchant();
+    const foreign = userFunds({ lovelace: 10_000_000n }, PAYER, 'f5'.repeat(32), OTHER_PK);
+    const deps = fakeDeps([foreign, merchantFunds(merchant)]);
+    const p = await newPayment(merchant);
+    expect(await signPayload(p.id, PAYER, PAYER_PK, deps)).toEqual({ status: 409, error: 'NO_L2_FUNDS' });
+    const r = await authorizePayment(p.id, PAYER, deps, consent(p, foreign));
+    expect(r.payment).toMatchObject({ state: 'failed', error: 'NO_L2_FUNDS' });
+    expect(deps.build).not.toHaveBeenCalled();
+  });
+
   it('sign-payload names the free funds UTxO and the exact bytes to sign', async () => {
     const merchant = nextMerchant();
     const funds = userFunds({ lovelace: 10_000_000n }, PAYER, 'f4'.repeat(32));
     const deps = fakeDeps([funds, merchantFunds(merchant)]);
     const p = await newPayment(merchant);
-    const r = await signPayload(p.id, PAYER, deps);
+    const r = await signPayload(p.id, PAYER, PAYER_PK, deps);
     const fundsInRef = `${'f4'.repeat(32)}#0`;
     expect(r).toEqual({ status: 200, payload: { fundsInRef, payInfoCbor: payInfoCbor({ ...p, fundsInRef }) } });
-    expect((await signPayload(p.id, OTHER_PAYER, deps)).error).toBe('NO_L2_FUNDS');
+    expect((await signPayload(p.id, OTHER_PAYER, OTHER_PK, deps)).error).toBe('NO_L2_FUNDS');
     await prisma.payment.update({ where: { id: p.id }, data: { expiresAt: new Date(Date.now() - 1) } });
-    expect((await signPayload(p.id, PAYER, deps)).status).toBe(409);
-    expect((await signPayload('00000000-0000-4000-8000-000000000000', PAYER, deps)).status).toBe(404);
+    expect((await signPayload(p.id, PAYER, PAYER_PK, deps)).status).toBe(409);
+    expect((await signPayload('00000000-0000-4000-8000-000000000000', PAYER, PAYER_PK, deps)).status).toBe(404);
   });
 
   it('TxInvalid for our tx fails the payment', async () => {

@@ -94,6 +94,14 @@ describe('pay message', () => {
     expect(verifyPaySignature('00', ADA_MSG, ADA_SIG)).toBe(false);
   });
 
+  it('refuses script credentials: the tx builder encodes every credential as a key', () => {
+    const scriptBase =
+      'addr_test1zrhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwams0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8saqnrty';
+    expect(() =>
+      payInfoCbor({ merchantAddress: scriptBase, assetUnit: 'lovelace', amountBaseUnits: '1', fundsInRef: `${'11'.repeat(32)}#0` })
+    ).toThrow(/script/);
+  });
+
   it('refuses reward addresses and malformed funds refs', () => {
     const reward = credentialToRewardAddress('Preprod', { type: 'Key', hash: '0f'.repeat(28) });
     const base = { assetUnit: 'lovelace', amountBaseUnits: '1', fundsInRef: `${'11'.repeat(32)}#0` };

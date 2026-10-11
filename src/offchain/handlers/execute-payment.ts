@@ -186,7 +186,7 @@ export async function authorizePayment(
     { expiresAt: { gt: new Date() } }
   );
   if (won) {
-    await withLock(() => executePayment(id, deps, consent.signature));
+    await withLock(() => executePayment(id, deps, consent));
     const p = await prisma.payment.findUniqueOrThrow({ where: { id } });
     const final = TERMINAL_STATES.includes(p.state as PaymentState);
     return { status: final ? 200 : 202, payment: p };
@@ -205,6 +205,7 @@ export async function authorizePayment(
 export async function signPayload(
   id: string,
   payerAddress: string,
+  publicKey: string,
   deps: PaymentDeps
 ): Promise<{ status: number; error?: string; payload?: { fundsInRef: string; payInfoCbor: string } }> {
   const p = await prisma.payment.findUnique({ where: { id } });
@@ -215,30 +216,40 @@ export async function signPayload(
     const inFlight = await prisma.payment.findMany({ where: { state: 'submitted', payerAddress } });
     const busy = new Set(inFlight.map((q) => q.fundsInRef!));
     const amount = BigInt(p.amountBaseUnits);
-    const pick = selectPayerUtxo(deps.lucid, snapshot, payerAddress, p.assetUnit, amount, busy);
+    const pick = selectPayerUtxo(deps.lucid, snapshot, payerAddress, publicKey, p.assetUnit, amount, busy);
     if ('error' in pick) return { status: 409, error: pick.error };
     const fundsInRef = `${pick.utxo.txHash}#${pick.utxo.outputIndex}`;
     return { status: 200, payload: { fundsInRef, payInfoCbor: payInfoCbor({ ...p, fundsInRef }) } };
   });
 }
 
-/** Payer funds UTxO in L2: User datum for `payerAddress` with enough spendable `unit`. */
-export function selectPayerUtxo(
-  lucid: LucidEvolution,
-  snapshot: UTxO[],
-  payerAddress: string,
-  unit: string,
-  amount: bigint,
-  busy: ReadonlySet<string> = new Set() // inputs of unsettled payments
-): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' } {
-  const mine = snapshot.flatMap((u) => {
+/**
+ * The payer's User funds UTxOs that its phone key can spend: datum address and datum key both match.
+ * Funds locked under another key (another device's account, an M3 placeholder) would fail on-chain.
+ */
+function payerFunds(lucid: LucidEvolution, snapshot: UTxO[], payerAddress: string, publicKey: string) {
+  return snapshot.flatMap((u) => {
     const d = fundsDatumOf(u);
     return d &&
       d.funds_type !== 'Merchant' &&
+      d.funds_type.User.public_key === publicKey &&
       dataAddressToBech32(lucid, d.addr) === payerAddress
       ? [{ u, d }]
       : [];
   });
+}
+
+/** Payer funds UTxO in L2 under the payer's key, with enough spendable `unit`. */
+export function selectPayerUtxo(
+  lucid: LucidEvolution,
+  snapshot: UTxO[],
+  payerAddress: string,
+  publicKey: string,
+  unit: string,
+  amount: bigint,
+  busy: ReadonlySet<string> = new Set() // inputs of unsettled payments
+): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' } {
+  const mine = payerFunds(lucid, snapshot, payerAddress, publicKey);
   if (mine.length === 0) return { error: 'NO_L2_FUNDS' };
   const hit = mine.find(
     ({ u, d }) =>
@@ -262,31 +273,29 @@ export function findMerchantUtxo(
   });
 }
 
-/** The payer funds UTxO named by `fundsInRef`, if it is still the payer's, unspent, free and big enough. */
+/** The payer funds UTxO named by `fundsInRef`, if it is still the payer's (address and key), unspent, free and big enough. */
 export function signedPayerUtxo(
   lucid: LucidEvolution,
   snapshot: UTxO[],
   payerAddress: string,
+  publicKey: string,
   fundsInRef: string,
   unit: string,
   amount: bigint,
   busy: ReadonlySet<string> = new Set()
 ): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' | 'STALE_FUNDS' } {
-  const mine = snapshot.filter((u) => {
-    const d = fundsDatumOf(u);
-    return !!d && d.funds_type !== 'Merchant' && dataAddressToBech32(lucid, d.addr) === payerAddress;
-  });
+  const mine = payerFunds(lucid, snapshot, payerAddress, publicKey);
   if (mine.length === 0) return { error: 'NO_L2_FUNDS' };
-  const u = mine.find((x) => `${x.txHash}#${x.outputIndex}` === fundsInRef);
-  if (!u || busy.has(fundsInRef)) return { error: 'STALE_FUNDS' };
-  return spendable(u, fundsDatumOf(u)!, unit) >= amount ? { utxo: u } : { error: 'INSUFFICIENT_FUNDS' };
+  const hit = mine.find(({ u }) => `${u.txHash}#${u.outputIndex}` === fundsInRef);
+  if (!hit || busy.has(fundsInRef)) return { error: 'STALE_FUNDS' };
+  return spendable(hit.u, hit.d, unit) >= amount ? { utxo: hit.u } : { error: 'INSUFFICIENT_FUNDS' };
 }
 
 /** authorized -> submitted -> confirmed | failed. Must run under withLock. */
 export async function executePayment(
   id: string,
   deps: PaymentDeps,
-  signature: string
+  consent: Pick<PayConsent, 'signature' | 'publicKey'>
 ): Promise<void> {
   const p = await prisma.payment.findUnique({ where: { id } });
   if (!p || p.state !== 'authorized' || !p.payerAddress || !p.fundsInRef) return;
@@ -315,7 +324,7 @@ export async function executePayment(
       } else busy.add(q.fundsInRef!);
     }
     // Only the UTxO the payer signed for: the signature covers it and no other.
-    const pick = signedPayerUtxo(deps.lucid, snapshot, p.payerAddress, p.fundsInRef, p.assetUnit, amount, busy);
+    const pick = signedPayerUtxo(deps.lucid, snapshot, p.payerAddress, consent.publicKey, p.fundsInRef, p.assetUnit, amount, busy);
     if ('error' in pick) return fail(pick.error);
     const merchantUtxo = findMerchantUtxo(
       deps.lucid,
@@ -332,7 +341,7 @@ export async function executePayment(
       merchantAddress: p.merchantAddress,
       assets: { [p.assetUnit]: amount },
       snapshot,
-      signature,
+      signature: consent.signature,
     });
     // Persist hydraTxId before NewTx, so a crash after sending can still be reconciled. Throws on a
     // hydraTxId already recorded (an identical tx of an earlier payment that never landed).

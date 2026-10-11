@@ -46,7 +46,6 @@ import { getNetworkFromLucid, getValidatorDetails } from '../lib/utils';
 import { buildIncrementalCommitBlueprint } from '../tx-builders/commit-funds';
 import { deposit, validationTokenName } from '../tx-builders/deposit';
 import { withLock } from './execute-payment';
-import { registeredPublicKey } from '../lib/accounts';
 
 export const DEPOSIT_TTL_MS = 30 * 60_000; // decision 2
 export const BRIDGE_TIMEOUT_MS = 2 * 60 * 60_000; // Processing beyond 2 h needs attention
@@ -148,7 +147,7 @@ export function toDepositDto(d: DepositRow): Deposit {
 
 // ---------- API ----------
 
-type User = { id: string; address: string };
+type User = { id: string; address: string; publicKey?: string | null };
 
 /** POST /deposits/btc: createTx2 for DEPOSIT_ADDRESS, valid for 30 min. */
 export async function createBtcDeposit(
@@ -156,8 +155,10 @@ export async function createBtcDeposit(
   amountSats: bigint,
   deps: DepositDeps
 ): Promise<
-  { status: 201; deposit: DepositRow } | { status: 422 | 502; error: string }
+  { status: 201; deposit: DepositRow } | { status: 400 | 422 | 502; error: string }
 > {
+  // The funds will be locked under the payer's phone key; without one they could never pay.
+  if (!user.publicKey) return { status: 400, error: 'NO_PUBLIC_KEY' };
   let btc: wanbridge.BtcDepositInstructions;
   try {
     const quota = await deps.bridge.getQuotaAndFee();
@@ -573,8 +574,8 @@ async function fundsUtxoOnL1(
       local,
       {
         userAddress: d.userAddress,
-        // The payer's registered phone key; an M3 account without one keeps the old placeholder.
-        publicKey: (await registeredPublicKey(d.userAddress)) ?? '0'.repeat(64),
+        // The depositor's phone key (required at creation); rows created before keys existed keep the placeholder.
+        publicKey: (await prisma.account.findUnique({ where: { id: d.userId } }))?.publicKey ?? '0'.repeat(64),
         amountsToDeposit: bridged.assets, // the BTC and the bridge's min-ADA, all locked (decision 4)
         lockDeposited: true,
         seedUtxo: bridged,

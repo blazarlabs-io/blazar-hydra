@@ -6,13 +6,21 @@ export class NoPublicKeyError extends Error {
   }
 }
 
-/** The device public key registered by a user account with this address, if any. */
+export class AmbiguousPublicKeyError extends Error {
+  constructor(address: string) {
+    super(`Different device public keys are registered for ${address}`);
+  }
+}
+
+/** The device public key registered by the user accounts with this address, if any; never a guess. */
 export async function registeredPublicKey(address: string): Promise<string | undefined> {
-  const a = await prisma.account.findFirst({
+  const keys = await prisma.account.findMany({
     where: { address, kind: 'user', publicKey: { not: null } },
-    orderBy: { id: 'asc' },
+    select: { publicKey: true },
+    distinct: ['publicKey'],
   });
-  return a?.publicKey ?? undefined;
+  if (keys.length > 1) throw new AmbiguousPublicKeyError(address);
+  return keys[0]?.publicKey ?? undefined;
 }
 
 /**

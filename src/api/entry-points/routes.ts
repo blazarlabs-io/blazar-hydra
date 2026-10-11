@@ -40,7 +40,7 @@ import {
   readDeposit,
   toDepositDto,
 } from '../../offchain/handlers/btc-deposit';
-import { NoPublicKeyError } from '../../offchain/lib/accounts';
+import { AmbiguousPublicKeyError, NoPublicKeyError } from '../../offchain/lib/accounts';
 import {
   AttachBtcTxSchema,
   CreateBtcDepositSchema,
@@ -92,6 +92,10 @@ const setRoutes = (
     } catch (e) {
       if (e instanceof NoPublicKeyError) {
         res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
+        return;
+      }
+      if (e instanceof AmbiguousPublicKeyError) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'AMBIGUOUS_PUBLIC_KEY' });
         return;
       }
       if (e instanceof Error) {
@@ -324,6 +328,10 @@ const setRoutes = (
         res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
         return;
       }
+      if (e instanceof AmbiguousPublicKeyError) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'AMBIGUOUS_PUBLIC_KEY' });
+        return;
+      }
       if (e instanceof Error) {
         res
           .status(STATUS.INTERNAL_SERVER_ERROR)
@@ -510,7 +518,12 @@ const setRoutes = (
     API_ROUTES.PAYMENT_SIGN_PAYLOAD,
     requireAccount('user'),
     handle(async (req, res) => {
-      const r = await signPayload(req.params.id, callerOf(res).address, deps);
+      const caller = callerOf(res);
+      if (!caller.publicKey) {
+        res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
+        return;
+      }
+      const r = await signPayload(req.params.id, caller.address, caller.publicKey, deps);
       if (r.status === STATUS.NOT_FOUND) return notFound(res);
       if (r.payload) res.status(STATUS.OK).json(r.payload);
       else res.status(r.status).json({ error: r.error });
@@ -521,12 +534,13 @@ const setRoutes = (
     API_ROUTES.AUTHORIZE_PAYMENT,
     requireAccount('user'),
     handle(async (req, res) => {
-      const { fundsInRef, signature } = AuthorizePaymentSchema.parse(req.body);
       const caller = callerOf(res);
       if (!caller.publicKey) {
+        // Before the body: an M3 app sends none and must learn it has to register its phone key.
         res.status(STATUS.BAD_REQUEST).json({ error: 'NO_PUBLIC_KEY' });
         return;
       }
+      const { fundsInRef, signature } = AuthorizePaymentSchema.parse(req.body);
       const { status, payment, error } = await authorizePayment(req.params.id, caller.address, deps, {
         fundsInRef,
         signature,

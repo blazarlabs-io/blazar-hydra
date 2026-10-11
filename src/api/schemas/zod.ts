@@ -13,12 +13,14 @@ enum Layer {
 
 export const network = env.NETWORK as Network;
 
+// Key credentials only: the datum and Pay message code (bech32ToAddressType) encode every credential as a key.
 export const validateAddressType = (address: string) => {
-  return getAddressDetails(address).type === 'Base';
+  const d = getAddressDetails(address);
+  return d.type === 'Base' && d.paymentCredential?.type === 'Key' && d.stakeCredential?.type === 'Key';
 };
 
 export const invalidTypeAddress = {
-  message: 'Address should be a Base address',
+  message: 'Address should be a Base address with key credentials',
 };
 
 export const validateAddressFormat = (address: string) => {

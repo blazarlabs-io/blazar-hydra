@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { credentialToAddress } from '@lucid-evolution/lucid';
 import { prisma } from '../../config';
-import { NoPublicKeyError, registeredPublicKey, userPublicKeyFor } from './accounts';
+import { AmbiguousPublicKeyError, NoPublicKeyError, registeredPublicKey, userPublicKeyFor } from './accounts';
 
 const addr = (b: string) =>
   credentialToAddress('Preprod', { type: 'Key', hash: b.repeat(28) }, { type: 'Key', hash: '0f'.repeat(28) });
@@ -19,5 +19,14 @@ describe('user public keys', () => {
     expect(await userPublicKeyFor(withKey, '81'.repeat(32))).toBe('81'.repeat(32));
     await expect(userPublicKeyFor(without)).rejects.toBeInstanceOf(NoPublicKeyError);
     await expect(userPublicKeyFor(addr('c3'))).rejects.toBeInstanceOf(NoPublicKeyError);
+  });
+
+  it('refuses to guess when the accounts of one address registered different keys', async () => {
+    const shared = addr('c4');
+    await prisma.account.create({ data: { kind: 'user', address: shared, apiKeyHash: 'accounts-test-c4a', publicKey: PK } });
+    await prisma.account.create({ data: { kind: 'user', address: shared, apiKeyHash: 'accounts-test-c4b', publicKey: PK } });
+    expect(await registeredPublicKey(shared)).toBe(PK); // the same key twice is not ambiguous
+    await prisma.account.create({ data: { kind: 'user', address: shared, apiKeyHash: 'accounts-test-c4c', publicKey: '81'.repeat(32) } });
+    await expect(userPublicKeyFor(shared)).rejects.toBeInstanceOf(AmbiguousPublicKeyError);
   });
 });

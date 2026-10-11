@@ -48,6 +48,10 @@ export function addressData(bech32: string): PlutusData {
   if (!paymentCredential || (details.type !== 'Base' && details.type !== 'Enterprise')) {
     throw new Error(`unsupported merchant address: ${details.type}`);
   }
+  // The tx builder (bech32ToAddressType) encodes every credential as a key, so a script one would not match.
+  if (paymentCredential.type !== 'Key' || (stakeCredential && stakeCredential.type !== 'Key')) {
+    throw new Error('unsupported merchant address: script credential');
+  }
   const stake: PlutusData = stakeCredential
     ? { constr: 0, fields: [{ constr: 0, fields: [credential(stakeCredential)] }] } // Some(Inline(cred))
     : { constr: 1, fields: [] }; // None

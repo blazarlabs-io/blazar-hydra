@@ -1,5 +1,4 @@
 import {
-  Blockfrost,
   Data,
   getAddressDetails,
   Lucid,
@@ -12,6 +11,7 @@ import {
 import { env } from '../../config';
 import { buildValidator } from '../validator/handle';
 import { getNetworkFromLucid } from '../lib/utils';
+import { makeProvider } from '../lib/provider';
 
 async function deployScript(
   admin_key?: string,
@@ -24,10 +24,7 @@ async function deployScript(
 
   const lucid =
     lucid_config ??
-    ((await Lucid(
-      new Blockfrost(env.PROVIDER_URL, env.PROVIDER_PROJECT_ID),
-      env.NETWORK as Network
-    )) as LucidEvolution);
+    ((await Lucid(makeProvider(env), env.NETWORK as Network)) as LucidEvolution);
   lucid.selectWallet.fromSeed(env.SEED);
   const network = getNetworkFromLucid(lucid);
 

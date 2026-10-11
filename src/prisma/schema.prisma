@@ -18,3 +18,30 @@ model Process {
   status    String
   createdAt DateTime @default(now())
 }
+
+// M3: additive only (the image runs `prisma db push --accept-data-loss` on start).
+model Account {
+  id          String  @id @default(uuid())
+  kind        String // "user" | "merchant"
+  address     String
+  firebaseUid String? @unique
+  apiKeyHash  String? @unique // sha256 hex of the bearer device key
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  merchantAddress String
+  assetUnit       String
+  amountBaseUnits String
+  state           String   @default("created")
+  expiresAt       DateTime
+  payerAddress    String?
+  fundsInRef      String?
+  hydraTxId       String?  @unique
+  snapshotNumber  Int?
+  error           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([merchantAddress, state])
+}

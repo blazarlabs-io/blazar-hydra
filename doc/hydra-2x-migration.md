@@ -215,13 +215,17 @@ the node-built fanout tx, so script evaluation fails at every chunk size and the
 `HeadIsFinalized` never emitted). `FailedToConstructPartialFanoutTx` is **new in 2.2.0** (the
 partial-fanout rewrite).
 
-**Why the client-side `refreshSnapshotBeforeClose` no-op does not fix it.** Advancing to a fresh
-snapshot via an L2 tx keeps `snapshotVersion == version` (an L2 tx doesn't bump the on-chain head
-version), so the version gate still includes the `utxoToDecommit`. There is no client-side way to
-make the two versions differ, so this needs a **hydra-node fix** (don't re-run the script for an
-already-settled decommit at fanout) or a **validator redesign** (a spend path the node's fanout tx
-can satisfy). Tracked upstream: file against `cardano-scaling/hydra` with the closed datum + the
-two decrement txs (no existing issue names the symbol as of 2026-06-14).
+**Why no client-side workaround fixes it (both tried).** (1) An L2 no-op (`refreshSnapshotBeforeClose`)
+keeps `snapshotVersion == version` (an L2 tx doesn't bump the on-chain head version), so the gate still
+includes the `utxoToDecommit`. (2) An **on-chain commit-bump** — depositing a small admin UTxO via
+`/commit` right before `Close` to advance the on-chain version — was implemented and **tested on-chain
+(2026-06-23)**: the commit reached `CommitFinalized` (the on-chain version *did* advance), yet `Fanout`
+**still** threw `PostTxOnChainFailed: FailedToConstructPartialFanoutTx` and the head stayed `Closed`.
+So advancing the on-chain version does **not** clear the settled decommit from the fanout gate. Both
+client-side seams were reverted. This needs a **hydra-node fix** (don't re-run the script for an
+already-settled decommit at fanout) or a **validator redesign** (a spend path the node's fanout tx can
+satisfy). Tracked upstream: file against `cardano-scaling/hydra` with the closed datum + the decrement
+txs (no existing issue names the symbol as of 2026-06-14).
 
 **Operational impact / workaround.** All user and merchant funds settle correctly (the decommits
 are what move them to L1); only head cleanup is affected. To unblock new heads after a stuck close:
@@ -258,3 +262,22 @@ docker logs hydra-node-1 --since 2m 2>&1 | grep -iE "drift|NodeSynced"   # drift
 | Funding stuck in `COMMITTING` for many minutes | normal deposit settlement (`DP … 2·DP` per deposit) | lower `--deposit-period`; wait |
 | Close reaches `CLOSING`/`FAILED` (`Timeout waiting for HeadIsFinalized`); node logs `Fanout` `PostTxOnChainFailed: FailedToConstructPartialFanoutTx` + a Blazar-validator `Script evaluation error` | hydra-node 2.2.0 re-runs the Blazar validator on the settled `utxoToDecommit` during partial fanout (see Known limitation below) | **open** — node-side; everything up to and including `Close` works |
 | New `/open-head` fails: `Init → CommandFailed`, then commit `400 Head is not open` | a previous head is stuck `Closed`-but-not-finalized (fanout never succeeded) and blocks new heads | wipe the node head state: `docker compose stop hydra-node-1 && rm -rf ./persistence/alice && docker compose up -d hydra-node-1` |
+
+## Init idempotency (honest `Init`)
+
+`HydraHandler.init()` opens the head and is **idempotent**: it is a no-op only when the node
+confirms the head is **actually open**. Before sending `Init` it probes `GET /snapshot/utxo`
+(`200` ⇒ open) and skips `Init` if a head is already open. If `Init` returns `CommandFailed`, the
+node is re-probed — only a confirmed-open head is treated as a no-op; any other `CommandFailed`
+raises `HydraInitError` so a real Init rejection cannot masquerade as success. Consequently a `200`
+from `POST /open-head` now means the head genuinely opened (or already was), not merely that `Init`
+did not throw. Implemented as a pure `performInit(deps)` in `src/offchain/lib/hydra-init.ts`.
+
+## Known limitation: `/state` is not reconciled with the head
+
+`GET /state` returns only the Prisma `process.status` column, written imperatively by the
+open/close handlers. Nothing reconciles it against the hydra-node or L1 — there is no poller or
+health check — so `status` can diverge from the real head state (e.g. `FAILED` after a head opened
+but funding failed; `DECOMMITING` is just the value `POST /close-head` writes before any node
+interaction). **To determine the real head state, query the node (`GET <node>/snapshot/utxo`) and
+read the app/node logs — do not rely on `/state`.**

@@ -16,11 +16,14 @@ import { HydraHandler } from '../lib/hydra';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { dataAddressToBech32, valueTuplesToAssets } from '../lib/utils';
 import { logger } from '../../shared/logger';
+import { assertRunning } from '../../shared/close-guards';
+import { DBOps } from '../../prisma/db-ops';
 
 async function handlePay(
   lucid: LucidEvolution,
   params: PayMerchantSchema
 ): Promise<{ fundsUtxoRef: OutRef; merchUtxo: OutRef }> {
+  assertRunning(await DBOps.getActiveHead());
   const localLucid = _.cloneDeep(lucid);
   const {
     merchant_address: merchantAddress,

@@ -71,6 +71,10 @@ RUN mkdir -p /var/log/app && \
     echo 'alias logs="tail -f /var/log/app/app.log"' >> /root/.profile && \
     echo 'alias logs-follow="tail -f /var/log/app/app.log"' >> /root/.profile
 
+# Reported by GET /health as `version` (docker buildx build --build-arg BUILD_SHA=$(git rev-parse --short HEAD) ...)
+ARG BUILD_SHA=dev
+ENV BUILD_SHA=$BUILD_SHA
+
 # Expose ports
 EXPOSE 3000
 

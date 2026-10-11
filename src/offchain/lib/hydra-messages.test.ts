@@ -44,6 +44,30 @@ describe('waitForTag', () => {
     await expect(p).rejects.toBeInstanceOf(HydraTerminalError);
   });
 
+  it('ignores a terminal tag for a different deposit when terminalMatch is set', async () => {
+    // Regression: a DepositExpired for an unrelated/stale deposit must NOT abort the
+    // wait for our deposit's CommitFinalized.
+    const c = fakeConn();
+    const p = waitForTag(c, 'CommitFinalized', {
+      match: (m) => m.depositTxId === 'mine',
+      terminalTags: ['DepositExpired'],
+      terminalMatch: (m) => m.depositTxId === 'mine',
+    });
+    c.emit({ tag: 'DepositExpired', depositTxId: 'stale' }); // unrelated — must be ignored
+    c.emit({ tag: 'CommitFinalized', depositTxId: 'mine' });
+    await expect(p).resolves.toMatchObject({ depositTxId: 'mine' });
+  });
+
+  it('rejects on a terminal tag for our own deposit when terminalMatch matches', async () => {
+    const c = fakeConn();
+    const p = waitForTag(c, 'CommitFinalized', {
+      terminalTags: ['DepositExpired'],
+      terminalMatch: (m) => m.depositTxId === 'mine',
+    });
+    c.emit({ tag: 'DepositExpired', depositTxId: 'mine' });
+    await expect(p).rejects.toBeInstanceOf(HydraTerminalError);
+  });
+
   it('ignores non-JSON frames', async () => {
     const c = fakeConn();
     const p = waitForTag(c, 'TxValid');

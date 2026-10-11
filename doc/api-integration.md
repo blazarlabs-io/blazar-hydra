@@ -341,6 +341,7 @@ The following error structures are common across multiple endpoints:
 
 * **Integration Notes:**
     * Opening a Hydra Head is a multi-step, **asynchronous process** that involves on-chain transactions. This endpoint triggers the initial steps and returns before the head is fully "open."
+    * A `200` means the node accepted `Init` — the head opened, or was already open. **Funding** the head (collecting deposits, committing funds + admin collateral) runs asynchronously afterwards; a later `GET /state` of `FAILED` means *funding* failed, not that the head failed to open. Poll `GET /state` for progress to `RUNNING`.
     * To track a head's status, an `operationId` is returned when this endpoint is called. The `operationId` is stored in a minimal database that tracks the most relevant statuses of a head.
     * The `peer_api_urls` are the URLs of the Hydra peer nodes that will manage consensus within the Hydra Head.
 
@@ -355,23 +356,30 @@ The following error structures are common across multiple endpoints:
 
 * **Responses:**
 
-    * **200 OK - Hydra Head Closed Successfully (Initiated)**
-        * **Description:** The Hydra Head closure process has begun. This implies that the final state is being committed to L1.
+    * **200 OK - Hydra Head Close Initiated**
+        * **Description:** The close was accepted and the process moved to `DECOMMITING`. The actual on-chain close/fanout runs asynchronously afterwards; poll `GET /state`.
         * **Content Type:** `application/json`
         * **Schema:**
             ```json
             {
-              "status": "CLOSING" // Indicates the head has transitioned to the CLOSING state.
+              "status": "DECOMMITING" // The close-head request set the process to DECOMMITING.
             }
             ```
         * **Example:**
             ```json
             {
-                "status": "CLOSING"
+                "status": "DECOMMITING"
             }
             ```
 
-    * **See "Common Error Responses" for `400 Bad Request`** (e.g., if the wallet lacks necessary funds for the transaction).
+    * **404 Not Found** — no process exists for the given `id`.
+        ```json
+        { "error": "Not Found: No process found for id <id>" }
+        ```
+    * **409 Conflict** — a close is already in progress for this `id` (status `DECOMMITING` or `CLOSING`).
+        ```json
+        { "error": "Conflict: Close already in progress (status DECOMMITING)" }
+        ```
     * **See "Common Error Responses" for `500/520 Internal Server Error`**
 
 * **Integration Notes:**
@@ -396,7 +404,7 @@ The following error structures are common across multiple endpoints:
         * **Schema:**
             ```json
             {
-              "status": "string" // The current status of the process (e.g., "OPENING", "COMMITTING", "FAILED", etc.)
+              "status": "string" // One of: INITIALIZING, MERGING, COMMITTING, RUNNING, DECOMMITING, CLOSING, FAILED
             }
             ```
         * **Example:**
@@ -408,3 +416,4 @@ The following error structures are common across multiple endpoints:
 
 * **Integration Notes:**
     * This endpoint provides information about a head's status. This is useful specially during its opening or closing, allowing for quick checks and avoiding the need to wait for these long, asynchronous processes to finalize.
+    * **Caveat — this is DB bookkeeping, not the live head.** `status` is written by the server's own handlers and is **never reconciled** against the hydra-node or L1, so it can diverge from reality (e.g. a head can be open on the node while `status` is `FAILED` because only the *funding* step failed). To check the real head, query the node directly (`GET <node>/snapshot/utxo` — `200` with UTxOs means a head is open) and read the app/node logs.

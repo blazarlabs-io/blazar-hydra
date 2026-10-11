@@ -1,5 +1,4 @@
 import { IncrementalCommitSchema } from '../../shared';
-import { IncrementalCommitParams } from '../lib/params';
 import { deposit } from '../tx-builders/deposit';
 import { buildIncrementalCommitBlueprint } from '../tx-builders/commit-funds';
 import {

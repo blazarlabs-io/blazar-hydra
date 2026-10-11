@@ -1,11 +1,9 @@
 import { IncrementalDecommitSchema } from '../../shared';
-import { IncrementalDecommitParams } from '../lib/params';
 import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
 import {
   Data,
   getAddressDetails,
   LucidEvolution,
-  UTxO,
 } from '@lucid-evolution/lucid';
 import { env } from '../../config';
 import _ from 'lodash';
@@ -120,30 +118,6 @@ async function handleIncrementalDecommit(
   }
 
   // Step 5: Build decommit transaction
-  let decommitParams: IncrementalDecommitParams;
-
-  if (owner === 'merchant') {
-    decommitParams = {
-      address,
-      owner: 'merchant',
-      fundUtxo,
-      adminKey,
-      hydraKey,
-      walletUtxos,
-    };
-  } else {
-    // User decommit
-    decommitParams = {
-      address,
-      owner: 'user',
-      fundUtxo,
-      signature,
-      adminKey,
-      hydraKey,
-      walletUtxos,
-    };
-  }
-
   // Build the withdrawal transaction (same as merchant withdraw)
   const { tx } = await withdrawMerchant(localLucid, {
     kind: owner,

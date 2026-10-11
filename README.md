@@ -50,6 +50,7 @@ transactions. See the [migration doc](./doc/hydra-2x-migration.md#do-not-use-hyd
 | [`doc/api-integration.md`](./doc/api-integration.md) | Full API reference (request/response schemas, integration notes) |
 | [`doc/requirements_and_design.md`](./doc/requirements_and_design.md) | Problem, design, use cases, on-chain validator details |
 | [`doc/INCREMENTAL_FEATURES_COMPLETE_GUIDE.md`](./doc/INCREMENTAL_FEATURES_COMPLETE_GUIDE.md) | Incremental commit / decommit walkthrough |
+| [`doc/m3-payments-and-btc.md`](./doc/m3-payments-and-btc.md) | M3: payment contract, BTC testnet deposits, configuration, run/test, seeding, limitations |
 
 ## Repository layout
 

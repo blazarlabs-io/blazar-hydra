@@ -151,3 +151,8 @@ export type Deposit = z.infer<typeof DepositSchema>;
 export const CreateBtcDepositSchema = z.object({ amountSats: BaseUnitsSchema }).strict();
 /** POST /deposits/:id/btc-tx body. */
 export const AttachBtcTxSchema = z.object({ btcTxid: z.string().toLowerCase().pipe(TxIdSchema) }).strict();
+
+/** PUT /accounts/me/public-key body: the phone's ed25519 public key, raw 32 bytes as lowercase hex. */
+export const RegisterPublicKeySchema = z
+  .object({ publicKey: z.string().regex(/^[0-9a-f]{64}$/) })
+  .strict();

@@ -9,6 +9,7 @@ const API_ROUTES = {
   INCREMENTAL_DECOMMIT: '/incremental-decommit',
   HEALTH: '/health',
   ACCOUNTS: '/accounts',
+  ACCOUNT_PUBLIC_KEY: '/accounts/me/public-key',
   PAYMENTS: '/payments',
   PAYMENT: '/payments/:id',
   AUTHORIZE_PAYMENT: '/payments/:id/authorize',

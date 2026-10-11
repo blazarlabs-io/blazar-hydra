@@ -43,6 +43,7 @@ import {
   AttachBtcTxSchema,
   CreateBtcDepositSchema,
   CreatePaymentSchema,
+  RegisterPublicKeySchema,
 } from '../../shared/payment-contract';
 import { Caller, requireAccount, requireAdmin, requireAdminOrOwner, sha256Hex } from '../middleware/auth';
 import { Prisma } from '@prisma/client';
@@ -419,6 +420,23 @@ const setRoutes = (
         }
         throw err;
       }
+    })
+  );
+
+  // The payer's phone registers its signing key once (account seeded by the admin). A second, different
+  // key is refused: funds already deposited carry the first one in their datum and only it can pay.
+  expressApp.put(
+    API_ROUTES.ACCOUNT_PUBLIC_KEY,
+    requireAccount('user'),
+    handle(async (req, res) => {
+      const { publicKey } = RegisterPublicKeySchema.parse(req.body);
+      const caller = callerOf(res);
+      if (caller.publicKey && caller.publicKey !== publicKey) {
+        res.status(STATUS.CONFLICT).json({ error: 'PUBLIC_KEY_ALREADY_SET' });
+        return;
+      }
+      await prisma.account.update({ where: { id: caller.id }, data: { publicKey } });
+      res.status(STATUS.OK).json({ id: caller.id, publicKey });
     })
   );
 

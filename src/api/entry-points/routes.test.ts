@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Server } from 'http';
 import { AddressInfo } from 'net';
 import { randomUUID } from 'crypto';
-import { credentialToAddress, LucidEvolution } from '@lucid-evolution/lucid';
+import { CML, credentialToAddress, LucidEvolution } from '@lucid-evolution/lucid';
 import { createServer } from './server';
 import { setRoutes } from './routes';
 import { API_ROUTES } from '../schemas/routes';
@@ -11,6 +11,7 @@ import { DepositDeps } from '../../offchain/handlers/btc-deposit';
 import { parseBtcTx, parseQuotaAndFee } from '../../bridge/wanbridge';
 import mempoolFx from '../../bridge/wanbridge/__fixtures__/mempool-tx-6633762d.json';
 import quotaFx from '../../bridge/wanbridge/__fixtures__/quotaAndFee-517.json';
+import { payInfoCbor } from '../../offchain/lib/pay-message';
 
 // Real Express app and DB; Hydra (127.0.0.1:9 in vitest.config.ts) is unreachable.
 const lucid = {
@@ -25,6 +26,10 @@ const addr = (b: string) =>
   );
 const MERCHANT = addr('e1');
 const USER = addr('e2');
+// Test payer keys (ed25519 seeds 01×32 and 02×32); the same vectors as offchain/lib/pay-message.test.ts.
+const PAYER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('01'.repeat(32), 'hex'));
+const OTHER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('02'.repeat(32), 'hex'));
+const PAYER_PK = Buffer.from(PAYER_KEY.to_public().to_raw_bytes()).toString('hex');
 const merchantKey = `m-${randomUUID()}-${randomUUID()}`;
 const userKey = `u-${randomUUID()}-${randomUUID()}`;
 const otherUserKey = `o-${randomUUID()}-${randomUUID()}`;
@@ -135,6 +140,21 @@ describe('routes', () => {
     expect(
       (await seed({ kind: 'user', address: USER, apiKey: 'short' })).status
     ).toBe(400);
+  });
+
+  it('a user registers its device public key once; another key is refused', async () => {
+    const put = (auth: string | undefined, body: unknown) =>
+      api(API_ROUTES.ACCOUNT_PUBLIC_KEY, auth, body, 'PUT');
+    expect((await put(undefined, { publicKey: PAYER_PK })).status).toBe(401);
+    expect((await put(`Bearer ${merchantKey}`, { publicKey: PAYER_PK })).status).toBe(403);
+    expect((await put(`Bearer ${userKey}`, { publicKey: 'zz' })).status).toBe(400);
+    const r = await put(`Bearer ${userKey}`, { publicKey: PAYER_PK });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ publicKey: PAYER_PK });
+    expect((await put(`Bearer ${userKey}`, { publicKey: PAYER_PK })).status).toBe(200); // same key: no-op
+    const other = await put(`Bearer ${userKey}`, { publicKey: '81'.repeat(32) });
+    expect(other.status).toBe(409);
+    expect(await other.json()).toEqual({ error: 'PUBLIC_KEY_ALREADY_SET' });
   });
 
   it('create -> pending -> read -> authorize; Hydra down never reports success', async () => {

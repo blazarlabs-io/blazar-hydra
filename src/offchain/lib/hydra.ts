@@ -268,27 +268,8 @@ class HydraHandler {
    * @param tx - The CBOR-encoded transaction to send for decommitment.
    * @returns  the response data from the Hydra node.
    */
-  async decommit(apiUrl: string, tx: CBORHex): Promise<string> {
-    try {
-      const payload = {
-        cborHex: tx,
-        description: '',
-        type: 'Tx ConwayEra',
-      };
-      const response = await axios.post(apiUrl, payload);
-      return response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        logger.error(
-          `Hydra /decommit rejected (status ${error.response?.status}): ${JSON.stringify(error.response?.data)}`
-        );
-      } else {
-        logger.error(
-          `Hydra /decommit error: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-      throw error;
-    }
+  async decommit(apiUrl: string, tx: CBORHex): Promise<string | undefined> {
+    return postDecommit(apiUrl, tx);
   }
 
   /**
@@ -549,6 +530,36 @@ async function submitCommit(
 }
 
 /** GET {apiUrl}/snapshot/utxo over HTTP only (no WebSocket). Throws when the head snapshot can't be read. */
+/**
+ * POST /decommit. Every caller then waits on the snapshot (awaitDecommit), which is what says
+ * whether the decommit happened. hydra-node 2.4 (unstable) was seen accepting a decommit and
+ * closing the connection without an answer (ECONNRESET): that is not a rejection, so it returns
+ * undefined and lets the snapshot decide. An error status, or a request that never got through,
+ * still throws.
+ */
+async function postDecommit(apiUrl: string, tx: CBORHex): Promise<string | undefined> {
+  try {
+    const payload = { cborHex: tx, description: '', type: 'Tx ConwayEra' };
+    const response = await axios.post(apiUrl, payload);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && !error.response && error.code === 'ECONNRESET') {
+      logger.warning('Hydra /decommit closed the connection without an answer; checking the snapshot');
+      return undefined;
+    }
+    if (axios.isAxiosError(error)) {
+      logger.error(
+        `Hydra /decommit rejected (status ${error.response?.status}): ${JSON.stringify(error.response?.data)}`
+      );
+    } else {
+      logger.error(
+        `Hydra /decommit error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    throw error;
+  }
+}
+
 async function fetchSnapshot(apiUrl: string): Promise<UTxO[]> {
   const { data } = await axios.get(`${apiUrl}/snapshot/utxo`, { timeout: 10_000 });
   return Object.entries(data).map(([ref, output]) => {
@@ -671,6 +682,7 @@ export {
   CommitOutcome,
   lucidUtxoToHydraUtxo,
   fetchSnapshot,
+  postDecommit,
   submitTxAndAwaitSnapshot,
   SubmitOutcome,
 };

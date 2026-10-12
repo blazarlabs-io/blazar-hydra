@@ -26,6 +26,7 @@ model Account {
   address     String
   firebaseUid String? @unique
   apiKeyHash  String? @unique // sha256 hex of the bearer device key
+  publicKey   String? // ed25519 public key (32 bytes hex) of the payer's phone; signs every Pay
 }
 
 model Payment {

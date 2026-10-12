@@ -11,7 +11,10 @@ import { env, prisma } from '../../config';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { WithdrawParams } from '../lib/params';
 import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
-import { assertFundsEmpty } from '../lib/funds';
+import axios from 'axios';
+import { assertFundsEmpty, assertHeadTokensMatch, assertOnlyUserFunds } from '../lib/funds';
+import { payOutOnL1, userFundsOps } from '../lib/user-funds';
+import { getNetworkFromLucid, getValidatorDetails } from '../lib/utils';
 import { writeResetMarker } from '../lib/reset-signal';
 import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
@@ -56,8 +59,9 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
   const adminKey = adminCredential.hash;
   const hydra = new HydraHandler(localLucid, wsUrl);
   try {
-    // Step 1: settle ALL funds out of the head (merchant + user). After this the head holds only
-    // the admin collateral, so a discard abandons nothing recoverable.
+    // Step 1: withdraw the merchant funds inside the head: their validation tokens were minted in
+    // L2 and are burned there. User funds stay: their tokens were minted on L1 and must leave
+    // through the fanout (burning them in L2 blocks the fanout with H4, see user-funds.ts).
     const fundUtxos = await hydra.getSnapshot();
     const classify = (type: 'Merchant' | 'User') =>
       fundUtxos.filter((utxo) => {
@@ -72,13 +76,24 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
           return false;
         }
       });
+    const userUtxos = classify('User');
     await withdrawMerchantUtxos(hydra, localLucid, adminAddress, adminKey, hydraKey, classify('Merchant'));
-    await withdrawUserUtxos(hydra, localLucid, adminAddress, adminKey, hydraKey, classify('User'));
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
-    // Step 2: PRIMARY funds-empty gate — BEFORE Close. If anything but admin collateral remains,
-    // abort: do not Close (so we never create a stuck Closed head holding funds).
-    assertFundsEmpty(await hydra.getSnapshot(), adminAddress);
+    // Step 2: gate BEFORE Close: only admin collateral and user funds may remain, and the head
+    // output on L1 must hold exactly the validation tokens of L2, i.e. everything left can leave
+    // through the fanout (so we never create a Closed head that cannot fan out).
+    const [validatorRef] = await localLucid.utxosByOutRef([
+      { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+    ]);
+    if (!validatorRef?.scriptRef) throw new Error('Validator reference UTxO not found');
+    const { scriptHash: fundsPolicy } = getValidatorDetails(
+      validatorRef.scriptRef,
+      getNetworkFromLucid(localLucid)
+    );
+    const snapshot = await hydra.getSnapshot();
+    assertOnlyUserFunds(snapshot, adminAddress);
+    await assertHeadOutputMatches(localLucid, snapshot, fundsPolicy);
 
     // Step 3: Close -> ReadyToFanout -> Fanout (Part C fast-fail kept).
     await hydra.close();
@@ -86,14 +101,32 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     await hydra.awaitReadyToFanout();
     await hydra.fanout();
     logger.info(`Head ${processId} is finalized.`);
+
+    // Step 4: the fanout returned the user funds to the validator on L1, tokens intact; pay the
+    // owners there (UserWithdraw burns each token on L1).
+    if (userUtxos.length > 0) {
+      const paid = await payOutOnL1(
+        userFundsOps(localLucid, hydra, {
+          seed: env.SEED,
+          adminAddress,
+          adminKey,
+          hydraKey,
+          validatorRef,
+          decommitUrl: `${env.ADMIN_NODE_API_URL}/decommit`,
+        }),
+        userUtxos
+      );
+      logger.info(`Paid ${userUtxos.length} user(s) on L1: ${paid.map((p) => p.txHash).join(', ')}`);
+    }
     await prisma.process.delete({ where: { id: processId } });
     await hydra.stop();
     return { status: DBStatus.CLOSED };
   } catch (error) {
     await DBOps.updateHeadStatus(processId, DBStatus.FAILED).catch(() => {});
     if (error instanceof HydraTerminalError && error.tag === 'PostTxOnChainFailed') {
-      // The deterministic fanout-after-decommit bug. Auto-reset ONLY if the head is funds-empty
-      // (last guard — re-query the snapshot). Otherwise leave FAILED for manual handling.
+      // Fanout rejected (the old "fanout-after-decommit" was H4 from user tokens burned in L2, now
+      // avoided). Auto-reset ONLY if the head is funds-empty (last guard — re-query the snapshot).
+      // Otherwise leave FAILED for manual handling.
       try {
         assertFundsEmpty(await hydra.getSnapshot(), adminAddress);
         const marker = await writeResetMarker(env.RESET_SIGNAL_DIR, processId, 'fanout-after-decommit');
@@ -113,6 +146,30 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     throw error;
   } finally {
     await hydra.stop().catch(() => {});
+  }
+}
+
+/** Asset name of the head's state token ("HydraHeadV2"), held only by the head output on L1. */
+const HEAD_STATE_TOKEN = '4879647261486561645632';
+
+/**
+ * The head output on L1 (found by its state token) against the L2 snapshot, see
+ * assertHeadTokensMatch. Retried for about two minutes: a decrement approved in L2 can still be
+ * landing on L1, and Kupo lags a block behind.
+ */
+async function assertHeadOutputMatches(lucid: LucidEvolution, snapshot: UTxO[], policyId: string) {
+  const { data } = await axios.get(`${env.ADMIN_NODE_API_URL}/head`, { timeout: 10_000 });
+  const headId: string | undefined = data?.contents?.headId;
+  if (!headId) throw new Error('hydra-node reported no head id');
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const headOutput = await lucid.utxoByUnit(`${headId}${HEAD_STATE_TOKEN}`);
+      assertHeadTokensMatch(headOutput.assets, snapshot, policyId);
+      return;
+    } catch (error) {
+      if (attempt >= 12) throw error;
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
   }
 }
 
@@ -166,40 +223,5 @@ async function withdrawMerchantUtxos(
   }
 }
 
-/**
- * Decommits all USER fund UTxOs out of the head (admin-authorized: validate_withdraw checks the
- * admin_key, not the redeemer sig, so an empty per-fund signature is fine). Mirrors
- * withdrawMerchantUtxos. Re-queries admin collateral from the live snapshot for each round.
- */
-async function withdrawUserUtxos(
-  hydra: HydraHandler,
-  lucid: LucidEvolution,
-  adminAddress: string,
-  adminKey: string,
-  hydraKey: string,
-  userUtxos: UTxO[]
-) {
-  if (userUtxos.length === 0) return;
-  const rounds = Math.ceil(userUtxos.length / MAX_UTXOS_PER_DECOMMIT);
-  logger.info(`${rounds} rounds of user decommit (${userUtxos.length} user utxos)`);
-  for (let i = 0; i < rounds; i++) {
-    const thisRound = userUtxos.slice(0, MAX_UTXOS_PER_DECOMMIT);
-    userUtxos.splice(0, MAX_UTXOS_PER_DECOMMIT);
-    const utxosInL2 = await hydra.getSnapshot();
-    const walletUtxos = utxosInL2.filter((u) => u.address === adminAddress);
-    const withdrawParams: WithdrawParams = {
-      kind: 'user',
-      withdraws: thisRound.map((u) => ({ fundUtxo: u, signature: '' })),
-      adminKey,
-      hydraKey,
-      walletUtxos,
-    };
-    const { tx } = await withdrawMerchant(lucid, withdrawParams);
-    const signedTx = await tx.sign.withWallet().complete().then((t) => t.toCBOR());
-    await hydra.decommit(`${env.ADMIN_NODE_API_URL}/decommit`, signedTx);
-    await hydra.awaitDecommit(thisRound);
-    logger.info(`User decommit ${i + 1}/${rounds} finalized.`);
-  }
-}
 
 export { handleCloseHead, finalizeCloseHead };

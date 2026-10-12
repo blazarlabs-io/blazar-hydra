@@ -147,7 +147,7 @@ export function toDepositDto(d: DepositRow): Deposit {
 
 // ---------- API ----------
 
-type User = { id: string; address: string };
+type User = { id: string; address: string; publicKey?: string | null };
 
 /** POST /deposits/btc: createTx2 for DEPOSIT_ADDRESS, valid for 30 min. */
 export async function createBtcDeposit(
@@ -155,8 +155,10 @@ export async function createBtcDeposit(
   amountSats: bigint,
   deps: DepositDeps
 ): Promise<
-  { status: 201; deposit: DepositRow } | { status: 422 | 502; error: string }
+  { status: 201; deposit: DepositRow } | { status: 400 | 422 | 502; error: string }
 > {
+  // The funds will be locked under the payer's phone key; without one they could never pay.
+  if (!user.publicKey) return { status: 400, error: 'NO_PUBLIC_KEY' };
   let btc: wanbridge.BtcDepositInstructions;
   try {
     const quota = await deps.bridge.getQuotaAndFee();
@@ -572,7 +574,8 @@ async function fundsUtxoOnL1(
       local,
       {
         userAddress: d.userAddress,
-        publicKey: '0'.repeat(64), // as /incremental-commit; the 2x validator ignores it
+        // The depositor's phone key (required at creation); rows created before keys existed keep the placeholder.
+        publicKey: (await prisma.account.findUnique({ where: { id: d.userId } }))?.publicKey ?? '0'.repeat(64),
         amountsToDeposit: bridged.assets, // the BTC and the bridge's min-ADA, all locked (decision 4)
         lockDeposited: true,
         seedUtxo: bridged,

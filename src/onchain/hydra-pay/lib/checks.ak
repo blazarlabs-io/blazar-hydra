@@ -5,6 +5,7 @@ use aiken/crypto.{
   ScriptHash, Signature, VerificationKeyHash,
 }
 use cardano/address.{Address, Credential, Script, VerificationKey, from_script}
+use consent.{pay_signed_by}
 use cardano/assets.{
   PolicyId, add, flatten, from_asset, from_asset_list, lovelace_of, match, merge,
   negate, quantity_of, restricted_to, tokens, zero,
@@ -70,7 +71,7 @@ pub fn validate_merge(own_input: Input, tx: Transaction) {
 
 pub fn validate_pay(
   red_info: PayInfo,
-  _red_sig: Signature,
+  red_sig: Signature,
   datum: FundsDatum,
   own_input: Input,
   tx: Transaction,
@@ -93,7 +94,7 @@ pub fn validate_pay(
   } = datum
 
   // The script UTxO being validated has User funds_type
-  expect User { public_key: _public_key } = i_dat_funds_type
+  expect User { public_key } = i_dat_funds_type
 
   let PayInfo {
     amount: red_amount,
@@ -214,6 +215,8 @@ pub fn validate_pay(
   expect [Pair(_u_token_name, 1)] = tokens(u_o_value, own_hash) |> to_pairs()
 
   and {
+    // The payer signed exactly this payment (amount, merchant, spent funds UTxO) with the key in its datum
+    pay_signed_by(public_key, red_info, red_sig)?,
     // The ref stored in the redeemer msg is being spent
     list.any(inputs, fn(i) { i.output_reference == red_ref })?,
     // Merchant and User Funds UTxOs must be paid to our script

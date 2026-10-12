@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Server } from 'http';
 import { AddressInfo } from 'net';
 import { randomUUID } from 'crypto';
-import { credentialToAddress, LucidEvolution } from '@lucid-evolution/lucid';
+import { CML, credentialToAddress, LucidEvolution } from '@lucid-evolution/lucid';
 import { createServer } from './server';
 import { setRoutes } from './routes';
 import { API_ROUTES } from '../schemas/routes';
@@ -11,6 +11,7 @@ import { DepositDeps } from '../../offchain/handlers/btc-deposit';
 import { parseBtcTx, parseQuotaAndFee } from '../../bridge/wanbridge';
 import mempoolFx from '../../bridge/wanbridge/__fixtures__/mempool-tx-6633762d.json';
 import quotaFx from '../../bridge/wanbridge/__fixtures__/quotaAndFee-517.json';
+import { payInfoCbor } from '../../offchain/lib/pay-message';
 
 // Real Express app and DB; Hydra (127.0.0.1:9 in vitest.config.ts) is unreachable.
 const lucid = {
@@ -25,6 +26,10 @@ const addr = (b: string) =>
   );
 const MERCHANT = addr('e1');
 const USER = addr('e2');
+// Test payer keys (ed25519 seeds 01×32 and 02×32); the same vectors as offchain/lib/pay-message.test.ts.
+const PAYER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('01'.repeat(32), 'hex'));
+const OTHER_KEY = CML.PrivateKey.from_normal_bytes(Buffer.from('02'.repeat(32), 'hex'));
+const PAYER_PK = Buffer.from(PAYER_KEY.to_public().to_raw_bytes()).toString('hex');
 const merchantKey = `m-${randomUUID()}-${randomUUID()}`;
 const userKey = `u-${randomUUID()}-${randomUUID()}`;
 const otherUserKey = `o-${randomUUID()}-${randomUUID()}`;
@@ -79,6 +84,7 @@ describe('routes', () => {
   it.each([
     API_ROUTES.DEPOSIT,
     API_ROUTES.WITHDRAW,
+    API_ROUTES.WITHDRAW_L1,
     API_ROUTES.PAY,
     API_ROUTES.OPEN_HEAD,
     API_ROUTES.CLOSE_HEAD,
@@ -90,7 +96,7 @@ describe('routes', () => {
     expect((await api(path, `Bearer ${merchantKey}`, {})).status).toBe(401);
   });
 
-  it.each([API_ROUTES.DEPOSIT, API_ROUTES.WITHDRAW])(
+  it.each([API_ROUTES.DEPOSIT, API_ROUTES.WITHDRAW, API_ROUTES.WITHDRAW_L1])(
     '%s accepts ADMIN_API_KEY (/withdraw owner tokens: auth.test.ts)',
     async (path) => {
       // past auth: the empty body fails validation
@@ -135,6 +141,33 @@ describe('routes', () => {
     expect(
       (await seed({ kind: 'user', address: USER, apiKey: 'short' })).status
     ).toBe(400);
+  });
+
+  it('a user registers its device public key once; another key is refused', async () => {
+    const put = (auth: string | undefined, body: unknown) =>
+      api(API_ROUTES.ACCOUNT_PUBLIC_KEY, auth, body, 'PUT');
+    expect((await put(undefined, { publicKey: PAYER_PK })).status).toBe(401);
+    expect((await put(`Bearer ${merchantKey}`, { publicKey: PAYER_PK })).status).toBe(403);
+    expect((await put(`Bearer ${userKey}`, { publicKey: 'zz' })).status).toBe(400);
+    const r = await put(`Bearer ${userKey}`, { publicKey: PAYER_PK });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ publicKey: PAYER_PK });
+    expect((await put(`Bearer ${userKey}`, { publicKey: PAYER_PK })).status).toBe(200); // same key: no-op
+    const other = await put(`Bearer ${userKey}`, { publicKey: '81'.repeat(32) });
+    expect(other.status).toBe(409);
+    expect(await other.json()).toEqual({ error: 'PUBLIC_KEY_ALREADY_SET' });
+  });
+
+  it('accounts take only base addresses with key credentials (script credentials would break the Pay message)', async () => {
+    const scriptBase = 'addr_test1zrhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwams0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8saqnrty';
+    const r = await api(API_ROUTES.ACCOUNTS, ADMIN, { kind: 'merchant', address: scriptBase, apiKey: `s-${randomUUID()}-${randomUUID()}` });
+    expect(r.status).toBe(400);
+  });
+
+  it('/deposit refuses an address without a registered device key, before any L1 work', async () => {
+    const r = await api(API_ROUTES.DEPOSIT, ADMIN, { user_address: addr('e7'), amount: [['lovelace', 20000000]] });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
   });
 
   it('create -> pending -> read -> authorize; Hydra down never reports success', async () => {
@@ -186,7 +219,14 @@ describe('routes', () => {
       (await api(`/payments/${p.paymentId}/authorize`, m, {})).status
     ).toBe(403); // terminal can't pay
 
-    const auth = await api(`/payments/${p.paymentId}/authorize`, u, {});
+    expect((await api(`/payments/${p.paymentId}/authorize`, u, {})).status).toBe(400); // no consent
+    const fundsInRef = `${'11'.repeat(32)}#0`;
+    const sign = (key: typeof PAYER_KEY) =>
+      key.sign(Buffer.from(payInfoCbor({ ...p, fundsInRef }), 'hex')).to_hex();
+    const forged = await api(`/payments/${p.paymentId}/authorize`, u, { fundsInRef, signature: sign(OTHER_KEY) });
+    expect(forged.status).toBe(400);
+    expect(await forged.json()).toEqual({ error: 'BAD_SIGNATURE' });
+    const auth = await api(`/payments/${p.paymentId}/authorize`, u, { fundsInRef, signature: sign(PAYER_KEY) });
     expect(auth.status).toBe(200);
     expect(await auth.json()).toMatchObject({
       state: 'failed',
@@ -284,6 +324,24 @@ describe('routes', () => {
     const short = await (await api(API_ROUTES.BTC_DEPOSITS, u, { amountSats: '150000' })).json();
     const reclaim = await api(`/deposits/${short.depositId}/btc-tx`, u, { btcTxid: BTC_TXID });
     expect(reclaim.status).toBe(409); // that BTC output already funds the first deposit
+  });
+
+  // Last in this block: its unpaid request must not show up as pending in the terminal tests above.
+  it('authorize without a registered phone key is a 400 NO_PUBLIC_KEY', async () => {
+    const keyless = `k-${randomUUID()}-${randomUUID()}`;
+    expect((await api(API_ROUTES.ACCOUNTS, ADMIN, { kind: 'user', address: addr('e9'), apiKey: keyless })).status).toBe(201);
+    const p = await (
+      await api(API_ROUTES.PAYMENTS, `Bearer ${merchantKey}`, { merchantAddress: MERCHANT, assetUnit: 'lovelace', amountBaseUnits: '1000000' })
+    ).json();
+    const r = await api(`/payments/${p.paymentId}/authorize`, `Bearer ${keyless}`, { fundsInRef: `${'11'.repeat(32)}#0`, signature: '00'.repeat(64) });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
+    const oldApp = await api(`/payments/${p.paymentId}/authorize`, `Bearer ${keyless}`, {}); // M3 app: no body
+    expect(oldApp.status).toBe(400);
+    expect(await oldApp.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
+    const btc = await api(API_ROUTES.BTC_DEPOSITS, `Bearer ${keyless}`, { amountSats: '200000' });
+    expect(btc.status).toBe(400);
+    expect(await btc.json()).toEqual({ error: 'NO_PUBLIC_KEY' });
   });
 });
 

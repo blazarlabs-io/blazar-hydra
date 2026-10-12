@@ -48,6 +48,7 @@ const USER = {
     { type: 'Key', hash: 'a1'.repeat(28) },
     { type: 'Key', hash: '0f'.repeat(28) }
   ),
+  publicKey: '8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c', // the phone key the funds will be locked under
 };
 const FUNDS_UNIT = 'cc'.repeat(28) + 'dd'.repeat(32);
 const FUNDS: UTxO = {
@@ -154,6 +155,12 @@ describe('POST /deposits/btc', () => {
     const ttl = Date.parse(dto.expiresAt) - Date.now();
     expect(ttl).toBeGreaterThan(29 * 60_000);
     expect(ttl).toBeLessThanOrEqual(30 * 60_000);
+  });
+
+  it('refuses a user without a registered phone key before calling the bridge: such funds could never pay', async () => {
+    const deps = fakeDeps();
+    expect(await createBtcDeposit({ ...USER, publicKey: null }, 200_000n, deps)).toEqual({ status: 400, error: 'NO_PUBLIC_KEY' });
+    expect(deps.bridge.createTx2).not.toHaveBeenCalled();
   });
 
   it('refuses amounts outside the bridge quota (422) and a down bridge (502)', async () => {

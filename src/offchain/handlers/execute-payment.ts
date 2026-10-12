@@ -27,6 +27,7 @@ import {
 } from '../lib/hydra';
 import { dataAddressToBech32 } from '../lib/utils';
 import { payMerchant } from '../tx-builders/pay';
+import { payInfoCbor, verifyPaySignature } from '../lib/pay-message';
 
 export const PAYMENT_TTL_MS = 120_000;
 export const SUBMIT_WAIT_MS = 30_000;
@@ -40,7 +41,11 @@ type PayTx = {
   merchantAddress: string;
   assets: Assets;
   snapshot: UTxO[];
+  signature: string; // the payer's ed25519 signature over PayInfo; goes into the Pay redeemer
 };
+
+/** What the phone sends with authorize; `publicKey` comes from the caller's account, never the body. */
+export type PayConsent = { fundsInRef: string; signature: string; publicKey: string };
 
 /** Everything that touches Hydra or keys, injectable so tests need no live node. */
 export type PaymentDeps = {
@@ -154,23 +159,34 @@ export async function readPayment(
 }
 
 /**
- * POST /payments/:id/authorize. Exactly one caller wins created -> authorized and runs the executor;
- * a repeat by the same payer is a no-op 200, another payer gets 409, an expired payment 410.
+ * POST /payments/:id/authorize with the payer's consent. The signature over PayInfo (this payment and the
+ * funds UTxO it names) is checked before any state change: a bad one is a 400 and the payment stays
+ * payable. Exactly one caller wins created -> authorized and runs the executor; a repeat by the same
+ * payer is a no-op 200, another payer gets 409, an expired payment 410.
  */
 export async function authorizePayment(
   id: string,
   payerAddress: string,
-  deps: PaymentDeps
-): Promise<{ status: number; payment: PaymentRow | null }> {
+  deps: PaymentDeps,
+  consent: PayConsent
+): Promise<{ status: number; payment: PaymentRow | null; error?: 'BAD_SIGNATURE' }> {
+  const current = await prisma.payment.findUnique({ where: { id } });
+  if (!current) return { status: 404, payment: null };
+  if (current.state === 'created') {
+    const message = payInfoCbor({ ...current, fundsInRef: consent.fundsInRef });
+    if (!verifyPaySignature(consent.publicKey, message, consent.signature)) {
+      return { status: 400, payment: current, error: 'BAD_SIGNATURE' };
+    }
+  }
   const won = await cas(
     id,
     'created',
     'authorized',
-    { payerAddress },
+    { payerAddress, fundsInRef: consent.fundsInRef },
     { expiresAt: { gt: new Date() } }
   );
   if (won) {
-    await withLock(() => executePayment(id, deps));
+    await withLock(() => executePayment(id, deps, consent));
     const p = await prisma.payment.findUniqueOrThrow({ where: { id } });
     const final = TERMINAL_STATES.includes(p.state as PaymentState);
     return { status: final ? 200 : 202, payment: p };
@@ -182,23 +198,58 @@ export async function authorizePayment(
   return { status: 409, payment: p };
 }
 
-/** Payer funds UTxO in L2: User datum for `payerAddress` with enough spendable `unit`. */
-export function selectPayerUtxo(
-  lucid: LucidEvolution,
-  snapshot: UTxO[],
+/**
+ * GET /payments/:id/sign-payload: the payer funds UTxO this payment would spend now and the exact PayInfo
+ * bytes to sign. The phone rebuilds the bytes from what it shows and refuses to sign when they differ.
+ */
+export async function signPayload(
+  id: string,
   payerAddress: string,
-  unit: string,
-  amount: bigint,
-  busy: ReadonlySet<string> = new Set() // inputs of unsettled payments
-): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' } {
-  const mine = snapshot.flatMap((u) => {
+  publicKey: string,
+  deps: PaymentDeps
+): Promise<{ status: number; error?: string; payload?: { fundsInRef: string; payInfoCbor: string } }> {
+  const p = await prisma.payment.findUnique({ where: { id } });
+  if (!p) return { status: 404 };
+  if (p.state !== 'created' || p.expiresAt <= new Date()) return { status: 409, error: 'NOT_PAYABLE' };
+  return withLock(async () => {
+    const snapshot = await deps.snapshot();
+    const inFlight = await prisma.payment.findMany({ where: { state: 'submitted', payerAddress } });
+    const busy = new Set(inFlight.map((q) => q.fundsInRef!));
+    const amount = BigInt(p.amountBaseUnits);
+    const pick = selectPayerUtxo(deps.lucid, snapshot, payerAddress, publicKey, p.assetUnit, amount, busy);
+    if ('error' in pick) return { status: 409, error: pick.error };
+    const fundsInRef = `${pick.utxo.txHash}#${pick.utxo.outputIndex}`;
+    return { status: 200, payload: { fundsInRef, payInfoCbor: payInfoCbor({ ...p, fundsInRef }) } };
+  });
+}
+
+/**
+ * The payer's User funds UTxOs that its phone key can spend: datum address and datum key both match.
+ * Funds locked under another key (another device's account, an M3 placeholder) would fail on-chain.
+ */
+function payerFunds(lucid: LucidEvolution, snapshot: UTxO[], payerAddress: string, publicKey: string) {
+  return snapshot.flatMap((u) => {
     const d = fundsDatumOf(u);
     return d &&
       d.funds_type !== 'Merchant' &&
+      d.funds_type.User.public_key === publicKey &&
       dataAddressToBech32(lucid, d.addr) === payerAddress
       ? [{ u, d }]
       : [];
   });
+}
+
+/** Payer funds UTxO in L2 under the payer's key, with enough spendable `unit`. */
+export function selectPayerUtxo(
+  lucid: LucidEvolution,
+  snapshot: UTxO[],
+  payerAddress: string,
+  publicKey: string,
+  unit: string,
+  amount: bigint,
+  busy: ReadonlySet<string> = new Set() // inputs of unsettled payments
+): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' } {
+  const mine = payerFunds(lucid, snapshot, payerAddress, publicKey);
   if (mine.length === 0) return { error: 'NO_L2_FUNDS' };
   const hit = mine.find(
     ({ u, d }) =>
@@ -222,13 +273,32 @@ export function findMerchantUtxo(
   });
 }
 
+/** The payer funds UTxO named by `fundsInRef`, if it is still the payer's (address and key), unspent, free and big enough. */
+export function signedPayerUtxo(
+  lucid: LucidEvolution,
+  snapshot: UTxO[],
+  payerAddress: string,
+  publicKey: string,
+  fundsInRef: string,
+  unit: string,
+  amount: bigint,
+  busy: ReadonlySet<string> = new Set()
+): { utxo: UTxO } | { error: 'NO_L2_FUNDS' | 'INSUFFICIENT_FUNDS' | 'STALE_FUNDS' } {
+  const mine = payerFunds(lucid, snapshot, payerAddress, publicKey);
+  if (mine.length === 0) return { error: 'NO_L2_FUNDS' };
+  const hit = mine.find(({ u }) => `${u.txHash}#${u.outputIndex}` === fundsInRef);
+  if (!hit || busy.has(fundsInRef)) return { error: 'STALE_FUNDS' };
+  return spendable(hit.u, hit.d, unit) >= amount ? { utxo: hit.u } : { error: 'INSUFFICIENT_FUNDS' };
+}
+
 /** authorized -> submitted -> confirmed | failed. Must run under withLock. */
 export async function executePayment(
   id: string,
-  deps: PaymentDeps
+  deps: PaymentDeps,
+  consent: Pick<PayConsent, 'signature' | 'publicKey'>
 ): Promise<void> {
   const p = await prisma.payment.findUnique({ where: { id } });
-  if (!p || p.state !== 'authorized' || !p.payerAddress) return;
+  if (!p || p.state !== 'authorized' || !p.payerAddress || !p.fundsInRef) return;
   const fail = async (error: PaymentError) => {
     logger.info(`payment ${id} failed: ${error}`);
     await cas(id, 'authorized', 'failed', { error });
@@ -253,14 +323,8 @@ export async function executePayment(
         await settle(q, snapshot);
       } else busy.add(q.fundsInRef!);
     }
-    const pick = selectPayerUtxo(
-      deps.lucid,
-      snapshot,
-      p.payerAddress,
-      p.assetUnit,
-      amount,
-      busy
-    );
+    // Only the UTxO the payer signed for: the signature covers it and no other.
+    const pick = signedPayerUtxo(deps.lucid, snapshot, p.payerAddress, consent.publicKey, p.fundsInRef, p.assetUnit, amount, busy);
     if ('error' in pick) return fail(pick.error);
     const merchantUtxo = findMerchantUtxo(
       deps.lucid,
@@ -277,6 +341,7 @@ export async function executePayment(
       merchantAddress: p.merchantAddress,
       assets: { [p.assetUnit]: amount },
       snapshot,
+      signature: consent.signature,
     });
     // Persist hydraTxId before NewTx, so a crash after sending can still be reconciled. Throws on a
     // hydraTxId already recorded (an identical tx of an earlier payment that never landed).
@@ -367,8 +432,7 @@ async function buildSignedPayTx(
     assets: t.assets,
     userFundsUtxo: t.payer,
     merchantFundsUtxo: t.merchantUtxo,
-    // The 2x validator does not check it; consent is the authenticated authorize call.
-    signature: '',
+    signature: t.signature, // checked on-chain against the payer's key in its datum
   });
   const signed = await local.fromTx(tx.toCBOR()).sign.withWallet().complete();
   return { cborHex: signed.toCBOR(), txId: signed.toHash() };

@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { Data } from '@lucid-evolution/lucid';
-import { findFundUtxos, assertFundsEmpty, payableInL2, fundsOwnerOf } from './funds';
+import {
+  findFundUtxos,
+  assertFundsEmpty,
+  assertHeadTokensMatch,
+  assertOnlyUserFunds,
+  payableInL2,
+  fundsOwnerOf,
+} from './funds';
 import { FundsDatum, FundsDatumT } from './types';
 import { BTC_UNIT } from '../../bridge/wanbridge';
 import { ASSETS } from '../../shared/payment-contract';
@@ -39,6 +46,47 @@ describe('findFundUtxos / assertFundsEmpty', () => {
   it('assertFundsEmpty passes on a funds-empty snapshot and throws when funds remain', () => {
     expect(() => assertFundsEmpty([utxo({ address: ADMIN_ADDR, datum: null })], ADMIN_ADDR)).not.toThrow();
     expect(() => assertFundsEmpty([utxo({ datum: USER_FUNDS_DATUM })], ADMIN_ADDR)).toThrow(/not funds-empty/);
+  });
+});
+
+describe('assertOnlyUserFunds (gate before Close: users leave through the fanout)', () => {
+  // Merchant funds carry a validation token minted inside L2; fanning one out would break the
+  // head's value conservation (H4), so merchants must be withdrawn before Close.
+  const MERCHANT_DATUM =
+    'd8799fd8799fd8799f581c2db68687b92bc18aa2240416f5c91aa29be23db115e1b7cebbf85a5dffd8799fd8799fd8799f581c41677a6c1c0dc6adb0f2e2aae96c5cd89e49da016e4e60fa54a12724ffffffff00d87a80ff';
+
+  it('passes when only user funds and admin collateral remain', () => {
+    const snap = [utxo({ address: ADMIN_ADDR }), utxo({ datum: USER_FUNDS_DATUM })];
+    expect(() => assertOnlyUserFunds(snap, ADMIN_ADDR)).not.toThrow();
+  });
+  it('throws while merchant funds remain', () => {
+    const snap = [utxo({ datum: USER_FUNDS_DATUM }), utxo({ txHash: 'bb'.repeat(32), datum: MERCHANT_DATUM })];
+    expect(() => assertOnlyUserFunds(snap, ADMIN_ADDR)).toThrow(/merchant/i);
+  });
+  it('throws on any other UTxO that is not admin collateral or user funds', () => {
+    expect(() => assertOnlyUserFunds([utxo({ datum: null })], ADMIN_ADDR)).toThrow(/aaaa/);
+  });
+});
+
+describe('assertHeadTokensMatch (gate before Close: the fanout must be able to conserve value)', () => {
+  const P = 'cc'.repeat(28); // Blazar validator policy
+  const HEAD = 'dd'.repeat(28); // head policy: its tokens are burned by the fanout, not compared
+  const t = (n: string) => `${P}${n.repeat(32)}`;
+
+  it('passes when the L1 head output holds exactly the validation tokens of L2', () => {
+    const l1 = { lovelace: 84_142_070n, [`${HEAD}4879647261486561645632`]: 1n, [t('01')]: 1n, [t('02')]: 1n };
+    const l2 = [utxo({ assets: { lovelace: 30_000_000n, [t('01')]: 1n } }), utxo({ assets: { lovelace: 2_000_000n, [t('02')]: 1n } })];
+    expect(() => assertHeadTokensMatch(l1, l2, P)).not.toThrow();
+  });
+  it('throws on a token burned in L2 but still in the L1 head output (the old user withdraw, H4)', () => {
+    const l1 = { lovelace: 52_142_070n, [t('01')]: 1n, [t('02')]: 1n };
+    const l2 = [utxo({ assets: { lovelace: 30_000_000n, [t('01')]: 1n } })];
+    expect(() => assertHeadTokensMatch(l1, l2, P)).toThrow(new RegExp(t('02')));
+  });
+  it('throws on a token minted in L2 that the L1 head output does not hold (merchant funds left inside)', () => {
+    const l1 = { lovelace: 52_142_070n, [t('01')]: 1n };
+    const l2 = [utxo({ assets: { [t('01')]: 1n } }), utxo({ assets: { [t('03')]: 1n } })];
+    expect(() => assertHeadTokensMatch(l1, l2, P)).toThrow(new RegExp(t('03')));
   });
 });
 

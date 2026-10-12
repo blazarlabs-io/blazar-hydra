@@ -14,6 +14,7 @@ import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { dataAddressToBech32 } from '../lib/utils';
+import { takeUserFundsOut, userFundsOps } from '../lib/user-funds';
 
 /**
  * Handles incremental decommit operation.
@@ -106,6 +107,35 @@ async function handleIncrementalDecommit(
   // For users, signature is required
   if (owner === 'user' && !signature) {
     throw new Error('User signature is required for incremental decommit');
+  }
+
+  if (owner === 'user') {
+    // User funds keep their L1-minted token: they leave the head intact and the owner is paid on
+    // L1, where the token is burned (burning it in L2 blocks the fanout, see user-funds.ts).
+    try {
+      localLucid.selectWallet.fromSeed(env.SEED);
+      const [validatorRef] = await localLucid.utxosByOutRef([
+        { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+      ]);
+      const paid = await takeUserFundsOut(
+        userFundsOps(localLucid, hydra, {
+          seed: env.SEED,
+          adminAddress,
+          adminKey,
+          hydraKey,
+          validatorRef,
+          decommitUrl: `${env.ADMIN_NODE_API_URL}/decommit`,
+        }),
+        [fundUtxo]
+      );
+      logger.info(`Incremental decommit for user ${address} paid on L1: ${paid.map((p) => p.txHash).join(', ')}`);
+      await hydra.stop();
+      return { cborHex: paid[paid.length - 1].cborHex, fundsUtxoRef: null };
+    } catch (error) {
+      logger.error(`Error during incremental decommit: ${error}`);
+      await hydra.stop();
+      throw error;
+    }
   }
 
   // Step 4: Get admin/wallet UTXOs from L2 for transaction fees

@@ -12,6 +12,7 @@ import _ from 'lodash';
 import { TxBuiltResponse } from '../../api/schemas/response';
 import { valueTuplesToAssets } from '../lib/utils';
 import { logger } from '../../shared/logger';
+import { userPublicKeyFor } from '../lib/accounts';
 
 async function handleDeposit(
   lucid: LucidEvolution,
@@ -23,6 +24,8 @@ async function handleDeposit(
     amount,
     funds_utxo_ref: fundsUtxoRef,
   } = params;
+  // First, before any L1 work: funds under no real key could never pay (the validator checks the signature).
+  const userPublicKey = await userPublicKeyFor(userAddress, publicKey || undefined);
   const localLucid = _.cloneDeep(lucid);
   let fundsUtxo: UTxO | undefined = undefined;
   if (fundsUtxoRef) {
@@ -50,11 +53,9 @@ async function handleDeposit(
     { txHash: env.VALIDATOR_REF, outputIndex: 0 },
   ]);
 
-  const nonEmptyPubKey =
-    publicKey && publicKey.length > 0 ? publicKey : '0'.repeat(64);
   const depositParams: DepositParams = {
     userAddress,
-    publicKey: nonEmptyPubKey,
+    publicKey: userPublicKey,
     amountsToDeposit,
     walletUtxos,
     validatorRef,

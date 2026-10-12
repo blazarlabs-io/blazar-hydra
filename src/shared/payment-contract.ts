@@ -42,6 +42,7 @@ export const PaymentErrorSchema = z.enum([
   'TX_INVALID',
   'NOT_SUBMITTED',
   'INTERNAL',
+  'STALE_FUNDS', // the funds UTxO the payer signed for was spent or locked meanwhile
 ]);
 
 /** POST /payments body. Strings only: the backend json-bigint parser turns every JSON number into BigInt. */
@@ -151,3 +152,13 @@ export type Deposit = z.infer<typeof DepositSchema>;
 export const CreateBtcDepositSchema = z.object({ amountSats: BaseUnitsSchema }).strict();
 /** POST /deposits/:id/btc-tx body. */
 export const AttachBtcTxSchema = z.object({ btcTxid: z.string().toLowerCase().pipe(TxIdSchema) }).strict();
+
+/** PUT /accounts/me/public-key body: the phone's ed25519 public key, raw 32 bytes as lowercase hex. */
+export const RegisterPublicKeySchema = z
+  .object({ publicKey: z.string().regex(/^[0-9a-f]{64}$/) })
+  .strict();
+
+/** POST /payments/:id/authorize body: the funds UTxO the payer signed for and its ed25519 signature. */
+export const AuthorizePaymentSchema = z
+  .object({ fundsInRef: OutRefSchema, signature: z.string().max(256) })
+  .strict();

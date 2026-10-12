@@ -5,7 +5,7 @@ import { env, prisma } from '../../config';
 import { logger } from '../../shared/logger';
 
 export type AccountKind = 'user' | 'merchant';
-export type Caller = { id: string; kind: string; address: string };
+export type Caller = { id: string; kind: string; address: string; publicKey?: string | null };
 
 const GOOGLE_JWKS_URL =
   'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';

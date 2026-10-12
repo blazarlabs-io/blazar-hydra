@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { Data } from '@lucid-evolution/lucid';
-import { findFundUtxos, assertFundsEmpty, assertOnlyUserFunds, payableInL2, fundsOwnerOf } from './funds';
+import {
+  findFundUtxos,
+  assertFundsEmpty,
+  assertHeadTokensMatch,
+  assertOnlyUserFunds,
+  payableInL2,
+  fundsOwnerOf,
+} from './funds';
 import { FundsDatum, FundsDatumT } from './types';
 import { BTC_UNIT } from '../../bridge/wanbridge';
 import { ASSETS } from '../../shared/payment-contract';
@@ -58,6 +65,28 @@ describe('assertOnlyUserFunds (gate before Close: users leave through the fanout
   });
   it('throws on any other UTxO that is not admin collateral or user funds', () => {
     expect(() => assertOnlyUserFunds([utxo({ datum: null })], ADMIN_ADDR)).toThrow(/aaaa/);
+  });
+});
+
+describe('assertHeadTokensMatch (gate before Close: the fanout must be able to conserve value)', () => {
+  const P = 'cc'.repeat(28); // Blazar validator policy
+  const HEAD = 'dd'.repeat(28); // head policy: its tokens are burned by the fanout, not compared
+  const t = (n: string) => `${P}${n.repeat(32)}`;
+
+  it('passes when the L1 head output holds exactly the validation tokens of L2', () => {
+    const l1 = { lovelace: 84_142_070n, [`${HEAD}4879647261486561645632`]: 1n, [t('01')]: 1n, [t('02')]: 1n };
+    const l2 = [utxo({ assets: { lovelace: 30_000_000n, [t('01')]: 1n } }), utxo({ assets: { lovelace: 2_000_000n, [t('02')]: 1n } })];
+    expect(() => assertHeadTokensMatch(l1, l2, P)).not.toThrow();
+  });
+  it('throws on a token burned in L2 but still in the L1 head output (the old user withdraw, H4)', () => {
+    const l1 = { lovelace: 52_142_070n, [t('01')]: 1n, [t('02')]: 1n };
+    const l2 = [utxo({ assets: { lovelace: 30_000_000n, [t('01')]: 1n } })];
+    expect(() => assertHeadTokensMatch(l1, l2, P)).toThrow(new RegExp(t('02')));
+  });
+  it('throws on a token minted in L2 that the L1 head output does not hold (merchant funds left inside)', () => {
+    const l1 = { lovelace: 52_142_070n, [t('01')]: 1n };
+    const l2 = [utxo({ assets: { [t('01')]: 1n } }), utxo({ assets: { [t('03')]: 1n } })];
+    expect(() => assertHeadTokensMatch(l1, l2, P)).toThrow(new RegExp(t('03')));
   });
 });
 

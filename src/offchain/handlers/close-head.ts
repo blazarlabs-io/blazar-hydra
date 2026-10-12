@@ -11,8 +11,10 @@ import { env, prisma } from '../../config';
 import { FundsDatum, FundsDatumT } from '../lib/types';
 import { WithdrawParams } from '../lib/params';
 import { withdrawMerchant } from '../tx-builders/withdraw-merchant';
-import { assertFundsEmpty, assertOnlyUserFunds } from '../lib/funds';
+import axios from 'axios';
+import { assertFundsEmpty, assertHeadTokensMatch, assertOnlyUserFunds } from '../lib/funds';
 import { payOutOnL1, userFundsOps } from '../lib/user-funds';
+import { getNetworkFromLucid, getValidatorDetails } from '../lib/utils';
 import { writeResetMarker } from '../lib/reset-signal';
 import { DBOps } from '../../prisma/db-ops';
 import { DBStatus } from '../../shared/prisma-schemas';
@@ -78,9 +80,20 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     await withdrawMerchantUtxos(hydra, localLucid, adminAddress, adminKey, hydraKey, classify('Merchant'));
     await DBOps.updateHeadStatus(processId, DBStatus.CLOSING);
 
-    // Step 2: gate BEFORE Close: only admin collateral and user funds may remain, i.e. everything
-    // left can leave through the fanout (so we never create a Closed head that cannot fan out).
-    assertOnlyUserFunds(await hydra.getSnapshot(), adminAddress);
+    // Step 2: gate BEFORE Close: only admin collateral and user funds may remain, and the head
+    // output on L1 must hold exactly the validation tokens of L2, i.e. everything left can leave
+    // through the fanout (so we never create a Closed head that cannot fan out).
+    const [validatorRef] = await localLucid.utxosByOutRef([
+      { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+    ]);
+    if (!validatorRef?.scriptRef) throw new Error('Validator reference UTxO not found');
+    const { scriptHash: fundsPolicy } = getValidatorDetails(
+      validatorRef.scriptRef,
+      getNetworkFromLucid(localLucid)
+    );
+    const snapshot = await hydra.getSnapshot();
+    assertOnlyUserFunds(snapshot, adminAddress);
+    await assertHeadOutputMatches(localLucid, snapshot, fundsPolicy);
 
     // Step 3: Close -> ReadyToFanout -> Fanout (Part C fast-fail kept).
     await hydra.close();
@@ -92,9 +105,6 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     // Step 4: the fanout returned the user funds to the validator on L1, tokens intact; pay the
     // owners there (UserWithdraw burns each token on L1).
     if (userUtxos.length > 0) {
-      const [validatorRef] = await localLucid.utxosByOutRef([
-        { txHash: env.VALIDATOR_REF, outputIndex: 0 },
-      ]);
       const paid = await payOutOnL1(
         userFundsOps(localLucid, hydra, {
           seed: env.SEED,
@@ -136,6 +146,30 @@ async function finalizeCloseHead(lucid: LucidEvolution, processId: string) {
     throw error;
   } finally {
     await hydra.stop().catch(() => {});
+  }
+}
+
+/** Asset name of the head's state token ("HydraHeadV2"), held only by the head output on L1. */
+const HEAD_STATE_TOKEN = '4879647261486561645632';
+
+/**
+ * The head output on L1 (found by its state token) against the L2 snapshot, see
+ * assertHeadTokensMatch. Retried for about two minutes: a decrement approved in L2 can still be
+ * landing on L1, and Kupo lags a block behind.
+ */
+async function assertHeadOutputMatches(lucid: LucidEvolution, snapshot: UTxO[], policyId: string) {
+  const { data } = await axios.get(`${env.ADMIN_NODE_API_URL}/head`, { timeout: 10_000 });
+  const headId: string | undefined = data?.contents?.headId;
+  if (!headId) throw new Error('hydra-node reported no head id');
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const headOutput = await lucid.utxoByUnit(`${headId}${HEAD_STATE_TOKEN}`);
+      assertHeadTokensMatch(headOutput.assets, snapshot, policyId);
+      return;
+    } catch (error) {
+      if (attempt >= 12) throw error;
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
   }
 }
 

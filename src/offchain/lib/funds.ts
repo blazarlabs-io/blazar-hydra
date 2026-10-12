@@ -1,4 +1,4 @@
-import { Data, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
+import { Assets, Data, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { FundsDatum, FundsDatumT } from './types';
 import { dataAddressToBech32 } from './utils';
 
@@ -44,6 +44,30 @@ export function assertOnlyUserFunds(snapshot: UTxO[], adminAddress: string): voi
       .map((u) => `${u.txHash}#${u.outputIndex}${fundsDatumOf(u) ? ' (merchant funds)' : ''}`)
       .join(', ');
     throw new Error(`Head still holds UTxOs that cannot leave through the fanout: ${refs}`);
+  }
+}
+
+/**
+ * Gate before Close: the L1 head output must hold exactly the validation tokens (policy
+ * `policyId`) that the L2 snapshot holds. A token burned in L2 but still in the head output on L1,
+ * or minted in L2 and absent from L1, makes every fanout fail (H4), so such a head is not closed.
+ */
+export function assertHeadTokensMatch(l1HeadAssets: Assets, snapshot: UTxO[], policyId: string): void {
+  const add = (acc: Record<string, bigint>, assets: Assets) => {
+    for (const [unit, qty] of Object.entries(assets)) {
+      if (unit.startsWith(policyId)) acc[unit] = (acc[unit] ?? 0n) + qty;
+    }
+    return acc;
+  };
+  const l1 = add({}, l1HeadAssets);
+  const l2 = snapshot.reduce((acc, u) => add(acc, u.assets), {} as Record<string, bigint>);
+  const differ = [...new Set([...Object.keys(l1), ...Object.keys(l2)])].filter(
+    (unit) => (l1[unit] ?? 0n) !== (l2[unit] ?? 0n)
+  );
+  if (differ.length > 0) {
+    throw new Error(
+      `The head output on L1 and the L2 snapshot hold different validation tokens (${differ.join(', ')}): its fanout would fail (H4), not closing`
+    );
   }
 }
 

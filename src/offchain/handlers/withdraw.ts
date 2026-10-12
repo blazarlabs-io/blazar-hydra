@@ -9,6 +9,7 @@ import { HydraHandler } from '../lib/hydra';
 import { assertRunning } from '../../shared/close-guards';
 import { DBOps } from '../../prisma/db-ops';
 import { fundsOwnerOf } from '../lib/funds';
+import { takeUserFundsOut, userFundsOps } from '../lib/user-funds';
 
 /**
  * Withdraws funds from the Hydra head back to L1. A withdraw spends UTxOs that live
@@ -64,6 +65,27 @@ async function handleWithdraw(
       throw new Error(
         `Funds utxo ${foreign.txHash}#${foreign.outputIndex} does not belong to ${address}`
       );
+    }
+    if (owner === 'user') {
+      // User funds keep their L1-minted token: they leave the head intact and the owner is paid
+      // on L1, where the token is burned (burning it in L2 blocks the fanout, see user-funds.ts).
+      const [validatorRef] = await localLucid.utxosByOutRef([
+        { txHash: env.VALIDATOR_REF, outputIndex: 0 },
+      ]);
+      const paid = await takeUserFundsOut(
+        userFundsOps(localLucid, hydra, {
+          seed: adminSeed,
+          adminAddress,
+          adminKey,
+          hydraKey,
+          validatorRef,
+          decommitUrl: `${env.ADMIN_NODE_API_URL}/decommit`,
+        }),
+        fundsUtxos
+      );
+      logger.info(`Withdraw for user ${address} paid on L1: ${paid.map((p) => p.txHash).join(', ')}`);
+      await hydra.stop();
+      return { cborHex: paid[paid.length - 1].cborHex, fundsUtxoRef: null };
     }
     const walletUtxos = utxosInL2.filter((u) => u.address === adminAddress);
     if (walletUtxos.length === 0) {

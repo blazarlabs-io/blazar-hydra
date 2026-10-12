@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import { Data } from '@lucid-evolution/lucid';
-import { findFundUtxos, assertFundsEmpty, payableInL2, fundsOwnerOf } from './funds';
+import { findFundUtxos, assertFundsEmpty, assertOnlyUserFunds, payableInL2, fundsOwnerOf } from './funds';
 import { FundsDatum, FundsDatumT } from './types';
 import { BTC_UNIT } from '../../bridge/wanbridge';
 import { ASSETS } from '../../shared/payment-contract';
@@ -39,6 +39,25 @@ describe('findFundUtxos / assertFundsEmpty', () => {
   it('assertFundsEmpty passes on a funds-empty snapshot and throws when funds remain', () => {
     expect(() => assertFundsEmpty([utxo({ address: ADMIN_ADDR, datum: null })], ADMIN_ADDR)).not.toThrow();
     expect(() => assertFundsEmpty([utxo({ datum: USER_FUNDS_DATUM })], ADMIN_ADDR)).toThrow(/not funds-empty/);
+  });
+});
+
+describe('assertOnlyUserFunds (gate before Close: users leave through the fanout)', () => {
+  // Merchant funds carry a validation token minted inside L2; fanning one out would break the
+  // head's value conservation (H4), so merchants must be withdrawn before Close.
+  const MERCHANT_DATUM =
+    'd8799fd8799fd8799f581c2db68687b92bc18aa2240416f5c91aa29be23db115e1b7cebbf85a5dffd8799fd8799fd8799f581c41677a6c1c0dc6adb0f2e2aae96c5cd89e49da016e4e60fa54a12724ffffffff00d87a80ff';
+
+  it('passes when only user funds and admin collateral remain', () => {
+    const snap = [utxo({ address: ADMIN_ADDR }), utxo({ datum: USER_FUNDS_DATUM })];
+    expect(() => assertOnlyUserFunds(snap, ADMIN_ADDR)).not.toThrow();
+  });
+  it('throws while merchant funds remain', () => {
+    const snap = [utxo({ datum: USER_FUNDS_DATUM }), utxo({ txHash: 'bb'.repeat(32), datum: MERCHANT_DATUM })];
+    expect(() => assertOnlyUserFunds(snap, ADMIN_ADDR)).toThrow(/merchant/i);
+  });
+  it('throws on any other UTxO that is not admin collateral or user funds', () => {
+    expect(() => assertOnlyUserFunds([utxo({ datum: null })], ADMIN_ADDR)).toThrow(/aaaa/);
   });
 });
 

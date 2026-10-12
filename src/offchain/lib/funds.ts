@@ -27,6 +27,26 @@ export function assertFundsEmpty(snapshot: UTxO[], adminAddress: string): void {
   }
 }
 
+/**
+ * Gate before Close: only admin collateral and user funds may remain. User funds carry the
+ * validation token minted on L1 at deposit, so the fanout gives it back intact. Merchant funds
+ * carry a token minted inside L2, which the L1 head output does not hold: fanning one out breaks
+ * the head's value conservation (H4), so merchants are withdrawn (token burned in L2) first.
+ */
+export function assertOnlyUserFunds(snapshot: UTxO[], adminAddress: string): void {
+  const blocking = snapshot.filter((u) => {
+    if (u.address === adminAddress) return false;
+    const d = fundsDatumOf(u);
+    return !d || d.funds_type === 'Merchant';
+  });
+  if (blocking.length > 0) {
+    const refs = blocking
+      .map((u) => `${u.txHash}#${u.outputIndex}${fundsDatumOf(u) ? ' (merchant funds)' : ''}`)
+      .join(', ');
+    throw new Error(`Head still holds UTxOs that cannot leave through the fanout: ${refs}`);
+  }
+}
+
 /** The Blazar FundsDatum of a UTxO, or null when it has none. */
 export function fundsDatumOf(u: UTxO): FundsDatumT | null {
   if (!u.datum) return null;

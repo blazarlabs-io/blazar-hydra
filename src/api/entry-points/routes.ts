@@ -6,6 +6,7 @@ import {
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
+  WithdrawOnL1ZodSchema,
   IncrementalCommitZodSchema,
   IncrementalDecommitZodSchema,
   CreateAccountZodSchema,
@@ -19,6 +20,7 @@ import {
   handlePay,
   handleQueryFunds,
   handleWithdraw,
+  handleWithdrawOnL1,
   handleIncrementalCommit,
   handleIncrementalDecommit,
   HydraUnavailableError,
@@ -147,6 +149,21 @@ const setRoutes = (
           .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
         logger.error(`${STATUS.UNKNOWN_ERROR}: ${e}`, `${API_ROUTES.WITHDRAW}`);
       }
+    }
+  });
+
+  // Recovery: pays out a user's funds already at the validator on L1. The admin key, or the owner.
+  expressApp.post(API_ROUTES.WITHDRAW_L1, requireAdminOrOwner((b) => b.address), async (req, res) => {
+    try {
+      const { address } = WithdrawOnL1ZodSchema.parse(req.body);
+      const _res = await handleWithdrawOnL1(lucid, address);
+      res.status(STATUS.OK).json(JSON.parse(JSONBig.stringify(_res)));
+      logger.info(`${STATUS.OK}`, `${API_ROUTES.WITHDRAW_L1}`);
+    } catch (e) {
+      res
+        .status(STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: `${ERRORS.INTERNAL_SERVER_ERROR}: ${e}` });
+      logger.error(`${STATUS.INTERNAL_SERVER_ERROR}: ${e}`, `${API_ROUTES.WITHDRAW_L1}`);
     }
   });
 

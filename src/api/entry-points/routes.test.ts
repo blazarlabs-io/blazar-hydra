@@ -84,6 +84,7 @@ describe('routes', () => {
   it.each([
     API_ROUTES.DEPOSIT,
     API_ROUTES.WITHDRAW,
+    API_ROUTES.WITHDRAW_L1,
     API_ROUTES.PAY,
     API_ROUTES.OPEN_HEAD,
     API_ROUTES.CLOSE_HEAD,
@@ -95,7 +96,7 @@ describe('routes', () => {
     expect((await api(path, `Bearer ${merchantKey}`, {})).status).toBe(401);
   });
 
-  it.each([API_ROUTES.DEPOSIT, API_ROUTES.WITHDRAW])(
+  it.each([API_ROUTES.DEPOSIT, API_ROUTES.WITHDRAW, API_ROUTES.WITHDRAW_L1])(
     '%s accepts ADMIN_API_KEY (/withdraw owner tokens: auth.test.ts)',
     async (path) => {
       // past auth: the empty body fails validation

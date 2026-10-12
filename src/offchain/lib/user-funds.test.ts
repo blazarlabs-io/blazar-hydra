@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { UTxO } from '@lucid-evolution/lucid';
-import { payOutOnL1, takeUserFundsOut, UserFundsOps } from './user-funds';
+import { LucidEvolution, UTxO } from '@lucid-evolution/lucid';
+import { fundsOwnerOf } from './funds';
+import { ownerFundsOnL1, payOutOnL1, takeUserFundsOut, UserFundsOps } from './user-funds';
 
 const USER_FUNDS_DATUM =
   'd8799fd8799fd8799f581c4dd6612d4cc024bad492c30e24e61dff7339a7f49461effb2b6f49b5ffd8799fd8799fd8799f581c32cafcfb14618ffec3b355cef419800df40121871001e2a2bf8a5cccffffffff1a001e8480d8799f58200000000000000000000000000000000000000000000000000000000000000000ffff';
@@ -31,11 +32,13 @@ function recordingOps(calls: string[]): UserFundsOps {
 }
 
 describe('user funds leave the head without burning their L1 token in L2', () => {
-  it('decommits each UTxO intact, then pays every owner from L1', async () => {
+  it('takes one UTxO at a time end to end: decommit intact, wait for it on L1, pay its owner', async () => {
+    // hydra-node keeps one decommit in flight until its decrement lands on L1, and a fund that
+    // already left L2 must be paid before the next one moves (else a later failure strands it).
     const calls: string[] = [];
     const paid = await takeUserFundsOut(recordingOps(calls), [fund('a1'), fund('b2')]);
-    expect(calls).toEqual(['decommit a1', 'decommit b2', 'find a1', 'find b2', 'withdraw a1,b2']);
-    expect(paid.map((p) => p.txHash)).toEqual(['cd'.repeat(32)]);
+    expect(calls).toEqual(['decommit a1', 'find a1', 'withdraw a1', 'decommit b2', 'find b2', 'withdraw b2']);
+    expect(paid).toHaveLength(2);
   });
 
   it('refuses merchant funds: their token was minted in L2 and cannot leave the head intact', async () => {
@@ -44,6 +47,18 @@ describe('user funds leave the head without burning their L1 token in L2', () =>
       /merchant/i
     );
     expect(calls).toEqual([]);
+  });
+
+  it('finds an owner\'s user funds already at the validator on L1 (a payout that did not run)', () => {
+    const lucid = { config: () => ({ network: 'Preprod' }) } as unknown as LucidEvolution;
+    const owner = fundsOwnerOf(lucid, fund('a1'))!;
+    const atValidator = [
+      fund('a1'),
+      fund('b2', MERCHANT_DATUM), // merchant funds: never paid out by this path
+      { ...fund('c3'), datum: null }, // not a funds UTxO
+    ];
+    expect(ownerFundsOnL1(lucid, atValidator, owner).map((u) => u.txHash.slice(0, 2))).toEqual(['a1']);
+    expect(ownerFundsOnL1(lucid, atValidator, 'addr_test1vqeltkmzgkh9x7yrk0uu7ddj4pvjk3vntkq5uesq0fhtgmsrygxuf')).toEqual([]);
   });
 
   it('after a fanout only pays out from L1, in batches small enough for one transaction', async () => {

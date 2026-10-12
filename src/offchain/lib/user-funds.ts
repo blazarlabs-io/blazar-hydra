@@ -1,6 +1,6 @@
 import { fromUnit, LucidEvolution, UTxO } from '@lucid-evolution/lucid';
 import type { HydraHandler } from './hydra';
-import { fundsDatumOf } from './funds';
+import { fundsDatumOf, fundsOwnerOf } from './funds';
 import { getNetworkFromLucid, getValidatorDetails } from './utils';
 import { recreateFunds } from '../tx-builders/recreate-funds';
 import { withdrawUsersOnL1 } from '../tx-builders/withdraw-user-l1';
@@ -23,7 +23,11 @@ type UserFundsOps = {
 // ponytail: fixed batch for the L1 withdraw; tune if a close ever needs bigger transactions.
 const L1_WITHDRAW_BATCH = 10;
 
-/** While the head is open: each funds UTxO leaves intact, then the owners are paid from L1. */
+/**
+ * While the head is open: one funds UTxO at a time, end to end (decommit intact, wait for it on
+ * L1, pay its owner). hydra-node keeps one decommit in flight until its decrement lands on L1, and
+ * a fund that already left L2 is paid before the next one moves, so a later failure strands nothing.
+ */
 async function takeUserFundsOut(ops: UserFundsOps, funds: UTxO[]) {
   const notUser = funds.find((u) => {
     const d = fundsDatumOf(u);
@@ -34,12 +38,16 @@ async function takeUserFundsOut(ops: UserFundsOps, funds: UTxO[]) {
       `${notUser.txHash}#${notUser.outputIndex} is not user funds (merchant funds hold a token minted in L2 and are withdrawn inside the head)`
     );
   }
-  for (const fund of funds) await ops.decommitIntact(fund);
-  return payOutOnL1(ops, funds);
+  const paid = [];
+  for (const fund of funds) {
+    await ops.decommitIntact(fund);
+    paid.push(await ops.withdrawOnL1([await ops.findOnL1(fund)]));
+  }
+  return paid;
 }
 
 /** After the funds reached L1 (intact decommit or fanout): pay the owners, burning the tokens on L1. */
-async function payOutOnL1(ops: UserFundsOps, funds: UTxO[]) {
+async function payOutOnL1(ops: Pick<UserFundsOps, 'findOnL1' | 'withdrawOnL1'>, funds: UTxO[]) {
   const onL1: UTxO[] = [];
   for (const fund of funds) onL1.push(await ops.findOnL1(fund));
   const paid = [];
@@ -49,19 +57,21 @@ async function payOutOnL1(ops: UserFundsOps, funds: UTxO[]) {
   return paid;
 }
 
-/** The real operations: hydra-node for the decommit, Kupo/Ogmios (through Lucid) for L1. */
-function userFundsOps(
-  lucid: LucidEvolution,
-  hydra: HydraHandler,
-  ctx: {
-    seed: string;
-    adminAddress: string;
-    adminKey: string;
-    hydraKey: string;
-    validatorRef: UTxO;
-    decommitUrl: string;
-  }
-): UserFundsOps {
+/**
+ * User funds of `owner` already at the validator on L1: a withdraw whose L1 payout did not run, or
+ * a deposit not committed to a head. Merchant funds are never paid out by this path.
+ */
+function ownerFundsOnL1(lucid: LucidEvolution, atValidator: UTxO[], owner: string): UTxO[] {
+  return atValidator.filter((u) => {
+    const d = fundsDatumOf(u);
+    return !!d && d.funds_type !== 'Merchant' && fundsOwnerOf(lucid, u) === owner;
+  });
+}
+
+type L1Context = { seed: string; adminAddress: string; validatorRef: UTxO };
+
+/** The L1 side: find funds at the validator by their token, pay their owners (Kupo/Ogmios via Lucid). */
+function l1PayoutOps(lucid: LucidEvolution, ctx: L1Context): Pick<UserFundsOps, 'findOnL1' | 'withdrawOnL1'> {
   if (!ctx.validatorRef.scriptRef) throw new Error('Validator reference UTxO has no script');
   const { scriptAddress, scriptHash } = getValidatorDetails(
     ctx.validatorRef.scriptRef,
@@ -75,20 +85,6 @@ function userFundsOps(
     return unit;
   };
   return {
-    async decommitIntact(fund) {
-      const collateral = (await hydra.getSnapshot()).find((u) => u.address === ctx.adminAddress);
-      if (!collateral) throw new Error('No admin collateral UTxO found in L2');
-      const { tx } = await recreateFunds(lucid, {
-        fundUtxo: fund,
-        adminCollateral: collateral,
-        adminKey: ctx.adminKey,
-        hydraKey: ctx.hydraKey,
-      });
-      lucid.selectWallet.fromSeed(ctx.seed);
-      const signed = await lucid.fromTx(tx.toCBOR()).sign.withWallet().complete();
-      await hydra.decommit(ctx.decommitUrl, signed.toCBOR());
-      await hydra.awaitDecommit([fund]);
-    },
     async findOnL1(fund) {
       // Until the decrement lands, the token is still inside the L1 head output; wait for it at the
       // validator address (a decrement or fanout is a block or two on preprod).
@@ -116,4 +112,29 @@ function userFundsOps(
   };
 }
 
-export { payOutOnL1, takeUserFundsOut, userFundsOps, UserFundsOps };
+/** All operations: hydra-node for the intact decommit, plus the L1 side. */
+function userFundsOps(
+  lucid: LucidEvolution,
+  hydra: HydraHandler,
+  ctx: L1Context & { adminKey: string; hydraKey: string; decommitUrl: string }
+): UserFundsOps {
+  return {
+    ...l1PayoutOps(lucid, ctx),
+    async decommitIntact(fund) {
+      const collateral = (await hydra.getSnapshot()).find((u) => u.address === ctx.adminAddress);
+      if (!collateral) throw new Error('No admin collateral UTxO found in L2');
+      const { tx } = await recreateFunds(lucid, {
+        fundUtxo: fund,
+        adminCollateral: collateral,
+        adminKey: ctx.adminKey,
+        hydraKey: ctx.hydraKey,
+      });
+      lucid.selectWallet.fromSeed(ctx.seed);
+      const signed = await lucid.fromTx(tx.toCBOR()).sign.withWallet().complete();
+      await hydra.decommit(ctx.decommitUrl, signed.toCBOR());
+      await hydra.awaitDecommit([fund]);
+    },
+  };
+}
+
+export { l1PayoutOps, ownerFundsOnL1, payOutOnL1, takeUserFundsOut, userFundsOps, UserFundsOps };

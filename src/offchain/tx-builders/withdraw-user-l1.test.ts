@@ -7,6 +7,7 @@ import {
   Lucid,
   LucidEvolution,
   scriptFromNative,
+  sortUTxOs,
   UTxO,
   validatorToAddress,
 } from '@lucid-evolution/lucid';
@@ -62,7 +63,9 @@ describe('withdrawUsersOnL1 (UserWithdraw on L1, token burned on L1)', () => {
     };
     await depositFor(ownerA.address);
     await depositFor(ownerB.address);
-    const funds: UTxO[] = await lucid.utxosAt(scriptAddress);
+    // Reverse canonical order, so the builder's own sort (inputs and payouts paired in ledger
+    // order) is always exercised.
+    const funds: UTxO[] = sortUTxOs(await lucid.utxosAt(scriptAddress), 'Canonical').reverse();
     expect(funds).toHaveLength(2);
 
     lucid.selectWallet.fromSeed(admin.seedPhrase);

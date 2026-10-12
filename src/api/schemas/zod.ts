@@ -96,6 +96,7 @@ const WithdrawZodSchema = z.object({
   ),
   network_layer: z.enum(['L1', 'L2']),
 });
+const WithdrawOnL1ZodSchema = z.object({ address: addressSchema });
 
 const PayMerchantZodSchema = z.object({
   merchant_address: addressSchema,
@@ -178,6 +179,7 @@ export {
   ManageHeadZodSchema,
   PayMerchantZodSchema,
   WithdrawZodSchema,
+  WithdrawOnL1ZodSchema,
   IncrementalCommitZodSchema,
   IncrementalDecommitZodSchema,
 };

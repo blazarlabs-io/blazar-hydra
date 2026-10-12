@@ -1,6 +1,8 @@
 const API_ROUTES = {
   DEPOSIT: '/deposit',
   WITHDRAW: '/withdraw',
+  // Pays out a user's funds already at the validator on L1 (e.g. a withdraw whose L1 step did not run).
+  WITHDRAW_L1: '/withdraw/l1',
   PAY: '/pay-merchant',
   QUERY_FUNDS: '/query-funds',
   OPEN_HEAD: '/open-head',
